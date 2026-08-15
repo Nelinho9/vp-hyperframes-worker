@@ -1,0 +1,309 @@
+<!DOCTYPE html>
+<html lang="pt" data-resolution="portrait">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=1080, height=1920" />
+    <link rel="stylesheet" href="assets/fonts.css" />
+    <script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js"></script>
+    <style>
+      * { margin: 0; padding: 0; box-sizing: border-box; }
+      html, body {
+        margin: 0;
+        width: 1080px;
+        height: 1920px;
+        overflow: hidden;
+        background: #0a0a0a;
+      }
+      body { font-family: "Poppins", "Inter", sans-serif; }
+
+      /* ── Full-bleed image layers ─────────────────────────── */
+      .bg-image {
+        position: absolute;
+        inset: 0;
+        width: 1080px;
+        height: 1920px;
+        object-fit: cover;
+      }
+
+      /* ── Text zones ─────────────────────────────────────── */
+      .zone {
+        position: absolute;
+        inset: 0;
+        display: flex;
+        flex-direction: column;
+        padding: 0 72px;
+      }
+      .zone-center { justify-content: center; align-items: center; text-align: center; }
+      .zone-bottom { justify-content: flex-end; padding-bottom: 200px; text-align: center; }
+      .zone-top { justify-content: flex-start; padding-top: 160px; text-align: center; }
+
+      .brand-name {
+        font-family: "Poppins", sans-serif;
+        font-weight: 700;
+        font-size: 52px;
+        letter-spacing: 12px;
+        color: #ffffff;
+        text-transform: uppercase;
+      }
+      .tagline {
+        font-family: "Poppins", sans-serif;
+        font-weight: 400;
+        font-style: italic;
+        font-size: 36px;
+        color: rgba(255, 255, 255, 0.85);
+        margin-top: 16px;
+      }
+      .product-name {
+        font-family: "Poppins", sans-serif;
+        font-weight: 700;
+        font-size: 42px;
+        color: #ffffff;
+        text-align: center;
+      }
+      .product-price {
+        font-family: "Poppins", sans-serif;
+        font-weight: 400;
+        font-size: 28px;
+        color: rgba(255, 255, 255, 0.7);
+        text-align: center;
+        margin-top: 8px;
+      }
+      .story-heading {
+        font-family: "Poppins", sans-serif;
+        font-weight: 700;
+        font-size: 56px;
+        color: #ffffff;
+        text-align: center;
+        line-height: 1.15;
+      }
+      .story-sub {
+        font-family: "Poppins", sans-serif;
+        font-weight: 400;
+        font-size: 26px;
+        color: rgba(255, 255, 255, 0.75);
+        text-align: center;
+        margin-top: 20px;
+        letter-spacing: 4px;
+        text-transform: uppercase;
+      }
+      .cta-label {
+        font-family: "Poppins", sans-serif;
+        font-weight: 700;
+        font-size: 22px;
+        letter-spacing: 6px;
+        text-transform: uppercase;
+        color: #0a0a0a;
+        background: #ffffff;
+        padding: 18px 48px;
+        border-radius: 2px;
+      }
+      .end-brand {
+        font-family: "Poppins", sans-serif;
+        font-weight: 700;
+        font-size: 44px;
+        letter-spacing: 10px;
+        color: #ffffff;
+        text-transform: uppercase;
+      }
+      .end-sub {
+        font-family: "Poppins", sans-serif;
+        font-weight: 400;
+        font-size: 20px;
+        color: rgba(255, 255, 255, 0.6);
+        letter-spacing: 3px;
+        margin-top: 12px;
+      }
+
+      /* ── Product grid ────────────────────────────────────── */
+      .product-grid {
+        position: absolute;
+        inset: 0;
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        grid-template-rows: 1fr 1fr;
+        gap: 8px;
+        padding: 8px;
+      }
+      .product-cell {
+        position: relative;
+        overflow: hidden;
+        background: #111;
+      }
+      .product-cell img {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+      }
+      .product-cell .label {
+        position: absolute;
+        bottom: 0;
+        left: 0;
+        right: 0;
+        padding: 24px;
+        background: linear-gradient(transparent, rgba(0,0,0,0.7));
+        color: #fff;
+        font-size: 22px;
+        font-weight: 700;
+      }
+
+      /* ── Overlay gradients ───────────────────────────────── */
+      .vignette {
+        position: absolute;
+        inset: 0;
+        background: radial-gradient(ellipse at center, rgba(0,0,0,0) 50%, rgba(0,0,0,0.5) 100%);
+        pointer-events: none;
+      }
+      .dark-overlay {
+        position: absolute;
+        inset: 0;
+        background: rgba(0, 0, 0, 0.35);
+        pointer-events: none;
+      }
+
+      /* ── Film finish ─────────────────────────────────────── */
+      #film-finish {
+        position: absolute;
+        inset: 0;
+        pointer-events: none;
+        z-index: 100;
+      }
+      #film-finish .grain {
+        position: absolute;
+        inset: 0;
+        opacity: 0.04;
+        background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/><feColorMatrix type='saturate' values='0'/></filter><rect width='100%25' height='100%25' filter='url(%23n)'/></svg>");
+      }
+    </style>
+  </head>
+  <body>
+    <div id="root" data-composition-id="main" data-start="0" data-duration="15" data-width="1080" data-height="1920">
+
+      <!-- ═ SCENE 1: Hero (0–4s) ═══ -->
+      <img id="s1-bg" data-hf-id="s1-bg" class="bg-image clip" data-start="0" data-duration="4" data-track-index="0" src="assets/hero-10.jpg" alt="" />
+      <div id="s1-overlay" class="dark-overlay clip" data-start="0" data-duration="4" data-track-index="1"></div>
+
+      <div id="s1-brand" data-hf-id="s1-brand" class="clip" data-start="0.5" data-duration="3.5" data-track-index="2">
+        <div class="zone zone-top">
+          <div class="brand-name">Portugal Jewels</div>
+        </div>
+      </div>
+
+      <div id="s1-tagline" data-hf-id="s1-tagline" class="clip" data-start="1.2" data-duration="2.8" data-track-index="3">
+        <div class="zone zone-center">
+          <div class="tagline">Um modo de ser</div>
+        </div>
+      </div>
+
+      <!-- ═══ SCENE 2: Product Grid (4–8s) ═══ -->
+      <div id="s2-grid" data-hf-id="s2-grid" class="clip" data-start="4" data-duration="4" data-track-index="4">
+        <div class="product-grid">
+          <div class="product-cell">
+            <img src="assets/earrings-heart-of-viana-xs-in-192kt-gold.jpg" alt="" />
+            <div class="label">Brincos Viana · 3.100€</div>
+          </div>
+          <div class="product-cell">
+            <img src="assets/colar-iniciais-em-prata-dourada.jpg" alt="" />
+            <div class="label">Colar Iniciais · 89€</div>
+          </div>
+          <div class="product-cell">
+            <img src="assets/bracelet-seven-bangles-in-gold-plated-si.jpg" alt="" />
+            <div class="label">Pulseira Escravas · 279€</div>
+          </div>
+          <div class="product-cell">
+            <img src="assets/earrings-azulejo-in-gold-plated-silver-a.jpg" alt="" />
+            <div class="label">Brincos Azulejo · 145€</div>
+          </div>
+        </div>
+      </div>
+
+      <div id="s2-heading" data-hf-id="s2-heading" class="clip" data-start="4.3" data-duration="3.7" data-track-index="5">
+        <div class="zone zone-top">
+          <div class="story-sub" style="font-size:20px; letter-spacing:6px;">Os Favoritos</div>
+        </div>
+      </div>
+
+      <!-- ═══ SCENE 3: Brand Story (8–12s) ═══ -->
+      <img id="s3-bg" data-hf-id="s3-bg" class="bg-image clip" data-start="8" data-duration="4" data-track-index="6" src="assets/beira.jpg" alt="" />
+      <div id="s3-overlay" class="dark-overlay clip" data-start="8" data-duration="4" data-track-index="7"></div>
+
+      <div id="s3-heading" data-hf-id="s3-heading" class="clip" data-start="8.5" data-duration="3.5" data-track-index="8">
+        <div class="zone zone-center">
+          <div class="story-heading">Feito à mão<br/>em Portugal</div>
+          <div class="story-sub">Desde 1955</div>
+        </div>
+      </div>
+
+      <!-- ═══ SCENE 4: End Card (12–15s) ═══ -->
+      <div id="s4-bg" data-hf-id="s4-bg" class="clip" data-start="12" data-duration="3" data-track-index="9"
+           style="position:absolute;inset:0;width:1080px;height:1920px;background:linear-gradient(135deg,#1a1a2e 0%,#16213e 50%,#0f3460 100%);">
+      </div>
+
+      <div id="s4-logo" data-hf-id="s4-logo" class="clip" data-start="12.3" data-duration="2.7" data-track-index="10">
+        <div class="zone zone-center" style="padding-bottom:300px;">
+          <img src="assets/favicon.png" alt="Portugal Jewels" style="width:120px;height:120px;object-fit:contain;border-radius:50%;" />
+        </div>
+      </div>
+
+      <div id="s4-brand" data-hf-id="s4-brand" class="clip" data-start="12.5" data-duration="2.5" data-track-index="11">
+        <div class="zone zone-center" style="padding-top:200px;">
+          <div class="end-brand">Portugal Jewels</div>
+          <div class="end-sub">Joias inspiradas pela tradição</div>
+        </div>
+      </div>
+
+      <div id="s4-cta" data-hf-id="s4-cta" class="clip" data-start="13" data-duration="2" data-track-index="12">
+        <div class="zone zone-bottom" style="padding-bottom:280px;">
+          <div class="cta-label">Explorar Coleção</div>
+        </div>
+      </div>
+
+      <!-- Persistent film finish -->
+      <div data-hf-id="film-finish" id="film-finish">
+        <div class="grain"></div>
+      </div>
+    </div>
+
+    <script>
+      window.__timelines = window.__timelines || {};
+      var tl = gsap.timeline({ paused: true });
+
+      // ─ Scene 1: Hero entrances ──
+      tl.fromTo("#s1-brand", { opacity: 0, y: -30 }, { opacity: 1, y: 0, duration: 0.8, ease: "power2.out" }, 0.5);
+      tl.fromTo("#s1-tagline", { opacity: 0, y: 20 }, { opacity: 1, y: 0, duration: 0.7, ease: "power2.out" }, 1.2);
+
+      // ── Scene 1→2 crossfade ──
+      tl.to("#s1-bg", { opacity: 0, duration: 0.4, ease: "none" }, 3.6);
+      tl.set("#s1-bg", { opacity: 0 }, 4.0);
+      tl.to("#s1-overlay", { opacity: 0, duration: 0.4, ease: "none" }, 3.6);
+      tl.set("#s1-overlay", { opacity: 0 }, 4.0);
+
+      // ─ Scene 2: Product grid entrance ──
+      tl.fromTo("#s2-grid", { opacity: 0, scale: 0.95 }, { opacity: 1, scale: 1, duration: 0.6, ease: "power2.out" }, 4.0);
+      tl.fromTo("#s2-heading", { opacity: 0, y: -20 }, { opacity: 1, y: 0, duration: 0.5, ease: "power2.out" }, 4.3);
+
+      // ── Scene 2→3 crossfade ──
+      tl.to("#s2-grid", { opacity: 0, duration: 0.4, ease: "none" }, 7.6);
+      tl.set("#s2-grid", { opacity: 0 }, 8.0);
+      tl.to("#s2-heading", { opacity: 0, duration: 0.4, ease: "none" }, 7.6);
+      tl.set("#s2-heading", { opacity: 0 }, 8.0);
+
+      // ─ Scene 3: Brand story ─
+      tl.fromTo("#s3-heading", { opacity: 0, y: 30 }, { opacity: 1, y: 0, duration: 0.8, ease: "power2.out" }, 8.5);
+      // Slow zoom on bg image
+      tl.fromTo("#s3-bg", { scale: 1 }, { scale: 1.05, duration: 4, ease: "none" }, 8);
+
+      // ── Scene 3→4 crossfade ──
+      tl.to("#s3-bg", { opacity: 0, duration: 0.4, ease: "none" }, 11.6);
+      tl.set("#s3-bg", { opacity: 0 }, 12.0);
+      tl.to("#s3-heading", { opacity: 0, duration: 0.4, ease: "none" }, 11.6);
+      tl.set("#s3-heading", { opacity: 0 }, 12.0);
+
+      // ── Scene 4: End card ──
+      tl.fromTo("#s4-logo", { opacity: 0, scale: 0.8 }, { opacity: 1, scale: 1, duration: 0.6, ease: "power2.out" }, 12.3);
+      tl.fromTo("#s4-brand", { opacity: 0, y: 20 }, { opacity: 1, y: 0, duration: 0.6, ease: "power2.out" }, 12.5);
+      tl.fromTo("#s4-cta", { opacity: 0, y: 30 }, { opacity: 1, y: 0, duration: 0.5, ease: "power2.out" }, 13.0);
+
+      window.__timelines["main"] = tl;
+    </script>
+  </body>
+</html>

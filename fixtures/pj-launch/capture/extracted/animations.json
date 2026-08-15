@@ -1,0 +1,16 @@
+{
+  "summary": {
+    "webAnimations": 0,
+    "cssDeclarations": 487,
+    "scrollTargets": 38,
+    "cdpAnimations": 17,
+    "canvases": 0
+  },
+  "namedAnimations": [
+    "rotator",
+    "dash",
+    "animateMenuOpen"
+  ],
+  "scrollTriggeredElements": 38,
+  "representativeAnimations": []
+}

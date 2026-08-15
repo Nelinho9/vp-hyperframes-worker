@@ -1,0 +1,251 @@
+{
+  "typography": [
+    {
+      "role": "heading",
+      "fontFamily": "Playfair Display",
+      "fontSize": "32px",
+      "fontWeight": "400",
+      "lineHeight": "32px",
+      "letterSpacing": "normal",
+      "color": "#121212",
+      "sampleText": "Os Favoritos"
+    },
+    {
+      "role": "display",
+      "fontFamily": "Playfair Display",
+      "fontSize": "24px",
+      "fontWeight": "400",
+      "lineHeight": "normal",
+      "letterSpacing": "normal",
+      "color": "#FFFFFF",
+      "sampleText": "Um modo de ser"
+    },
+    {
+      "role": "heading-2",
+      "fontFamily": "Inter",
+      "fontSize": "19.2px",
+      "fontWeight": "700",
+      "lineHeight": "24.96px",
+      "letterSpacing": "normal",
+      "color": "#1F1F1F",
+      "sampleText": "PORTUGAL JEWELS"
+    },
+    {
+      "role": "body",
+      "fontFamily": "Inter",
+      "fontSize": "16px",
+      "fontWeight": "400",
+      "lineHeight": "20.8px",
+      "letterSpacing": "normal",
+      "color": "#1F1F1F",
+      "sampleText": "Utilizamos cookies no nosso site para melhorar e personaliza"
+    },
+    {
+      "role": "heading-3",
+      "fontFamily": "Inter",
+      "fontSize": "14px",
+      "fontWeight": "500",
+      "lineHeight": "18.2px",
+      "letterSpacing": "normal",
+      "color": "#0B0B0C",
+      "sampleText": "Anel Sete Escravas em Prata Dourada"
+    },
+    {
+      "role": "heading-4",
+      "fontFamily": "Inter",
+      "fontSize": "14px",
+      "fontWeight": "300",
+      "lineHeight": "21px",
+      "letterSpacing": "normal",
+      "color": "#121212",
+      "sampleText": "Foi a minha primeira compra Foi a minha primeira compra e po"
+    },
+    {
+      "role": "body-small",
+      "fontFamily": "Inter",
+      "fontSize": "13px",
+      "fontWeight": "400",
+      "lineHeight": "19.5px",
+      "letterSpacing": "0.4px",
+      "color": "#FFFFFF",
+      "sampleText": ""
+    },
+    {
+      "role": "heading-2",
+      "fontFamily": "Playfair Display",
+      "fontSize": "12px",
+      "fontWeight": "400",
+      "lineHeight": "14.4px",
+      "letterSpacing": "0.64px",
+      "color": "#FFFFFF",
+      "sampleText": "À BEIRA"
+    }
+  ],
+  "spacing": {
+    "observed": [
+      1,
+      6,
+      8,
+      10,
+      14,
+      16,
+      32,
+      35,
+      52
+    ],
+    "baseUnit": 8
+  },
+  "radius": [
+    "2px"
+  ],
+  "shadows": [],
+  "buttons": [
+    {
+      "label": "Gerir preferências",
+      "background": "#FFFFFF",
+      "backgroundImage": "",
+      "backdropFilter": "",
+      "color": "#333333",
+      "padding": "10px 20px",
+      "borderRadius": "2px",
+      "border": "1px solid rgb(31, 31, 31)",
+      "boxShadow": "none",
+      "fontSize": "16px",
+      "fontWeight": "400",
+      "height": "41.2031px"
+    },
+    {
+      "label": "Aceitar",
+      "background": "#000000",
+      "backgroundImage": "",
+      "backdropFilter": "",
+      "color": "#FFFFFF",
+      "padding": "8px 25px",
+      "borderRadius": "2px",
+      "border": "1px solid rgb(0, 0, 0)",
+      "boxShadow": "none",
+      "fontSize": "16px",
+      "fontWeight": "400",
+      "height": "41.2031px"
+    },
+    {
+      "label": "Rejeitar",
+      "background": "transparent",
+      "backgroundImage": "",
+      "backdropFilter": "",
+      "color": "#333333",
+      "padding": "0px",
+      "borderRadius": "2px",
+      "border": "0px none rgb(51, 51, 51)",
+      "boxShadow": "none",
+      "fontSize": "16px",
+      "fontWeight": "400",
+      "height": "41.2031px"
+    },
+    {
+      "label": "Saltar para o conteúdo",
+      "background": "#121212",
+      "backgroundImage": "",
+      "backdropFilter": "",
+      "color": "#FFFFFF",
+      "padding": "0px 30px",
+      "borderRadius": "0px",
+      "border": "0px none rgb(255, 255, 255)",
+      "boxShadow": "none",
+      "fontSize": "15px",
+      "fontWeight": "400",
+      "height": "47px"
+    },
+    {
+      "label": "button",
+      "background": "transparent",
+      "backgroundImage": "",
+      "backdropFilter": "",
+      "color": "#000000",
+      "padding": "1px 6px",
+      "borderRadius": "0px",
+      "border": "0px none rgb(0, 0, 0)",
+      "boxShadow": "none",
+      "fontSize": "13.3333px",
+      "fontWeight": "400",
+      "height": "34px"
+    },
+    {
+      "label": "button",
+      "background": "transparent",
+      "backgroundImage": "",
+      "backdropFilter": "",
+      "color": "#121212",
+      "padding": "1px 6px",
+      "borderRadius": "0px",
+      "border": "0px none rgb(18, 18, 18)",
+      "boxShadow": "none",
+      "fontSize": "13.3333px",
+      "fontWeight": "400",
+      "height": "34px"
+    }
+  ],
+  "cards": [
+    {
+      "label": "card",
+      "background": "transparent",
+      "backgroundImage": "",
+      "backdropFilter": "",
+      "color": "#121212",
+      "padding": "0px",
+      "borderRadius": "0px",
+      "border": "0px solid rgba(18, 18, 18, 0.1)",
+      "boxShadow": "none",
+      "fontSize": "16px",
+      "fontWeight": "400",
+      "height": "526.297px"
+    },
+    {
+      "label": "card",
+      "background": "transparent",
+      "backgroundImage": "",
+      "backdropFilter": "",
+      "color": "#121212",
+      "padding": "0px",
+      "borderRadius": "0px",
+      "border": "0px none rgb(18, 18, 18)",
+      "boxShadow": "none",
+      "fontSize": "16px",
+      "fontWeight": "400",
+      "height": "395.297px"
+    },
+    {
+      "label": "card",
+      "background": "transparent",
+      "backgroundImage": "",
+      "backdropFilter": "",
+      "color": "#0000EE",
+      "padding": "0px",
+      "borderRadius": "0px",
+      "border": "0px none rgb(0, 0, 238)",
+      "boxShadow": "none",
+      "fontSize": "14px",
+      "fontWeight": "400",
+      "height": "395.297px"
+    }
+  ],
+  "nav": {
+    "label": "navigation",
+    "background": "#FFFFFF",
+    "backgroundImage": "",
+    "backdropFilter": "",
+    "color": "#121212",
+    "padding": "0px",
+    "borderRadius": "0px",
+    "border": "0px none rgb(18, 18, 18)",
+    "boxShadow": "none",
+    "fontSize": "16px",
+    "fontWeight": "400",
+    "height": "5558.39px"
+  },
+  "chips": [],
+  "statCells": [],
+  "tabs": [],
+  "backgrounds": [],
+  "glass": []
+}

@@ -1,0 +1,41 @@
+# Coolify-compatible compose — VisttaPro HyperFrames Render Worker (V4-1)
+#
+# Manual fallback deploy (V4_01_INFRA §10):
+#   scp -r worker/hyperframes-worker root@<vps>:~/vp-hyperframes-worker
+#   cd ~/vp-hyperframes-worker && docker compose up -d --build
+#
+# Required env (Coolify env vars or .env next to this file):
+#   PREVIEW_SECRET — HMAC secret shared with video-v4-orchestrator
+#   WORKERS        — keep 1 when VPS RAM < 4GB (R3)
+services:
+  hyperframes-worker:
+    build: .
+    container_name: vp-hyperframes-worker
+    ports:
+      - "8787:8787"
+    environment:
+      - PORT=8787
+      - WORKERS=${WORKERS:-1}
+      - PREVIEW_SECRET=${PREVIEW_SECRET}
+      - CHROME_PATH=/usr/bin/chromium
+      - HYPERFRAMES_NO_SANDBOX=1
+      - WORK_DIR=/tmp/hyperframes-worker
+    volumes:
+      - worker-data:/tmp/hyperframes-worker
+    # Chrome precisa de ≥256MB em /dev/shm (hyperframes doctor).
+    shm_size: 512m
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8787/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+    deploy:
+      resources:
+        limits:
+          cpus: "4"
+          memory: 4G
+
+volumes:
+  worker-data:

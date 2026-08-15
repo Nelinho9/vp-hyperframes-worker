@@ -1,0 +1,15 @@
+{
+  "name": "vp-hyperframes-worker",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "VisttaPro HyperFrames render worker (V4-1) — dumb worker: no Supabase secrets, signed URL I/O + callback secret.",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.21.0",
+    "linkedom": "^0.18.5"
+  }
+}

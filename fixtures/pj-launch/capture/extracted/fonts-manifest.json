@@ -1,0 +1,74 @@
+{
+  "files": [
+    {
+      "file": "poppins_latin_italic_400.woff2",
+      "family": "Poppins",
+      "rawFamily": "Poppins",
+      "subfamily": "Italic",
+      "postscript": "Poppins-Italic",
+      "weight": 400,
+      "style": "italic",
+      "variationAxes": [],
+      "identified": true,
+      "isIcon": false
+    },
+    {
+      "file": "poppins_latin_italic_700.woff2",
+      "family": "Poppins",
+      "rawFamily": "Poppins",
+      "subfamily": "Bold Italic",
+      "postscript": "Poppins-BoldItalic",
+      "weight": 700,
+      "style": "italic",
+      "variationAxes": [],
+      "identified": true,
+      "isIcon": false
+    },
+    {
+      "file": "poppins_latin_regular_400_2.woff2",
+      "family": "Poppins",
+      "rawFamily": "Poppins",
+      "subfamily": "Regular",
+      "postscript": "Poppins-Regular",
+      "weight": 400,
+      "style": "normal",
+      "variationAxes": [],
+      "identified": true,
+      "isIcon": false
+    },
+    {
+      "file": "poppins_latin_regular_700.woff2",
+      "family": "Poppins",
+      "rawFamily": "Poppins",
+      "subfamily": "Bold",
+      "postscript": "Poppins-Bold",
+      "weight": 700,
+      "style": "normal",
+      "variationAxes": [],
+      "identified": true,
+      "isIcon": false
+    }
+  ],
+  "families": [
+    {
+      "family": "Poppins",
+      "weights": [
+        400,
+        700
+      ],
+      "variable": false,
+      "fileCount": 4,
+      "files": [
+        "poppins_latin_italic_400.woff2",
+        "poppins_latin_italic_700.woff2",
+        "poppins_latin_regular_400_2.woff2",
+        "poppins_latin_regular_700.woff2"
+      ]
+    }
+  ],
+  "unidentified": [],
+  "meta": {
+    "generatedAt": "2026-08-14T14:40:23.181Z",
+    "tool": "fontkit"
+  }
+}

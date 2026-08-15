@@ -1,0 +1,429 @@
+# Asset Descriptions
+
+⚠️  GEMINI_API_KEY not set — descriptions below are catalog-derived (alt text, headings, section context, filename) instead of Vision-generated. To get richer Vision descriptions on the next capture, set GEMINI_API_KEY (or GOOGLE_API_KEY) and re-run.
+
+The `logo-<hash>.svg` filename prefix is a structural hint (DOM said this SVG was inside a `<header>`, home-link `<a>`, or had an aria-label matching the page brand). To pick the actual brand logo without Vision, open the `logo-*` candidates in a previewer or rasterize them with `sharp` before referencing — composing a fake logo ships off-brand in the final video.
+
+- 72-5ae968be-7f7a-4030-a48d-fdde7b2fd26d.jpg — 23KB, 72 5ae968be 7f7a 4030 a48d fdde7b2fd26d
+- anel-sete-escravas-em-prata.webp — 44KB, anel sete escravas em prata
+- anel-sete-escravas-prata-7.webp — 20KB, anel sete escravas prata 7
+- becv00591a-6650-1-2.jpg — 10KB, becv00591a 6650 1 2
+- beira.jpg — 291KB, beira
+- bracelet-escudo-in-gold-plated-silver-wi.jpg — 15KB, bracelet escudo in gold plated silver wi
+- bracelet-seven-bangles-in-gold-plated-si.jpg — 23KB, bracelet seven bangles in gold plated si
+- bracelet-seven-bangles-in-silver-baroque.jpg — 14KB, bracelet seven bangles in silver baroque
+- bracelet-seven-bangles-in-silver-worn-by.jpg — 29KB, bracelet seven bangles in silver worn by
+- brincos-caramujo-azul-e-vermelho-em-prat.png — 72KB, brincos caramujo azul e vermelho em prat
+- brincos-rainha-m-em-prata.jpg — 42KB, brincos rainha m em prata
+- colar-escapulrio-em-prata-dourada.jpg — 23KB, colar escapulrio em prata dourada
+- colar-escudo-em-prata.png — 410KB, colar escudo em prata
+- colar-iniciais-em-prata-dourada.jpg — 17KB, colar iniciais em prata dourada
+- colar-iniciais-em-prata.jpg — 15KB, colar iniciais em prata
+- content-for-layout-focus-none.jpg — 25KB, content for layout focus none
+- earrings-azulejo-in-gold-plated-silver-a.jpg — 41KB, earrings azulejo in gold plated silver a
+- earrings-azulejo-in-gold-plated-silver-w.jpg — 43KB, earrings azulejo in gold plated silver w
+- earrings-azulejo-in-silver-azulejo-colle.jpg — 23KB, earrings azulejo in silver azulejo colle
+- earrings-azulejo-in-silver-worn-by-model.jpg — 40KB, earrings azulejo in silver worn by model
+- earrings-caramujo-in-192kt-gold-handcraf.jpg — 21KB, earrings caramujo in 192kt gold handcraf
+- earrings-caramujo-in-192kt-gold-worn-by-.jpg — 49KB, earrings caramujo in 192kt gold worn by 
+- earrings-caramujo-in-gold-plated-silver-.jpg — 21KB, earrings caramujo in gold plated silver 
+- earrings-heart-of-viana-xs-in-192kt-gold.jpg — 48KB, earrings heart of viana xs in 192kt gold
+- earrings-heart-of-viana-xs-in-gold-plate.jpg — 19KB, earrings heart of viana xs in gold plate
+- earrings-red-caramujo-in-gold-plated-sil.jpg — 22KB, earrings red caramujo in gold plated sil
+- favicon.png — 1KB, favicon
+- fotos-produto-letras.jpg — 27KB, fotos produto letras
+- hero-10.jpg — 365KB, hero 10
+- hero-100.png — 208KB, hero 100
+- hero-101.png — 798KB, hero 101
+- hero-102.png — 1298KB, hero 102
+- hero-103.png — 1617KB, hero 103
+- hero-104.png — 7578KB, hero 104
+- hero-11.jpg — 542KB, hero 11
+- hero-12.jpg — 750KB, hero 12
+- hero-13.jpg — 1048KB, hero 13
+- hero-142.jpg — 16KB, hero 142
+- hero-143.jpg — 58KB, hero 143
+- hero-144.jpg — 94KB, hero 144
+- hero-145.jpg — 116KB, hero 145
+- hero-146.jpg — 351KB, "Brincos Caramujo Azul e Vermelho em Prata Dourada", section: "À BEIRA", above fold
+- hero-149.jpg — 67KB, hero 149
+- hero-150.jpg — 102KB, hero 150
+- hero-151.jpg — 125KB, hero 151
+- hero-152.jpg — 456KB, hero 152
+- hero-178.jpg — 12KB, hero 178
+- hero-179.jpg — 39KB, hero 179
+- hero-180.jpg — 62KB, hero 180
+- hero-181.jpg — 77KB, hero 181
+- hero-182.jpg — 242KB, hero 182
+- hero-184.jpg — 21KB, hero 184
+- hero-185.jpg — 66KB, hero 185
+- hero-186.jpg — 106KB, hero 186
+- hero-187.jpg — 133KB, hero 187
+- hero-188.jpg — 581KB, hero 188
+- hero-202.jpg — 12KB, hero 202
+- hero-203.jpg — 34KB, hero 203
+- hero-204.jpg — 52KB, hero 204
+- hero-205.jpg — 63KB, hero 205
+- hero-206.jpg — 99KB, hero 206
+- hero-207.jpg — 42KB, hero 207
+- hero-208.jpg — 22KB, hero 208
+- hero-209.jpg — 67KB, hero 209
+- hero-210.jpg — 101KB, hero 210
+- hero-211.jpg — 123KB, hero 211
+- hero-212.jpg — 223KB, hero 212
+- hero-215.png — 126KB, hero 215
+- hero-216.png — 209KB, hero 216
+- hero-217.png — 262KB, hero 217
+- hero-218.png — 1536KB, hero 218
+- hero-219.jpg — 34KB, hero 219
+- hero-220.jpg — 18KB, hero 220
+- hero-221.jpg — 55KB, hero 221
+- hero-222.jpg — 86KB, hero 222
+- hero-223.jpg — 105KB, hero 223
+- hero-224.jpg — 452KB, hero 224
+- hero-225.jpg — 26KB, hero 225
+- hero-226.jpg — 14KB, hero 226
+- hero-227.jpg — 42KB, hero 227
+- hero-228.jpg — 66KB, hero 228
+- hero-229.jpg — 80KB, hero 229
+- hero-230.jpg — 133KB, section: "À BEIRA"
+- hero-231.jpg — 46KB, section: "À BEIRA"
+- hero-232.jpg — 24KB, hero 232
+- hero-233.jpg — 75KB, hero 233
+- hero-234.jpg — 117KB, hero 234
+- hero-235.jpg — 144KB, hero 235
+- hero-236.jpg — 958KB, hero 236
+- hero-237.jpg — 26KB, hero 237
+- hero-238.jpg — 13KB, hero 238
+- hero-239.jpg — 43KB, hero 239
+- hero-240.jpg — 68KB, hero 240
+- hero-241.jpg — 84KB, hero 241
+- hero-242.jpg — 257KB, hero 242
+- hero-243.jpg — 50KB, hero 243
+- hero-244.jpg — 25KB, hero 244
+- hero-245.jpg — 82KB, hero 245
+- hero-246.jpg — 130KB, "Brincos Caramujo Azul e Vermelho em Prata Dourada", section: "À BEIRA", above fold
+- hero-247.jpg — 161KB, hero 247
+- hero-248.jpg — 333KB, hero 248
+- hero-249.jpg — 24KB, hero 249
+- hero-250.jpg — 12KB, hero 250
+- hero-251.jpg — 39KB, hero 251
+- hero-252.jpg — 63KB, hero 252
+- hero-253.jpg — 78KB, hero 253
+- hero-254.jpg — 227KB, hero 254
+- hero-255.jpg — 58KB, hero 255
+- hero-256.jpg — 27KB, hero 256
+- hero-257.jpg — 102KB, hero 257
+- hero-258.jpg — 171KB, hero 258
+- hero-259.jpg — 215KB, hero 259
+- hero-260.jpg — 933KB, hero 260
+- hero-27.jpg — 22KB, hero 27
+- hero-28.jpg — 26KB, hero 28
+- hero-287.jpg — 35KB, hero 287
+- hero-288.jpg — 57KB, hero 288
+- hero-289.jpg — 71KB, hero 289
+- hero-29.jpg — 99KB, hero 29
+- hero-290.jpg — 218KB, hero 290
+- hero-292.jpg — 19KB, hero 292
+- hero-293.jpg — 61KB, hero 293
+- hero-294.jpg — 99KB, hero 294
+- hero-295.jpg — 124KB, hero 295
+- hero-296.jpg — 618KB, hero 296
+- hero-310.png — 86KB, hero 310
+- hero-311.png — 278KB, hero 311
+- hero-312.png — 569KB, hero 312
+- hero-313.png — 732KB, hero 313
+- hero-314.png — 871KB, hero 314
+- hero-316.jpg — 17KB, hero 316
+- hero-317.jpg — 52KB, hero 317
+- hero-318.jpg — 85KB, hero 318
+- hero-319.jpg — 107KB, hero 319
+- hero-32.webp — 75KB, hero 32
+- hero-320.jpg — 556KB, hero 320
+- hero-33.webp — 118KB, hero 33
+- hero-34.webp — 145KB, hero 34
+- hero-346.jpg — 22KB, "Brincos Caramujo Azul e Vermelho em Prata Dourada", section: "À BEIRA", above fold
+- hero-347.jpg — 27KB, hero 347
+- hero-348.jpg — 84KB, hero 348
+- hero-35.webp — 210KB, hero 35
+- hero-350.jpg — 17KB, hero 350
+- hero-351.jpg — 50KB, hero 351
+- hero-352.jpg — 80KB, hero 352
+- hero-353.jpg — 100KB, hero 353
+- hero-354.jpg — 475KB, hero 354
+- hero-378.jpg — 20KB, hero 378
+- hero-379.jpg — 25KB, hero 379
+- hero-380.jpg — 86KB, hero 380
+- hero-382.jpg — 18KB, hero 382
+- hero-383.jpg — 52KB, hero 383
+- hero-384.jpg — 81KB, hero 384
+- hero-385.jpg — 100KB, hero 385
+- hero-386.jpg — 206KB, hero 386
+- hero-49.jpg — 28KB, hero 49
+- hero-50.jpg — 121KB, hero 50
+- hero-52.jpg — 30KB, hero 52
+- hero-53.jpg — 90KB, hero 53
+- hero-54.jpg — 138KB, hero 54
+- hero-55.jpg — 170KB, hero 55
+- hero-56.jpg — 635KB, hero 56
+- hero-70.jpg — 22KB, hero 70
+- hero-71.jpg — 34KB, hero 71
+- hero-72.jpg — 42KB, hero 72
+- hero-73.jpg — 182KB, hero 73
+- hero-75.jpg — 15KB, hero 75
+- hero-76.jpg — 48KB, hero 76
+- hero-77.jpg — 78KB, hero 77
+- hero-78.jpg — 98KB, hero 78
+- hero-79.jpg — 566KB, hero 79
+- hero-9.jpg — 210KB, hero 9
+- hero-93.png — 91KB, hero 93
+- hero-94.png — 336KB, hero 94
+- hero-95.png — 499KB, hero 95
+- hero-96.png — 614KB, hero 96
+- hero-97.png — 2591KB, hero 97
+- hero-99.png — 43KB, hero 99
+- hero-wrapper-color-scheme-5.jpg — 121KB, hero wrapper color scheme 5
+- image-107.jpg — 36KB, image 107
+- image-108.jpg — 54KB, image 108
+- image-109.jpg — 64KB, image 109
+- image-110.jpg — 180KB, image 110
+- image-112.jpg — 20KB, image 112
+- image-113.jpg — 69KB, image 113
+- image-114.jpg — 112KB, image 114
+- image-115.jpg — 139KB, image 115
+- image-116.jpg — 585KB, image 116
+- image-118.jpg — 12KB, image 118
+- image-119.jpg — 35KB, image 119
+- image-120.jpg — 54KB, image 120
+- image-121.jpg — 65KB, image 121
+- image-122.jpg — 177KB, image 122
+- image-124.jpg — 24KB, image 124
+- image-125.jpg — 81KB, image 125
+- image-126.jpg — 125KB, image 126
+- image-127.jpg — 153KB, image 127
+- image-128.jpg — 299KB, image 128
+- image-130.jpg — 21KB, section: "À BEIRA"
+- image-131.jpg — 70KB, section: "À BEIRA"
+- image-132.jpg — 110KB, image 132
+- image-133.jpg — 134KB, image 133
+- image-134.jpg — 327KB, image 134
+- image-136.jpg — 24KB, image 136
+- image-137.jpg — 85KB, image 137
+- image-138.jpg — 137KB, image 138
+- image-139.jpg — 171KB, image 139
+- image-140.jpg — 376KB, image 140
+- image-155.jpg — 32KB, image 155
+- image-156.jpg — 49KB, image 156
+- image-157.jpg — 59KB, image 157
+- image-158.jpg — 169KB, image 158
+- image-16.jpg — 37KB, image 16
+- image-160.jpg — 23KB, image 160
+- image-161.jpg — 81KB, image 161
+- image-162.jpg — 130KB, image 162
+- image-163.jpg — 161KB, image 163
+- image-164.jpg — 331KB, image 164
+- image-166.jpg — 21KB, image 166
+- image-167.jpg — 67KB, image 167
+- image-168.jpg — 105KB, image 168
+- image-169.jpg — 128KB, image 169
+- image-17.jpg — 44KB, image 17
+- image-170.jpg — 370KB, image 170
+- image-172.jpg — 22KB, image 172
+- image-173.jpg — 72KB, image 173
+- image-174.jpg — 114KB, image 174
+- image-175.jpg — 142KB, image 175
+- image-176.jpg — 296KB, image 176
+- image-18.jpg — 118KB, image 18
+- image-190.jpg — 12KB, image 190
+- image-191.jpg — 34KB, image 191
+- image-192.jpg — 53KB, image 192
+- image-193.jpg — 65KB, image 193
+- image-194.jpg — 176KB, image 194
+- image-195.jpg — 49KB, image 195
+- image-196.jpg — 24KB, image 196
+- image-197.jpg — 81KB, image 197
+- image-198.jpg — 125KB, image 198
+- image-199.jpg — 153KB, image 199
+- image-20.png — 40KB, image 20
+- image-200.jpg — 299KB, image 200
+- image-21.png — 169KB, image 21
+- image-22.png — 613KB, image 22
+- image-23.png — 997KB, image 23
+- image-24.png — 1248KB, image 24
+- image-25.png — 5905KB, image 25
+- image-263.png — 98KB, image 263
+- image-264.png — 157KB, image 264
+- image-265.png — 195KB, image 265
+- image-266.png — 1072KB, image 266
+- image-269.png — 148KB, image 269
+- image-270.png — 549KB, image 270
+- image-271.png — 908KB, image 271
+- image-272.png — 1139KB, image 272
+- image-273.png — 5423KB, image 273
+- image-275.jpg — 12KB, image 275
+- image-276.jpg — 37KB, image 276
+- image-277.jpg — 58KB, image 277
+- image-278.jpg — 71KB, image 278
+- image-279.jpg — 182KB, image 279
+- image-281.jpg — 18KB, image 281
+- image-282.jpg — 57KB, image 282
+- image-283.jpg — 90KB, image 283
+- image-284.jpg — 113KB, image 284
+- image-285.jpg — 267KB, image 285
+- image-298.jpg — 24KB, image 298
+- image-299.jpg — 35KB, image 299
+- image-300.jpg — 42KB, image 300
+- image-301.jpg — 101KB, image 301
+- image-303.jpg — 17KB, image 303
+- image-304.jpg — 55KB, image 304
+- image-305.jpg — 91KB, image 305
+- image-306.jpg — 115KB, image 306
+- image-307.jpg — 558KB, image 307
+- image-321.jpg — 17KB, image 321
+- image-322.jpg — 10KB, image 322
+- image-323.jpg — 26KB, image 323
+- image-324.jpg — 39KB, image 324
+- image-325.jpg — 47KB, image 325
+- image-326.jpg — 153KB, image 326
+- image-327.jpg — 32KB, image 327
+- image-328.jpg — 18KB, image 328
+- image-329.jpg — 52KB, image 329
+- image-330.jpg — 81KB, section: "À BEIRA"
+- image-331.jpg — 101KB, section: "À BEIRA"
+- image-332.jpg — 819KB, image 332
+- image-335.png — 59KB, image 335
+- image-336.png — 91KB, image 336
+- image-337.png — 112KB, image 337
+- image-338.png — 294KB, image 338
+- image-339.jpg — 36KB, image 339
+- image-340.jpg — 19KB, image 340
+- image-341.jpg — 58KB, image 341
+- image-342.jpg — 89KB, image 342
+- image-343.jpg — 109KB, image 343
+- image-344.jpg — 208KB, image 344
+- image-356.jpg — 21KB, image 356
+- image-357.jpg — 32KB, image 357
+- image-358.jpg — 39KB, image 358
+- image-359.jpg — 102KB, image 359
+- image-360.jpg — 29KB, image 360
+- image-361.jpg — 15KB, image 361
+- image-362.jpg — 48KB, image 362
+- image-363.jpg — 79KB, image 363
+- image-364.jpg — 101KB, image 364
+- image-365.jpg — 550KB, image 365
+- image-367.jpg — 19KB, image 367
+- image-368.jpg — 28KB, image 368
+- image-369.jpg — 34KB, image 369
+- image-370.jpg — 90KB, image 370
+- image-371.jpg — 33KB, image 371
+- image-372.jpg — 17KB, image 372
+- image-373.jpg — 56KB, image 373
+- image-374.jpg — 94KB, image 374
+- image-375.jpg — 118KB, image 375
+- image-376.jpg — 274KB, image 376
+- image-38.jpg — 41KB, image 38
+- image-388.jpg — 49KB, image 388
+- image-389.jpg — 130KB, image 389
+- image-39.jpg — 50KB, image 39
+- image-390.jpg — 32KB, image 390
+- image-40.jpg — 139KB, image 40
+- image-42.jpg — 31KB, image 42
+- image-43.jpg — 102KB, image 43
+- image-44.jpg — 161KB, image 44
+- image-45.jpg — 204KB, image 45
+- image-46.jpg — 1308KB, "Brincos Caramujo Azul e Vermelho em Prata Dourada", section: "À BEIRA", above fold
+- image-58.jpg — 13KB, image 58
+- image-59.jpg — 35KB, image 59
+- image-60.jpg — 51KB, image 60
+- image-61.jpg — 61KB, image 61
+- image-62.jpg — 90KB, image 62
+- image-63.jpg — 27KB, image 63
+- image-64.jpg — 15KB, image 64
+- image-65.jpg — 46KB, image 65
+- image-66.jpg — 83KB, image 66
+- image-67.jpg — 108KB, image 67
+- image-68.jpg — 266KB, image 68
+- image-81.jpg — 23KB, image 81
+- image-82.jpg — 33KB, image 82
+- image-83.jpg — 39KB, image 83
+- image-84.jpg — 99KB, image 84
+- image-86.jpg — 23KB, image 86
+- image-87.jpg — 82KB, image 87
+- image-88.jpg — 131KB, image 88
+- image-89.jpg — 162KB, image 89
+- image-90.jpg — 607KB, image 90
+- initial-letters-2.jpg — 23KB, initial letters 2
+- logo-5e03cec1.svg — 25KB, logo 5e03cec1
+- logo-f5a393e1.svg — 26KB, logo f5a393e1
+- necklace-escudo-in-gold-plated-silver-es.jpg — 16KB, necklace escudo in gold plated silver es
+- necklace-escudo-in-gold-plated-silver-wo.jpg — 33KB, necklace escudo in gold plated silver wo
+- necklace-escudo-in-silver-worn-by-model-.jpg — 31KB, necklace escudo in silver worn by model 
+- necklace-heart-full-in-192kt-gold-and-di.png — 58KB, necklace heart full in 192kt gold and di
+- necklace-heart-of-viana-25cm-in-gold-pla.jpg — 17KB, necklace heart of viana 25cm in gold pla
+- necklace-heart-of-viana-in-gold-plated-s.jpg — 14KB, necklace heart of viana in gold plated s
+- necklace-initial-letters-in-silver.jpg — 56KB, necklace initial letters in silver
+- necklace-our-lady-of-ftima-in-gold-plate.jpg — 12KB, necklace our lady of ftima in gold plate
+- necklace-our-lady-of-ftima-in-silver-por.jpg — 13KB, necklace our lady of ftima in silver por
+- necklace-our-lady-of-ftima-in-silver-wor.jpg — 33KB, necklace our lady of ftima in silver wor
+- necklace-scapular-in-gold-plated-silver.jpg — 40KB, necklace scapular in gold plated silver
+- necklace-vianas-conta-in-gold-plated-sil.png — 37KB, necklace vianas conta in gold plated sil
+- necklace-vianas-conta-in-silver-portugue.jpg — 15KB, necklace vianas conta in silver portugue
+- necklace-vianas-conta-in-silver-worn-by-.jpg — 31KB, necklace vianas conta in silver worn by 
+- neuroviz-ai-2026-07-21-14-04.png — 29KB, neuroviz ai 2026 07 21 14 04
+- pulseira-escudo-em-prata-com-fio.png — 189KB, pulseira escudo em prata com fio
+- queen-earrings-m-in-gold-plated-silver-c.jpg — 42KB, queen earrings m in gold plated silver c
+- queen-earrings-m-in-gold-plated-silver-w.jpg — 49KB, queen earrings m in gold plated silver w
+- queen-earrings-m-in-silver-classics-coll.jpg — 33KB, queen earrings m in silver classics coll
+- queen-earrings-s-in-gold-plated-silver-c.jpg — 22KB, queen earrings s in gold plated silver c
+- queen-earrings-s-in-gold-plated-silver-w.jpg — 34KB, queen earrings s in gold plated silver w
+- queen-earrings-s-in-silver-classics-coll.jpg — 20KB, queen earrings s in silver classics coll
+- queen-earrings-s-in-silver-worn-by-model.jpg — 36KB, queen earrings s in silver worn by model
+- ring-seven-bangles-in-gold-plated-silver.jpg — 16KB, ring seven bangles in gold plated silver
+- ring-seven-bangles-in-silver.jpg — 15KB, ring seven bangles in silver
+- set-heart-full-in-192kt-gold-and-diamond.png — 313KB, set heart full in 192kt gold and diamond
+- site-conjuntos-imagens-para-site-6.png — 19KB, site conjuntos imagens para site 6
+- site-fotos-livemodel-2-2.jpg — 48KB, site fotos livemodel 2 2
+- site-fotos-livemodel-2-2026-03-05t124325.png — 34KB, site fotos livemodel 2 2026 03 05t124325
+- site-fotos-livemodel-2-4.jpg — 62KB, site fotos livemodel 2 4
+- site-fotos-livemodel-2-60.png — 353KB, site fotos livemodel 2 60
+- site-fotos-produto-2-2026-06-16t142807-2.png — 20KB, site fotos produto 2 2026 06 16t142807 2
+- site-fotos-produto-2-2026-06-16t142819-6.png — 455KB, site fotos produto 2 2026 06 16t142819 6
+- site-fotos-produto-2-43.png — 29KB, site fotos produto 2 43
+- site-fotos-produto-2-67.jpg — 13KB, site fotos produto 2 67
+- site-produtos-3000x3000-2026-06-22t10213.png — 35KB, site produtos 3000x3000 2026 06 22t10213
+- svg-4360e1ea.svg — 11KB, svg 4360e1ea
+- web-desktop-large-hero-banner-41.jpg — 62KB, web desktop large hero banner 41
+- svgs/logo-480954e4-10.svg — logo 480954e4 10
+- svgs/logo-480954e4-11.svg — logo 480954e4 11
+- svgs/logo-480954e4-2.svg — logo 480954e4 2
+- svgs/logo-480954e4-3.svg — logo 480954e4 3
+- svgs/logo-480954e4-4.svg — logo 480954e4 4
+- svgs/logo-480954e4-5.svg — logo 480954e4 5
+- svgs/logo-480954e4-6.svg — logo 480954e4 6
+- svgs/logo-480954e4-7.svg — logo 480954e4 7
+- svgs/logo-480954e4-8.svg — logo 480954e4 8
+- svgs/logo-480954e4-9.svg — logo 480954e4 9
+- svgs/logo-480954e4.svg — logo 480954e4
+- svgs/svg-02e421a4.svg — svg 02e421a4
+- svgs/svg-2f29635d.svg — svg 2f29635d
+- svgs/svg-2f502d60.svg — svg 2f502d60
+- svgs/svg-32da8802.svg — svg 32da8802
+- svgs/svg-5d657c16.svg — svg 5d657c16
+- svgs/svg-5f53f7f4.svg — svg 5f53f7f4
+- svgs/svg-635027bf-2.svg — svg 635027bf 2
+- svgs/svg-635027bf-3.svg — svg 635027bf 3
+- svgs/svg-635027bf.svg — svg 635027bf
+- svgs/svg-85a6748a.svg — svg 85a6748a
+- svgs/svg-9a372603.svg — svg 9a372603
+- svgs/svg-b09605ec.svg — svg b09605ec
+- svgs/svg-bc145c6b.svg — svg bc145c6b
+- svgs/svg-c38590c5.svg — svg c38590c5
+- svgs/svg-ccaec0e4.svg — svg ccaec0e4
+- svgs/svg-d3f79d06.svg — svg d3f79d06
+- svgs/svg-d703aad6.svg — svg d703aad6
+- svgs/svg-d9ef193d.svg — svg d9ef193d
+- svgs/svg-f697e678.svg — svg f697e678
+- fonts/poppins_latin_italic_400.woff2 — font file
+- fonts/poppins_latin_italic_700.woff2 — font file
+- fonts/poppins_latin_regular_400_2.woff2 — font file
+- fonts/poppins_latin_regular_700.woff2 — font file

@@ -1,0 +1,26 @@
+{
+  "version": 1,
+  "project": "pj-launch",
+  "fixture": true,
+  "voiceover": {
+    "provider": "kie-tts",
+    "voice": "pt-PT-female-calm",
+    "language": "pt-PT",
+    "duration_s": 12.8,
+    "artifact": "audio/voiceover.mp3",
+    "note": "V4-1 fixture mode — ficheiro de áudio não é materializado; o render da fixture é mudo. O passo audio marca done com este meta."
+  },
+  "bgm": {
+    "resolver": "media-use",
+    "mood": "elegant-minimal",
+    "bpm": 84,
+    "duration_s": 15,
+    "artifact": "audio/bgm.mp3",
+    "ducking": { "voiceover_carve_db": -12 }
+  },
+  "mix": {
+    "voiceover_lufs": -16,
+    "bgm_lufs": -28,
+    "master_lufs": -14
+  }
+}

@@ -1,0 +1,1044 @@
+[h2] PORTUGAL JEWELS
+[p] Utilizamos cookies no nosso site para melhorar e personalizar a sua experiência e para analisar o tráfego. Saiba mais na nossa Política de Privacidade.
+[a] Política de privacidade
+[span] Gerir preferências
+[button] Aceitar
+[button] Rejeitar
+[a] Saltar para o conteúdo
+[span] ENTREGAS EXPRESSO EM 48 HORAS
+[label] Pesquisar
+[a] Mais Vendidos
+[a] Pulseiras
+[a] Ouro Português 19,2Kt
+[a] Joias
+[a] Categorias
+[a] Novidades
+[a] Mais Vendidos
+[a] Brincos
+[a] Colares
+[a] Anéis
+[a] Pulseiras
+[a] Alfinetes
+[a] Ver tudo
+[a] Joias Em
+[a] Ouro Português (19,2kt)
+[a] Prata Dourada
+[a] Prata
+[a] Joias Com
+[a] Pérolas
+[a] Esmalte
+[a] Pedras Coloridas
+[a] Cristal de Rocha
+[a] Diamantes
+[a] Ourivesaria Tradicional
+[a] Coração de Viana
+[a] Brincos À Rainha
+[a] Contas de Viana
+[a] Caramujos
+[a] Filigrana
+[a] Minas Novas
+[a] Barroco
+[a] Marcassites
+[a] Religioso
+[a] Coleções
+[a] Coração Derretido
+[a] Azulejo Esmalte
+[a] Ciclo da Natureza
+[a] Formas Geométricas
+[a] Dar Cor à Tradição
+[a] Escudo
+[a] Símbolos Portugueses
+[a] Amuletos Filigrana
+[a] Colaborações
+[a] A Vida Portuguesa
+[a] Amália Rodrigues
+[a] Gulbenkian
+[a] Ana Moura
+[a] TAP Air Portugal
+[a] Presentes
+[a] Mais Oferecidos
+[a] Mais Oferecidos
+[a] Ouro Português (19,2kt)
+[a] Conjuntos para Oferta
+[a] Ourivesaria Tradicional
+[a] Saudade de Portugal
+[a] Fátima
+[a] Casamento
+[a] Presentes com Diamantes
+[a] Presentes com Pérolas
+[a] Cartão Oferta
+[a] Quem vai Receber
+[a] Amante de Prata Dourada
+[a] Prefere Prata
+[a] Religiosa
+[a] Para Ele
+[a] Comprar por Preço
+[a] Presentes Até 50
+[a] Presentes Até 100
+[a] Presentes Até 250
+[a] Presentes de Luxo
+[a] Brincos
+[a] Colares
+[a] Anéis
+[p] País/região
+[label] Pesquisar
+[span] Afeganistão
+[span] África do Sul
+[span] Alanda
+[span] Albânia
+[span] Alemanha
+[span] Andorra
+[span] Angola
+[span] Anguila
+[span] Antígua e Barbuda
+[span] Arábia Saudita
+[span] Argélia
+[span] Argentina
+[span] Arménia
+[span] Aruba
+[span] Austrália
+[span] Áustria
+[span] Azerbaijão
+[span] Baamas
+[span] Bangladeche
+[span] Barbados
+[span] Barém
+[span] Bélgica
+[span] Belize
+[span] Benim
+[span] Bermudas
+[span] Bielorrússia
+[span] Bolívia
+[span] Bósnia e Herzegovina
+[span] Botsuana
+[span] Brunei
+[span] Bulgária
+[span] Burquina Faso
+[span] Burundi
+[span] Butão
+[span] Cabo Verde
+[span] Camarões
+[span] Camboja
+[span] Canadá
+[span] Catar
+[span] Cazaquistão
+[span] Chade
+[span] Chéquia
+[span] Chile
+[span] China
+[span] Chipre
+[span] Cidade do Vaticano
+[span] Colômbia
+[span] Comores
+[span] Congo-Brazzaville
+[span] Congo-Kinshasa
+[span] Coreia do Sul
+[span] Costa Rica
+[span] Côte d’Ivoire (Costa do Marfim)
+[span] Croácia
+[span] Curaçau
+[span] Dinamarca
+[span] Domínica
+[span] Egito
+[span] Emirados Árabes Unidos
+[span] Equador
+[span] Eritreia
+[span] Eslováquia
+[span] Eslovénia
+[span] Espanha
+[span] Essuatíni
+[span] Estados Unidos
+[span] Estónia
+[span] Etiópia
+[span] Fiji
+[span] Filipinas
+[span] Finlândia
+[span] França
+[span] Gabão
+[span] Gâmbia
+[span] Gana
+[span] Geórgia
+[span] Gibraltar
+[span] Granada
+[span] Grécia
+[span] Gronelândia
+[span] Guadalupe
+[span] Guatemala
+[span] Guernesey
+[span] Guiana
+[span] Guiana Francesa
+[span] Guiné
+[span] Guiné Equatorial
+[span] Guiné-Bissau
+[span] Haiti
+[span] Honduras
+[span] Hong Kong, RAE da China
+[span] Hungria
+[span] Iémen
+[span] Ilha Norfolk
+[span] Ilha de Ascensão
+[span] Ilha de Man
+[span] Ilha do Natal
+[span] Ilhas Caimão
+[span] Ilhas Cook
+[span] Ilhas Falkland
+[span] Ilhas Faroé
+[span] Ilhas Geórgia do Sul e Sandwich do Sul
+[span] Ilhas Menores Afastadas dos EUA
+[span] Ilhas Pitcairn
+[span] Ilhas Salomão
+[span] Ilhas Turcas e Caicos
+[span] Ilhas Virgens Britânicas
+[span] Ilhas dos Cocos (Keeling)
+[span] Índia
+[span] Indonésia
+[span] Iraque
+[span] Irlanda
+[span] Islândia
+[span] Israel
+[span] Itália
+[span] Jamaica
+[span] Japão
+[span] Jersey
+[span] Jibuti
+[span] Jordânia
+[span] Kosovo
+[span] Koweit
+[span] Laos
+[span] Lesoto
+[span] Letónia
+[span] Líbano
+[span] Libéria
+[span] Líbia
+[span] Listenstaine
+[span] Lituânia
+[span] Luxemburgo
+[span] Macau, RAE da China
+[span] Macedónia do Norte
+[span] Madagáscar
+[span] Maiote
+[span] Malásia
+[span] Maláui
+[span] Maldivas
+[span] Mali
+[span] Malta
+[span] Marrocos
+[span] Martinica
+[span] Maurícia
+[span] Mauritânia
+[span] México
+[span] Mianmar (Birmânia)
+[span] Moçambique
+[span] Moldávia
+[span] Mónaco
+[span] Mongólia
+[span] Monserrate
+[span] Montenegro
+[span] Namíbia
+[span] Nauru
+[span] Nepal
+[span] Nicarágua
+[span] Níger
+[span] Nigéria
+[span] Niuê
+[span] Noruega
+[span] Nova Caledónia
+[span] Nova Zelândia
+[span] Omã
+[span] Países Baixos
+[span] Países Baixos Caribenhos
+[span] Panamá
+[span] Papua-Nova Guiné
+[span] Paquistão
+[span] Paraguai
+[span] Peru
+[span] Polinésia Francesa
+[span] Polónia
+[span] Portugal
+[span] Quénia
+[span] Quirguistão
+[span] Quiribáti
+[span] Reino Unido
+[span] República Centro-Africana
+[span] República Dominicana
+[span] Reunião
+[span] Roménia
+[span] Ruanda
+[span] Rússia
+[span] Salvador
+[span] Samoa
+[span] Santa Helena
+[span] Santa Lúcia
+[span] São Bartolomeu
+[span] São Cristóvão e Neves
+[span] São Marinho
+[span] São Martinho
+[span] São Martinho (Sint Maarten)
+[span] São Pedro e Miquelão
+[span] São Tomé e Príncipe
+[span] São Vicente e Granadinas
+[span] Sara Ocidental
+[span] Seicheles
+[span] Senegal
+[span] Serra Leoa
+[span] Sérvia
+[span] Singapura
+[span] Somália
+[span] Sri Lanca
+[span] Sudão
+[span] Sudão do Sul
+[span] Suécia
+[span] Suíça
+[span] Suriname
+[span] Svalbard e Jan Mayen
+[span] Tailândia
+[span] Taiwan
+[span] Tajiquistão
+[span] Tanzânia
+[span] Território Britânico do Oceano Índico
+[span] Territórios Austrais Franceses
+[span] Territórios palestinianos
+[span] Timor-Leste
+[span] Togo
+[span] Tonga
+[span] Toquelau
+[span] Trindade e Tobago
+[span] Tristão da Cunha
+[span] Tunísia
+[span] Turquemenistão
+[span] Turquia
+[span] Tuvalu
+[span] Ucrânia
+[span] Uganda
+[span] Uruguai
+[span] Usbequistão
+[span] Vanuatu
+[span] Venezuela
+[span] Vietname
+[span] Wallis e Futuna
+[span] Zâmbia
+[span] Zimbabué
+[p] Idioma
+[span] Português
+[span] Español
+[span] Français
+[span] English
+[span] Deutsch
+[span] Iniciar sessão
+[span] Carrinho
+[label] Pesquisar
+[p] Joias
+[p] Presentes
+[p] Brincos
+[p] Colares
+[p] Anéis
+[p] Joias
+[p] Categorias
+[p] Novidades
+[p] Mais Vendidos
+[p] Brincos
+[p] Colares
+[p] Anéis
+[p] Pulseiras
+[p] Alfinetes
+[p] Ver tudo
+[p] Joias Em
+[p] Ouro Português (19,2kt)
+[p] Prata Dourada
+[p] Prata
+[p] Joias Com
+[p] Pérolas
+[p] Esmalte
+[p] Pedras Coloridas
+[p] Cristal de Rocha
+[p] Diamantes
+[p] Ourivesaria Tradicional
+[p] Coração de Viana
+[p] Brincos À Rainha
+[p] Contas de Viana
+[p] Caramujos
+[p] Filigrana
+[p] Minas Novas
+[p] Barroco
+[p] Marcassites
+[p] Religioso
+[p] Coleções
+[p] Coração Derretido
+[p] Azulejo Esmalte
+[p] Ciclo da Natureza
+[p] Formas Geométricas
+[p] Dar Cor à Tradição
+[p] Escudo
+[p] Símbolos Portugueses
+[p] Amuletos Filigrana
+[p] Colaborações
+[p] A Vida Portuguesa
+[p] Amália Rodrigues
+[p] Gulbenkian
+[p] Ana Moura
+[p] TAP Air Portugal
+[p] Presentes
+[p] Mais Oferecidos
+[p] Mais Oferecidos
+[p] Ouro Português (19,2kt)
+[p] Conjuntos para Oferta
+[p] Ourivesaria Tradicional
+[p] Saudade de Portugal
+[p] Fátima
+[p] Casamento
+[p] Presentes com Diamantes
+[p] Presentes com Pérolas
+[p] Cartão Oferta
+[p] Quem vai Receber
+[p] Amante de Prata Dourada
+[p] Prefere Prata
+[p] Religiosa
+[p] Para Ele
+[p] Comprar por Preço
+[p] Presentes Até 50
+[p] Presentes Até 100
+[p] Presentes Até 250
+[p] Presentes de Luxo
+[p] Brincos
+[p] Ver tudo — Brincos
+[p] Colares
+[p] Ver tudo — Colares
+[p] Anéis
+[p] Ver tudo — Anéis
+[p] Brincos
+[p] Colares
+[p] Anéis
+[p] Pulseiras
+[span] Iniciar sessão
+[span] Iniciar sessão
+[p] País/região
+[label] Pesquisar
+[span] Afeganistão
+[span] África do Sul
+[span] Alanda
+[span] Albânia
+[span] Alemanha
+[span] Andorra
+[span] Angola
+[span] Anguila
+[span] Antígua e Barbuda
+[span] Arábia Saudita
+[span] Argélia
+[span] Argentina
+[span] Arménia
+[span] Aruba
+[span] Austrália
+[span] Áustria
+[span] Azerbaijão
+[span] Baamas
+[span] Bangladeche
+[span] Barbados
+[span] Barém
+[span] Bélgica
+[span] Belize
+[span] Benim
+[span] Bermudas
+[span] Bielorrússia
+[span] Bolívia
+[span] Bósnia e Herzegovina
+[span] Botsuana
+[span] Brunei
+[span] Bulgária
+[span] Burquina Faso
+[span] Burundi
+[span] Butão
+[span] Cabo Verde
+[span] Camarões
+[span] Camboja
+[span] Canadá
+[span] Catar
+[span] Cazaquistão
+[span] Chade
+[span] Chéquia
+[span] Chile
+[span] China
+[span] Chipre
+[span] Cidade do Vaticano
+[span] Colômbia
+[span] Comores
+[span] Congo-Brazzaville
+[span] Congo-Kinshasa
+[span] Coreia do Sul
+[span] Costa Rica
+[span] Côte d’Ivoire (Costa do Marfim)
+[span] Croácia
+[span] Curaçau
+[span] Dinamarca
+[span] Domínica
+[span] Egito
+[span] Emirados Árabes Unidos
+[span] Equador
+[span] Eritreia
+[span] Eslováquia
+[span] Eslovénia
+[span] Espanha
+[span] Essuatíni
+[span] Estados Unidos
+[span] Estónia
+[span] Etiópia
+[span] Fiji
+[span] Filipinas
+[span] Finlândia
+[span] França
+[span] Gabão
+[span] Gâmbia
+[span] Gana
+[span] Geórgia
+[span] Gibraltar
+[span] Granada
+[span] Grécia
+[span] Gronelândia
+[span] Guadalupe
+[span] Guatemala
+[span] Guernesey
+[span] Guiana
+[span] Guiana Francesa
+[span] Guiné
+[span] Guiné Equatorial
+[span] Guiné-Bissau
+[span] Haiti
+[span] Honduras
+[span] Hong Kong, RAE da China
+[span] Hungria
+[span] Iémen
+[span] Ilha Norfolk
+[span] Ilha de Ascensão
+[span] Ilha de Man
+[span] Ilha do Natal
+[span] Ilhas Caimão
+[span] Ilhas Cook
+[span] Ilhas Falkland
+[span] Ilhas Faroé
+[span] Ilhas Geórgia do Sul e Sandwich do Sul
+[span] Ilhas Menores Afastadas dos EUA
+[span] Ilhas Pitcairn
+[span] Ilhas Salomão
+[span] Ilhas Turcas e Caicos
+[span] Ilhas Virgens Britânicas
+[span] Ilhas dos Cocos (Keeling)
+[span] Índia
+[span] Indonésia
+[span] Iraque
+[span] Irlanda
+[span] Islândia
+[span] Israel
+[span] Itália
+[span] Jamaica
+[span] Japão
+[span] Jersey
+[span] Jibuti
+[span] Jordânia
+[span] Kosovo
+[span] Koweit
+[span] Laos
+[span] Lesoto
+[span] Letónia
+[span] Líbano
+[span] Libéria
+[span] Líbia
+[span] Listenstaine
+[span] Lituânia
+[span] Luxemburgo
+[span] Macau, RAE da China
+[span] Macedónia do Norte
+[span] Madagáscar
+[span] Maiote
+[span] Malásia
+[span] Maláui
+[span] Maldivas
+[span] Mali
+[span] Malta
+[span] Marrocos
+[span] Martinica
+[span] Maurícia
+[span] Mauritânia
+[span] México
+[span] Mianmar (Birmânia)
+[span] Moçambique
+[span] Moldávia
+[span] Mónaco
+[span] Mongólia
+[span] Monserrate
+[span] Montenegro
+[span] Namíbia
+[span] Nauru
+[span] Nepal
+[span] Nicarágua
+[span] Níger
+[span] Nigéria
+[span] Niuê
+[span] Noruega
+[span] Nova Caledónia
+[span] Nova Zelândia
+[span] Omã
+[span] Países Baixos
+[span] Países Baixos Caribenhos
+[span] Panamá
+[span] Papua-Nova Guiné
+[span] Paquistão
+[span] Paraguai
+[span] Peru
+[span] Polinésia Francesa
+[span] Polónia
+[span] Portugal
+[span] Quénia
+[span] Quirguistão
+[span] Quiribáti
+[span] Reino Unido
+[span] República Centro-Africana
+[span] República Dominicana
+[span] Reunião
+[span] Roménia
+[span] Ruanda
+[span] Rússia
+[span] Salvador
+[span] Samoa
+[span] Santa Helena
+[span] Santa Lúcia
+[span] São Bartolomeu
+[span] São Cristóvão e Neves
+[span] São Marinho
+[span] São Martinho
+[span] São Martinho (Sint Maarten)
+[span] São Pedro e Miquelão
+[span] São Tomé e Príncipe
+[span] São Vicente e Granadinas
+[span] Sara Ocidental
+[span] Seicheles
+[span] Senegal
+[span] Serra Leoa
+[span] Sérvia
+[span] Singapura
+[span] Somália
+[span] Sri Lanca
+[span] Sudão
+[span] Sudão do Sul
+[span] Suécia
+[span] Suíça
+[span] Suriname
+[span] Svalbard e Jan Mayen
+[span] Tailândia
+[span] Taiwan
+[span] Tajiquistão
+[span] Tanzânia
+[span] Território Britânico do Oceano Índico
+[span] Territórios Austrais Franceses
+[span] Territórios palestinianos
+[span] Timor-Leste
+[span] Togo
+[span] Tonga
+[span] Toquelau
+[span] Trindade e Tobago
+[span] Tristão da Cunha
+[span] Tunísia
+[span] Turquemenistão
+[span] Turquia
+[span] Tuvalu
+[span] Ucrânia
+[span] Uganda
+[span] Uruguai
+[span] Usbequistão
+[span] Vanuatu
+[span] Venezuela
+[span] Vietname
+[span] Wallis e Futuna
+[span] Zâmbia
+[span] Zimbabué
+[p] Idioma
+[span] Português
+[span] Español
+[span] Français
+[span] English
+[span] Deutsch
+[h2] À BEIRA
+[h1] Um modo de ser
+[a] COMPRAR O MAIS DESEJADO
+[h2] Os Favoritos
+[span] VER TUDO
+[h3] Anel Sete Escravas em Prata Dourada
+[span] Preço normal
+[span] 89€
+[span] Preço de saldo
+[span] 89€
+[span] Preço normal
+[span] Preço unitário
+[span] por
+[span] Ouro
+[h3] Colar Iniciais em Prata Dourada
+[span] Preço normal
+[span] A partir de 89€
+[span] Preço de saldo
+[span] A partir de 89€
+[span] Preço normal
+[span] Preço unitário
+[span] por
+[span] Ouro
+[h3] Pulseira Sete Escravas em Prata Dourada
+[span] Preço normal
+[span] 279€
+[span] Preço de saldo
+[span] 279€
+[span] Preço normal
+[span] Preço unitário
+[span] por
+[span] Ouro
+[h3] Pulseira Escudo em Prata Dourada com Fio
+[span] Preço normal
+[span] 45€
+[span] Preço de saldo
+[span] 45€
+[span] Preço normal
+[span] Preço unitário
+[span] por
+[span] Ouro
+[h3] Colar Escapulário em Prata Dourada
+[span] Preço normal
+[span] 109€
+[span] Preço de saldo
+[span] 109€
+[span] Preço normal
+[span] Preço unitário
+[span] por
+[h3] Pulseira Escudo em Prata com Fio
+[span] Preço normal
+[span] 45€
+[span] Preço de saldo
+[span] 45€
+[span] Preço normal
+[span] Preço unitário
+[span] por
+[span] Prata
+[h3] Brincos Caramujo em Ouro 19,2Kt
+[span] Preço normal
+[span] 1.200€
+[span] Preço de saldo
+[span] 1.200€
+[span] Preço normal
+[span] Preço unitário
+[span] por
+[h3] Brincos à Rainha M em Prata Dourada
+[span] Preço normal
+[span] 129€
+[span] Preço de saldo
+[span] 129€
+[span] Preço normal
+[span] Preço unitário
+[span] por
+[span] Ouro
+[h3] Brincos Coração de Viana XS em Ouro 19,2Kt
+[span] Preço normal
+[span] 1.100€
+[span] Preço de saldo
+[span] 1.100€
+[span] Preço normal
+[span] Preço unitário
+[span] por
+[h3] Brincos Azulejo em Prata Dourada
+[span] Preço normal
+[span] 119€
+[span] Preço de saldo
+[span] 119€
+[span] Preço normal
+[span] Preço unitário
+[span] por
+[span] Ouro
+[h3] Anel Sete Escravas em Prata
+[span] Preço normal
+[span] 89€
+[span] Preço de saldo
+[span] 89€
+[span] Preço normal
+[span] Preço unitário
+[span] por
+[span] Prata
+[h3] Brincos Caramujo em Prata Dourada
+[span] Preço normal
+[span] 59€
+[span] Preço de saldo
+[span] 59€
+[span] Preço normal
+[span] Preço unitário
+[span] por
+[span] Ouro
+[h3] Colar Coração Cheio em Ouro 19,2Kt com Diamante
+[span] Preço normal
+[span] 1.300€
+[span] Preço de saldo
+[span] 1.300€
+[span] Preço normal
+[span] Preço unitário
+[span] por
+[h3] Brincos à Rainha S em Prata Dourada
+[span] Preço normal
+[span] 85€
+[span] Preço de saldo
+[span] 85€
+[span] Preço normal
+[span] Preço unitário
+[span] por
+[span] Ouro
+[h3] Colar Escudo em Prata Dourada
+[span] Preço normal
+[span] 59€
+[span] Preço de saldo
+[span] 59€
+[span] Preço normal
+[span] Preço unitário
+[span] por
+[span] Ouro
+[h3] Colar Contas de Viana em Ouro 19,2Kt com Malaquite
+[span] Preço normal
+[span] 1.900€
+[span] Preço de saldo
+[span] 1.900€
+[span] Preço normal
+[span] Preço unitário
+[span] por
+[h3] Colar Conta de Viana em Prata Dourada
+[span] Preço normal
+[span] 49€
+[span] Preço de saldo
+[span] 49€
+[span] Preço normal
+[span] Preço unitário
+[span] por
+[span] Ouro
+[h3] Colar Coração de Viana em Prata Dourada
+[span] Preço normal
+[span] 49€
+[span] Preço de saldo
+[span] 49€
+[span] Preço normal
+[span] Preço unitário
+[span] por
+[h3] Colar Nossa Senhora de Fátima em Prata Dourada
+[span] Preço normal
+[span] 49€
+[span] Preço de saldo
+[span] 49€
+[span] Preço normal
+[span] Preço unitário
+[span] por
+[span] Ouro
+[h3] Colar Coração de Viana 2,5cm em Prata Dourada
+[span] Preço normal
+[span] 65€
+[span] Preço de saldo
+[span] 65€
+[span] Preço normal
+[span] Preço unitário
+[span] por
+[span] Ouro
+[h3] Colar Sardinha em Prata Dourada
+[span] Preço normal
+[span] 49€
+[span] Preço de saldo
+[span] 49€
+[span] Preço normal
+[span] Preço unitário
+[span] por
+[span] Ouro
+[h3] Brincos à Princesa em Prata Dourada
+[span] Preço normal
+[span] 75€
+[span] Preço de saldo
+[span] 75€
+[span] Preço normal
+[span] Preço unitário
+[span] por
+[span] Ouro
+[h3] Brincos à Rainha XS em Prata Dourada
+[span] Preço normal
+[span] 45€
+[span] Preço de saldo
+[span] 45€
+[span] Preço normal
+[span] Preço unitário
+[span] por
+[span] Ouro
+[h3] Colar Coração de Viana S em Ouro 19,2Kt
+[span] Preço normal
+[span] 1.100€
+[span] Preço de saldo
+[span] 1.100€
+[span] Preço normal
+[span] Preço unitário
+[span] por
+[h3] Colar Caramujo em Ouro 19,2kt
+[span] Preço normal
+[span] 990€
+[span] Preço de saldo
+[span] 990€
+[span] Preço normal
+[span] Preço unitário
+[span] por
+[h3] Colar Caramujo em Prata Dourada
+[span] Preço normal
+[span] 59€
+[span] Preço de saldo
+[span] 59€
+[span] Preço normal
+[span] Preço unitário
+[span] por
+[span] Ouro
+[h3] Colar Coração de Viana Azul em Prata Dourada
+[span] Preço normal
+[span] 59€
+[span] Preço de saldo
+[span] 59€
+[span] Preço normal
+[span] Preço unitário
+[span] por
+[span] Ouro
+[h3] Brincos Flor em Prata Dourada
+[span] Preço normal
+[span] 45€
+[span] Preço de saldo
+[span] 45€
+[span] Preço normal
+[span] Preço unitário
+[span] por
+[span] Ouro
+[h3] Colar Coração de Viana 4,5 cm em Prata Dourada
+[span] Preço normal
+[span] 129€
+[span] Preço de saldo
+[span] 129€
+[span] Preço normal
+[span] Preço unitário
+[span] por
+[span] Ouro
+[h3] Brincos Gramalheira em Prata Dourada
+[span] Preço normal
+[span] 229€
+[span] Preço de saldo
+[span] 229€
+[span] Preço normal
+[span] Preço unitário
+[span] por
+[span] COMPRAR BRINCOS
+[span] COMPRAR PULSEIRAS
+[span] COMPRAR ANÉIS
+[span] COMPRAR COLARES
+[h3] Feito à mão em Portugal, celebrado em todo o mundo
+[p] Um Negócio Familiar Desde 1955
+[span] A NOSSA HISTÓRIA
+[p] Artes Centenárias, Ainda Vivas
+[span] MESTRIA ARTESANAL
+[h2] Ouro Português 19,2Kt
+[p] Um padrão superior: um dos ouros mais puros do mundo.
+[span] VER MAIS
+[h3] Brincos Coração de Viana M em Ouro 19,2Kt
+[span] Preço normal
+[span] 3.100€
+[span] Preço de saldo
+[span] 3.100€
+[span] Preço normal
+[span] Preço unitário
+[span] por
+[h3] Colar Nossa Senhora de Fátima em Ouro 19,2Kt
+[span] Preço normal
+[span] 1.100€
+[span] Preço de saldo
+[span] 1.100€
+[span] Preço normal
+[span] Preço unitário
+[span] por
+[h3] Brincos Conta de Viana em Ouro 19,2Kt com Pérolas Barrocas
+[span] Preço normal
+[span] 920€
+[span] Preço de saldo
+[span] 920€
+[span] Preço normal
+[span] Preço unitário
+[span] por
+[h3] Brincos Conta de Viana em Ouro 19,2Kt
+[span] Preço normal
+[span] 450€
+[span] Preço de saldo
+[span] 450€
+[span] Preço normal
+[span] Preço unitário
+[span] por
+[h3] Brincos à Rainha XS em Ouro 19,2Kt
+[span] Preço normal
+[span] 850€
+[span] Preço de saldo
+[span] 850€
+[span] Preço normal
+[span] Preço unitário
+[span] por
+[h2] Onde Nos Encontrar
+[p] Duas lojas de referência em Lisboa e uma rede selecionada de pontos de venda.
+[h3] Loja do Chiado
+[p] No número 4 do Largo do Chiado em Lisboa, reabrimos as portas de um espaço com mais de 130 anos de história.
+[a] Descubra a Loja do Chiado
+[h3] Loja da Baixa
+[p] Na Rua Áurea, na Baixa de Lisboa, abrimos as portas de um edifício datado de 1819.
+[a] Descubra a loja da Baixa
+[h3] Pontos de Venda
+[p] Da Gulbenkian ao Palácio da Pena, e em pontos de venda selecionados em todo o mundo.
+[a] Encontre um Ponto de Venda
+[p] 30 dias para Trocas e Devoluções
+[p] 36 meses de Garantia
+[p] Materiais Premium Certificados
+[p] Avaliação dos Clientes 4,9/5 Estrelas
+[p] Envio Expresso
+[a] Os nossos clientes
+[strong] Foi a minha primeira compra
+[p] Foi a minha primeira compra e posso dizer que desde a consulta do site com descrições super completas, ao processo da encomenda super rápido à entrega, às jóias lindas e perfeitas foi uma experiência 7*!
+[p] Alexandra Nogueira
+[strong] Excelente apresentação dos produtos
+[p] Excelente apresentação dos produtos, comunicação célere, transporte rápido e seguro. Fiquei cliente.
+[p] João Vagos
+[strong] Entrega rápida
+[p] Entrega rápida, bem embalada, joia de bastante qualidade com certificado de garantia. Estou bastante satisfeita! Irei comprar de novo.
+[p] Carla P.
+[strong] Apresentação elegante e cuidada
+[p] Gosto da forma como as peças são apresentadas, a embalagem elegante e cuidada e a peça muito bonita corresponde inteiramente ao esperado. Entrega muito rápida.
+[p] Isabel P.
+[strong] Rapidez
+[p] Rapidez, eficiência, costumização de cartão para presente acima de tudo produtos LINDOS! Obrigada!
+[p] Sofia Oliveira
+[span] Junte-se à nossa comunidade
+[div] Subscreva a newsletter da Portugal Jewels e seja o primeiro a saber as nossas novidades, novas coleções e ofertas especiais.
+[p] PODEMOS AJUDAR?
+[p] LIGUE-NOS +351 967 394 055
+[p] ESCREVA-NOS NO WHATSAPP
+[p] FAQ
+[p] CONTACTOS
+[p] INFORMAÇÕES ÚTEIS
+[p] ENVIOS E DEVOLUÇÕES
+[p] GARANTIA
+[p] POLÍTICA DE PRIVACIDADE
+[p] TERMOS E CONDIÇÕES
+[p] LIVRO DE RECLAMAÇÕES
+[p] REVENDA B2B
+[p] SOBRE NÓS
+[p] NOSSA HISTÓRIA
+[p] MESTRIA ARTESANAL
+[p] OURIVESARIA TRADICIONAL
+[p] AVALIAÇÕES
+[p] LOJAS
+[p] SOCIAL
+[p] INSTAGRAM
+[p] FACEBOOK
+[p] TIK TOK
+[p] © Portugal Jewels
+[span] Métodos de pagamento
+[title] Visa
+[title] Mastercard
+[title] American Express
+[title] PayPal
+[title] Klarna
+[title] Multibanco
+[title] MB WAY
+[title] Apple Pay
+[title] Google Pay
+[li] Escolher uma seleção resulta numa atualização de página completa.
+[li] Abre numa nova janela.
