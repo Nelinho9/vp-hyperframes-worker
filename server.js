@@ -266,6 +266,7 @@ async function runRender(jobId, jobDir) {
     };
 
     // Upload to Supabase (if configured)
+    const uploaded = {};
     if (supabase) {
       const mp4Buf = readFileSync(outputPath);
       const { error } = await supabase.storage
@@ -275,12 +276,64 @@ async function runRender(jobId, jobDir) {
           upsert: true,
         });
       if (error) job.upload_error = error.message;
-      else job.output.mp4_url = `projects/${job.project_id}/renders/output.mp4`;
+      else {
+        job.output.mp4_url = `projects/${job.project_id}/renders/output.mp4`;
+        uploaded.mp4 = true;
+      }
+    }
+
+    // Callback to orchestrator (V4-1 contract)
+    if (job.callback?.url) {
+      try {
+        await fetch(job.callback.url, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "X-Worker-Secret": job.callback.secret || "",
+          },
+          body: JSON.stringify({
+            job_id: job.id,
+            project_id: job.project_id,
+            step: job.step,
+            status: "done",
+            timings,
+            uploaded,
+            total_ms: job.total_ms,
+          }),
+        });
+        console.log(`[callback] sent done for job ${job.id}`);
+      } catch (cbErr) {
+        console.error(`[callback] failed: ${cbErr.message}`);
+      }
     }
   } catch (err) {
     job.status = "failed";
     job.error = err.message;
     job.total_ms = Date.now() - startTime;
+
+    // Callback to orchestrator on failure
+    if (job.callback?.url) {
+      try {
+        await fetch(job.callback.url, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "X-Worker-Secret": job.callback.secret || "",
+          },
+          body: JSON.stringify({
+            job_id: job.id,
+            project_id: job.project_id,
+            step: job.step,
+            status: "failed",
+            error: err.message,
+            total_ms: job.total_ms,
+          }),
+        });
+        console.log(`[callback] sent failed for job ${job.id}`);
+      } catch (cbErr) {
+        console.error(`[callback] failed: ${cbErr.message}`);
+      }
+    }
   }
 }
 
