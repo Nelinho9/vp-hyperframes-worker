@@ -6,11 +6,16 @@
   "description": "VisttaPro HyperFrames render worker (V4-1) — dumb worker: no Supabase secrets, signed URL I/O + callback secret.",
   "main": "server.js",
   "scripts": {
-    "start": "node server.js"
+    "start": "node server.js",
+    "test": "vitest run preview-injection.test.ts",
+    "test:all": "vitest run"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.49.0",
     "express": "^4.21.0",
     "linkedom": "^0.18.5"
+  },
+  "devDependencies": {
+    "vitest": "^3.2.4"
   }
 }

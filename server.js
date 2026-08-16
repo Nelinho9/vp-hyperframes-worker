@@ -18,6 +18,8 @@ import { createClient } from "@supabase/supabase-js";
 import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync } from "fs";
 import { join, basename, dirname } from "path";
 import { randomUUID } from "crypto";
+import { pathToFileURL } from "url";
+import { injectPreviewHelper } from "./preview-helper.js";
 
 const app = express();
 app.use(express.json({ limit: "200mb" }));
@@ -122,14 +124,20 @@ app.post("/job", async (req, res) => {
   // Track by project_id for preview lookup
   projectJobs.set(project_id, jobId);
 
-  // Run render asynchronously
-  runRender(jobId, jobDir).catch((err) => {
-    const job = jobs.get(jobId);
-    if (job) {
-      job.status = "failed";
-      job.error = err.message;
-    }
-  });
+  // mode:'preview' stages the composition only (no HyperFrames CLI run) —
+  // used for editor previews and contract tests (V4-3f.3).
+  if (body.mode !== "preview") {
+    // Run render asynchronously
+    runRender(jobId, jobDir).catch((err) => {
+      const job = jobs.get(jobId);
+      if (job) {
+        job.status = "failed";
+        job.error = err.message;
+      }
+    });
+  } else {
+    jobs.get(jobId).status = "staged";
+  }
 
   res.json({ job_id: jobId, status: "queued" });
 });
@@ -191,8 +199,10 @@ app.get("/preview/:id", (req, res) => {
     return res.status(404).json({ error: "index.html not found" });
   }
 
-  // Serve the HTML with assets from the job dir
-  res.sendFile(indexPath);
+  // V4-3f.3 (A3): inject the click-to-edit helper script before serving so
+  // the editor iframe can select elements and receive hot-swap patches.
+  const html = readFileSync(indexPath, "utf-8");
+  res.type("html").send(injectPreviewHelper(html));
 });
 
 // Serve static assets from job dirs
@@ -338,9 +348,18 @@ async function runRender(jobId, jobDir) {
 }
 
 // ─ Start ───────────────────────────────────────────────────────────
-app.listen(PORT, "0.0.0.0", () => {
-  console.log(`HyperFrames worker listening on :${PORT}`);
-  console.log(`Chrome: ${CHROME_PATH}`);
-  console.log(`Work dir: ${WORK_DIR}`);
-  console.log(`Supabase: ${supabase ? "connected" : "not configured"}`);
-});
+// Only listen when executed directly (`node server.js`); when imported by
+// tests the app is exported without binding a port.
+const isMain =
+  process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href;
+
+if (isMain) {
+  app.listen(PORT, "0.0.0.0", () => {
+    console.log(`HyperFrames worker listening on :${PORT}`);
+    console.log(`Chrome: ${CHROME_PATH}`);
+    console.log(`Work dir: ${WORK_DIR}`);
+    console.log(`Supabase: ${supabase ? "connected" : "not configured"}`);
+  });
+}
+
+export { app, injectPreviewHelper };
