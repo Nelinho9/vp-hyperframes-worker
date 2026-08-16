@@ -49,7 +49,7 @@ app.post("/job", async (req, res) => {
   const project_id = body.project_id;
   const step = body.step;
   // Accept both formats: direct index_html OR nested in inputs (orchestrator format)
-  const index_html = body.index_html || body.inputs?.index_html || body.inputs?.index_html_url;
+  let index_html = body.index_html || body.inputs?.index_html || body.inputs?.index_html_url;
   const callback = body.callback;
   const outputs = body.outputs;
   const artifact_paths = body.artifact_paths;
@@ -62,6 +62,19 @@ app.post("/job", async (req, res) => {
   // the job but mark it as waiting for content.
   if (!index_html) {
     return res.status(400).json({ error: "index_html or inputs.index_html required" });
+  }
+
+  // V4-debug3: LLM may return JSON wrapper {title, duration, html} instead of
+  // raw HTML. Extract the html field if so.
+  if (typeof index_html === 'string' && index_html.trim().startsWith('{')) {
+    try {
+      const parsed = JSON.parse(index_html);
+      if (parsed.html) {
+        index_html = parsed.html;
+      }
+    } catch {
+      // Not valid JSON — use as-is (it's HTML)
+    }
   }
 
   const jobId = body.job_id || randomUUID();
