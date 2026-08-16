@@ -81,6 +81,20 @@ app.post("/job", async (req, res) => {
   const jobDir = join(WORK_DIR, jobId);
   mkdirSync(join(jobDir, "assets"), { recursive: true });
 
+  // Post-process: fix incorrect HyperFrames runtime CDN URLs
+  const CORRECT_RUNTIME = "https://cdn.jsdelivr.net/npm/@heygen/hyperframes@0.7.109/dist/hyperframes.min.js";
+  if (typeof index_html === 'string') {
+    // Replace common wrong CDN URLs with the correct one
+    index_html = index_html
+      .replace(/https?:\/\/cdn\.hyperframes\.io\/[^"'\s]*/g, CORRECT_RUNTIME)
+      .replace(/https?:\/\/unpkg\.com\/[^"'\s]*hyperframes[^"'\s]*/g, CORRECT_RUNTIME)
+      .replace(/https?:\/\/cdn\.jsdelivr\.net\/npm\/hyperframes[^"'\s]*/g, CORRECT_RUNTIME);
+    // If no runtime script tag at all, inject one before </head>
+    if (!index_html.includes('hyperframes') && index_html.includes('</head>')) {
+      index_html = index_html.replace('</head>', `<script src="${CORRECT_RUNTIME}"></script>\n</head>`);
+    }
+  }
+
   // Write the composition HTML
   writeFileSync(join(jobDir, "index.html"), index_html);
 
