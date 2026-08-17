@@ -13,7 +13,7 @@
  * refactor (V4-1 TDD spec) that was never implemented in server.js; it stays
  * out of the default test run until that refactor lands.
  */
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import http from 'node:http';
 import vm from 'node:vm';
 import { app } from './server.js';
@@ -22,6 +22,7 @@ import {
   PREVIEW_HELPER_SCRIPT,
   HELPER_SCRIPT_ID,
 } from './preview-helper.js';
+import { createPreviewToken } from './preview-token.js';
 
 const COMPOSITION_HTML = `<!doctype html>
 <html><head><title>t</title></head>
@@ -36,6 +37,12 @@ const COMPOSITION_HTML = `<!doctype html>
 let server: http.Server;
 let base: string;
 
+// server.js is plain JS — the static import infers loosely; narrow to the
+// surface the tests use (same pattern as job-persistence.test.ts).
+const workerApp = app as unknown as {
+  listen: (port: number, host: string) => http.Server;
+};
+
 function post(path: string, body: unknown) {
   return fetch(`${base}${path}`, {
     method: 'POST',
@@ -45,7 +52,7 @@ function post(path: string, body: unknown) {
 }
 
 beforeAll(async () => {
-  server = app.listen(0, '127.0.0.1');
+  server = workerApp.listen(0, '127.0.0.1');
   await new Promise<void>((r) => server.once('listening', () => r()));
   base = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
 });
@@ -149,5 +156,90 @@ describe('GET /preview/:id — injeção sobre HTTP', () => {
   it('404 para projeto inexistente', async () => {
     const res = await fetch(`${base}/preview/nao-existe`);
     expect(res.status).toBe(404);
+  });
+});
+
+describe('GET /preview/:id — enforcement do token HMAC (V4-3g.5, R5)', () => {
+  const SECRET = 'test-preview-secret';
+  const PROJECT = 'proj-token-guard';
+
+  // The server reads PREVIEW_SECRET once at module load — boot a fresh
+  // instance per scenario via resetModules + dynamic import.
+  let booted: { srv: http.Server; base: string } | null = null;
+
+  async function bootWorker(secret?: string) {
+    vi.resetModules();
+    if (secret === undefined) delete process.env.PREVIEW_SECRET;
+    else process.env.PREVIEW_SECRET = secret;
+    const mod = (await import('./server.js')) as unknown as {
+      app: { listen: (port: number, host: string) => http.Server };
+    };
+    const srv = mod.app.listen(0, '127.0.0.1');
+    await new Promise<void>((r) => srv.once('listening', () => r()));
+    return { srv, base: `http://127.0.0.1:${(srv.address() as { port: number }).port}` };
+  }
+
+  async function stage(b: string) {
+    const res = await fetch(`${b}/job`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        job_id: 'job-token-guard',
+        project_id: PROJECT,
+        mode: 'preview',
+        index_html: COMPOSITION_HTML,
+      }),
+    });
+    expect(res.status).toBe(200);
+  }
+
+  afterEach(async () => {
+    if (booted) await new Promise((r) => booted!.srv.close(r));
+    booted = null;
+    delete process.env.PREVIEW_SECRET;
+    vi.resetModules();
+  });
+
+  it('401 { error: invalid_token } sem token quando PREVIEW_SECRET está definido', async () => {
+    booted = await bootWorker(SECRET);
+    await stage(booted.base);
+    const res = await fetch(`${booted.base}/preview/${PROJECT}`);
+    // 401 (não 404) para o polling do Studio distinguir "não autorizado" de
+    // "ainda não staged".
+    expect(res.status).toBe(401);
+    expect(await res.json()).toEqual({ error: 'invalid_token' });
+  });
+
+  it('401 com token expirado', async () => {
+    booted = await bootWorker(SECRET);
+    await stage(booted.base);
+    const expired = createPreviewToken(PROJECT, SECRET, { now: Date.now() - 60_000, ttlMs: 1000 });
+    const res = await fetch(`${booted.base}/preview/${PROJECT}?token=${expired}`);
+    expect(res.status).toBe(401);
+    expect(await res.json()).toEqual({ error: 'invalid_token' });
+  });
+
+  it('401 com assinatura adulterada', async () => {
+    booted = await bootWorker(SECRET);
+    await stage(booted.base);
+    const tampered = createPreviewToken(PROJECT, 'outro-secret');
+    const res = await fetch(`${booted.base}/preview/${PROJECT}?token=${tampered}`);
+    expect(res.status).toBe(401);
+  });
+
+  it('200 com token válido (staging prévio)', async () => {
+    booted = await bootWorker(SECRET);
+    await stage(booted.base);
+    const token = createPreviewToken(PROJECT, SECRET);
+    const res = await fetch(`${booted.base}/preview/${PROJECT}?token=${token}`);
+    expect(res.status).toBe(200);
+    expect(await res.text()).toContain(`id="${HELPER_SCRIPT_ID}"`);
+  });
+
+  it('200 sem token quando PREVIEW_SECRET NÃO está definido (comportamento legacy)', async () => {
+    booted = await bootWorker(undefined);
+    await stage(booted.base);
+    const res = await fetch(`${booted.base}/preview/${PROJECT}`);
+    expect(res.status).toBe(200);
   });
 });

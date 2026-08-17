@@ -20,6 +20,7 @@ import { join, basename, dirname } from "path";
 import { randomUUID } from "crypto";
 import { pathToFileURL } from "url";
 import { injectPreviewHelper } from "./preview-helper.js";
+import { verifyPreviewToken } from "./preview-token.js";
 
 const app = express();
 app.use(express.json({ limit: "200mb" }));
@@ -30,6 +31,9 @@ const WORK_DIR = process.env.WORK_DIR || "/tmp/hyperframes-worker";
 const SUPABASE_URL = process.env.SUPABASE_URL || "";
 const SUPABASE_KEY = process.env.SUPABASE_KEY || "";
 const CHROME_PATH = process.env.CHROME_PATH || "/usr/bin/chromium";
+// V4-3g.5 (R5): quando definido, GET /preview/:id exige ?token= HMAC válido
+// (mesmo segredo que VIDEO_V4_PREVIEW_SECRET no orchestrator edge).
+const PREVIEW_SECRET = process.env.PREVIEW_SECRET || "";
 
 const supabase = SUPABASE_URL && SUPABASE_KEY
   ? createClient(SUPABASE_URL, SUPABASE_KEY)
@@ -275,6 +279,18 @@ function previewCors(req, res, next) {
 app.options("/preview/:id", previewCors);
 app.options("/preview/:id/assets/:file", previewCors);
 app.get("/preview/:id", previewCors, (req, res) => {
+  // V4-3g.5 (R5): preview nunca público. Com PREVIEW_SECRET definido, o
+  // token HMAC é obrigatório — 401 (NÃO 404) para o polling do Studio
+  // distinguir "não autorizado" de "ainda não staged". Sem secret, mantém o
+  // comportamento legacy (aviso no boot). O check corre ANTES do lookup para
+  // não revelar a existência do projeto.
+  if (PREVIEW_SECRET) {
+    const token = typeof req.query.token === "string" ? req.query.token : "";
+    if (!verifyPreviewToken(token, req.params.id, PREVIEW_SECRET)) {
+      return res.status(401).json({ error: "invalid_token" });
+    }
+  }
+
   // Lookup by project_id first (orchestrator format), then by job_id
   let job = null;
   const internalJobId = projectJobs.get(req.params.id);
@@ -451,6 +467,11 @@ if (isMain) {
     console.log(`Chrome: ${CHROME_PATH}`);
     console.log(`Work dir: ${WORK_DIR}`);
     console.log(`Supabase: ${supabase ? "connected" : "not configured"}`);
+    if (PREVIEW_SECRET) {
+      console.log("Preview token: enforced (HMAC-SHA256)");
+    } else {
+      console.warn("[worker] PREVIEW_SECRET not set — GET /preview/:id is UNAUTHENTICATED (R5)");
+    }
   });
 }
 
