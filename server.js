@@ -40,6 +40,60 @@ const jobs = new Map();
 // Map project_id → job_id for preview lookup
 const projectJobs = new Map();
 
+// ── Job persistence (V4-3g.3, B6) ──────────────────────────────────
+// POST /job grava um marcador job.json no dir do job; no boot, o scan de
+// WORK_DIR repovoa jobs/projectJobs — os previews sobrevivem a restarts
+// (o volume worker-data já persiste os ficheiros entre deploys).
+function writeJobMarker(jobDir, marker) {
+  try {
+    writeFileSync(join(jobDir, "job.json"), JSON.stringify(marker));
+  } catch (err) {
+    console.warn(`[worker] failed to write job.json in ${jobDir}: ${err.message}`);
+  }
+}
+
+export function rehydrateJobs() {
+  let entries;
+  try {
+    entries = readdirSync(WORK_DIR, { withFileTypes: true });
+  } catch {
+    return; // WORK_DIR inexistente — primeiro boot
+  }
+  const found = [];
+  for (const entry of entries) {
+    if (!entry.isDirectory()) continue;
+    const jobDir = join(WORK_DIR, entry.name);
+    try {
+      const markerPath = join(jobDir, "job.json");
+      if (!existsSync(markerPath)) continue;
+      const marker = JSON.parse(readFileSync(markerPath, "utf-8"));
+      if (!marker?.job_id || !marker?.project_id) continue;
+      // Sem index.html não há nada servível — skip tolerante.
+      if (!existsSync(join(jobDir, "index.html"))) continue;
+      found.push({ marker, jobDir });
+    } catch (err) {
+      console.warn(`[worker] rehydrate: skipping ${entry.name}: ${err.message}`);
+    }
+  }
+  // O job MAIS RECENTE por projeto ganha o mapping (o build faz overwrite
+  // do placeholder staged no /start).
+  found.sort((a, b) => String(a.marker.created_at ?? "").localeCompare(String(b.marker.created_at ?? "")));
+  for (const { marker, jobDir } of found) {
+    jobs.set(marker.job_id, {
+      id: marker.job_id,
+      project_id: marker.project_id,
+      step: marker.step || "render",
+      status: "staged",
+      created_at: marker.created_at || new Date().toISOString(),
+      job_dir: jobDir,
+    });
+    projectJobs.set(marker.project_id, marker.job_id);
+  }
+  if (found.length) console.log(`[worker] rehydrated ${found.length} job(s) from ${WORK_DIR}`);
+}
+
+rehydrateJobs();
+
 /**
  * V4-3f.7: execSync failures carry stdout/stderr Buffers on the error
  * object. Surface them in the job error so the orchestrator (and the
@@ -115,6 +169,15 @@ app.post("/job", async (req, res) => {
 
   // Write the composition HTML
   writeFileSync(join(jobDir, "index.html"), index_html);
+
+  // V4-3g.3 (B6): marcador para reidratação do registry no boot.
+  writeJobMarker(jobDir, {
+    job_id: jobId,
+    project_id,
+    step: step || "render",
+    mode: body.mode === "preview" ? "preview" : "render",
+    created_at: new Date().toISOString(),
+  });
 
   // Write assets if provided
   if (body.assets) {
