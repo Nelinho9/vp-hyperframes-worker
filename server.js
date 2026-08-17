@@ -40,6 +40,22 @@ const jobs = new Map();
 // Map project_id → job_id for preview lookup
 const projectJobs = new Map();
 
+/**
+ * V4-3f.7: execSync failures carry stdout/stderr Buffers on the error
+ * object. Surface them in the job error so the orchestrator (and the
+ * Studio UI) shows actionable lint findings instead of the opaque
+ * "Command failed: npx hyperframes lint ..." message.
+ */
+export function formatExecError(err) {
+  const base = err?.message ?? String(err);
+  const detail = [err?.stderr, err?.stdout]
+    .map((b) => (b ? b.toString() : ""))
+    .filter((s) => s.trim())
+    .join("\n")
+    .trim();
+  return detail ? `${base}\n${detail}`.slice(0, 4000) : base;
+}
+
 // ── Health ──────────────────────────────────────────────────────────
 app.get("/health", (_req, res) => {
   res.json({ ok: true, ts: Date.now(), chrome: CHROME_PATH });
@@ -132,7 +148,7 @@ app.post("/job", async (req, res) => {
       const job = jobs.get(jobId);
       if (job) {
         job.status = "failed";
-        job.error = err.message;
+        job.error = formatExecError(err);
       }
     });
   } else {
@@ -318,7 +334,7 @@ async function runRender(jobId, jobDir) {
     }
   } catch (err) {
     job.status = "failed";
-    job.error = err.message;
+    job.error = formatExecError(err);
     job.total_ms = Date.now() - startTime;
 
     // Callback to orchestrator on failure
@@ -335,7 +351,7 @@ async function runRender(jobId, jobDir) {
             project_id: job.project_id,
             step: job.step,
             status: "failed",
-            error: err.message,
+            error: job.error,
             total_ms: job.total_ms,
           }),
         });

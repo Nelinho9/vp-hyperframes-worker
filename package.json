@@ -7,7 +7,7 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "test": "vitest run preview-injection.test.ts",
+    "test": "vitest run preview-injection.test.ts exec-error.test.ts",
     "test:all": "vitest run"
   },
   "dependencies": {
