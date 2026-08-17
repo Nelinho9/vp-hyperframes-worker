@@ -198,7 +198,20 @@ app.post("/job/:id/patch", (req, res) => {
 });
 
 // ── Serve preview ───────────────────────────────────────────────────
-app.get("/preview/:id", (req, res) => {
+// V4-3f.7: CORS on preview routes so the Studio frontend can poll readiness
+// (fetch GET before mounting the iframe) — avoids the initial 404 while the
+// build job hasn't been staged. Exposure equals iframe embedding (the URL
+// already carries an HMAC token).
+function previewCors(req, res, next) {
+  res.setHeader("Access-Control-Allow-Origin", "*");
+  res.setHeader("Access-Control-Allow-Methods", "GET, OPTIONS");
+  res.setHeader("Access-Control-Allow-Headers", "content-type");
+  if (req.method === "OPTIONS") return res.sendStatus(204);
+  next();
+}
+app.options("/preview/:id", previewCors);
+app.options("/preview/:id/assets/:file", previewCors);
+app.get("/preview/:id", previewCors, (req, res) => {
   // Lookup by project_id first (orchestrator format), then by job_id
   let job = null;
   const internalJobId = projectJobs.get(req.params.id);
@@ -222,7 +235,7 @@ app.get("/preview/:id", (req, res) => {
 });
 
 // Serve static assets from job dirs
-app.get("/preview/:id/assets/:file", (req, res) => {
+app.get("/preview/:id/assets/:file", previewCors, (req, res) => {
   const job = jobs.get(req.params.id);
   if (!job) return res.status(404).json({ error: "not found" });
 
