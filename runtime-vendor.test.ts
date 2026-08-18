@@ -22,8 +22,9 @@ describe("offline runtime vendor", () => {
     expect(result).not.toContain("jsdelivr");
     expect(result).not.toContain("fonts.googleapis");
     expect(result).toContain('data-vp-vendored="gsap"');
-    expect(result).toContain('data-vp-vendored="hyperframes"');
-    expect(result.indexOf('data-vp-vendored="gsap"')).toBeLessThan(result.indexOf('data-vp-vendored="hyperframes"'));
+    expect(result).toContain('src="assets/__vp_gsap.min.js"');
+    expect(result).not.toContain('data-vp-vendored="hyperframes"');
+    expect(result).not.toContain("window.__hf");
   });
 
   it("injects the actual installed bundle shape used by the server", () => {
@@ -36,7 +37,8 @@ describe("offline runtime vendor", () => {
     expect(bundles.hyperframesPath).toBeTruthy();
     expect(bundles.gsapPath).toBeTruthy();
     expect(result).toContain('data-vp-vendored="gsap"');
-    expect(result).toContain('data-vp-vendored="hyperframes"');
+    expect(result).toContain('src="assets/__vp_gsap.min.js"');
+    expect(result).not.toContain(bundles.gsap.slice(0, 80));
   });
 
   it("tolerates only external request/http failures when lint and layout pass", () => {

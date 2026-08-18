@@ -6,6 +6,7 @@ const require = createRequire(import.meta.url);
 const RUNTIME_SCRIPT_RE = /(?:@heygen\/hyperframes|@hyperframes\/core|cdn\.hyperframes\.io|hyperframe(?:s)?(?:[.-]runtime|\.min)?\.js)/i;
 const GSAP_SCRIPT_RE = /(?:^|[\/@])gsap(?:@|[.\/-]|$)/i;
 const GOOGLE_FONTS_RE = /https?:\/\/fonts\.(?:googleapis|gstatic)\.com\//i;
+export const VENDORED_GSAP_ASSET_PATH = "assets/__vp_gsap.min.js";
 
 function resolvePackageFile(specifier) {
   try {
@@ -63,6 +64,7 @@ function escapeInlineScript(bundle) {
 export function sanitizeCompositionForOffline(html, {
   hyperframesRuntime = "",
   gsapRuntime = "",
+  gsapSrc = VENDORED_GSAP_ASSET_PATH,
 } = {}) {
   if (typeof html !== "string") return html;
 
@@ -75,12 +77,20 @@ export function sanitizeCompositionForOffline(html, {
     ))
     .replace(/@import\s+(?:url\(\s*)?["']?https?:\/\/fonts\.(?:googleapis|gstatic)\.com\/[^;\n)"']+["']?\s*\)?\s*;?/gi, "");
 
-  const inline = [];
-  if (gsapRuntime) inline.push(`<script data-vp-vendored="gsap">${escapeInlineScript(gsapRuntime)}</script>`);
-  if (hyperframesRuntime) inline.push(`<script data-vp-vendored="hyperframes">${escapeInlineScript(hyperframesRuntime)}</script>`);
-  if (inline.length === 0) return sanitized;
+  // The HyperFrames CLI injects its own installed runtime at /runtime.js during
+  // lint/check/render. Embedding that bundle here makes the linter inspect the
+  // library source as composition code. Keep GSAP as a local project asset for
+  // the same reason: it is loaded by Chromium from disk but never linted as an
+  // inline script. `hyperframesRuntime` is intentionally accepted for callers
+  // that already load both bundles, but is not embedded into the composition.
+  const localScripts = [];
+  if (gsapRuntime) {
+    const safeSrc = String(gsapSrc || VENDORED_GSAP_ASSET_PATH).replace(/["<>]/g, "");
+    localScripts.push(`<script data-vp-vendored="gsap" src="${safeSrc}"></script>`);
+  }
+  if (localScripts.length === 0) return sanitized;
 
-  const block = `${inline.join("\n")}\n`;
+  const block = `${localScripts.join("\n")}\n`;
   if (/<\/head\s*>/i.test(sanitized)) return sanitized.replace(/<\/head\s*>/i, `${block}</head>`);
   return `${block}${sanitized}`;
 }

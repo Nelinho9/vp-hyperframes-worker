@@ -26,6 +26,7 @@ import {
   extractCheckJson,
   loadVendoredRuntimeBundles,
   sanitizeCompositionForOffline,
+  VENDORED_GSAP_ASSET_PATH,
 } from "./runtime-vendor.js";
 
 const app = express();
@@ -256,7 +257,6 @@ app.post("/job", async (req, res) => {
   // are both unnecessary and a source of fatal ERR_BLOCKED_BY_ORB failures.
   if (typeof index_html === 'string') {
     index_html = sanitizeCompositionForOffline(index_html, {
-      hyperframesRuntime: runtimeBundles.hyperframes,
       gsapRuntime: runtimeBundles.gsap,
     });
   }
@@ -281,6 +281,9 @@ app.post("/job", async (req, res) => {
       mkdirSync(dirname(assetPath), { recursive: true });
       writeFileSync(assetPath, buf);
     }
+  }
+  if (runtimeBundles.gsap) {
+    writeFileSync(join(jobDir, VENDORED_GSAP_ASSET_PATH), runtimeBundles.gsap);
   }
 
   jobs.set(jobId, {
