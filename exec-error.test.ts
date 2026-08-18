@@ -7,6 +7,7 @@
  */
 import { describe, it, expect } from "vitest";
 import { formatExecError } from "./server.js";
+import { classifyCheckEnvelope, extractCheckJson } from "./runtime-vendor.js";
 
 describe("formatExecError", () => {
   it("appends stderr findings to the exec error message", () => {
@@ -40,5 +41,15 @@ describe("formatExecError", () => {
       stderr: Buffer.from("x".repeat(9000)),
     });
     expect(formatExecError(err).length).toBe(4000);
+  });
+
+  it("keeps a non-zero check useful when stdout contains a tolerant network finding", () => {
+    const envelope = extractCheckJson('check failed\n{"ok":false,"lint":{"ok":true},"layout":{"ok":true},"runtime":{"ok":false,"findings":[{"code":"request_failed","severity":"error","url":"https://fonts.googleapis.com/css2"}]}}');
+    expect(classifyCheckEnvelope(envelope).ok).toBe(true);
+  });
+
+  it("does not downgrade a page error to a warning", () => {
+    const envelope = extractCheckJson('{"ok":false,"lint":{"ok":true},"layout":{"ok":true},"runtime":{"ok":false,"findings":[{"code":"page_error","severity":"error","message":"ReferenceError"}]}}');
+    expect(classifyCheckEnvelope(envelope).ok).toBe(false);
   });
 });

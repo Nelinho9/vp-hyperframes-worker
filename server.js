@@ -21,6 +21,12 @@ import { randomUUID } from "crypto";
 import { pathToFileURL } from "url";
 import { injectPreviewHelper } from "./preview-helper.js";
 import { verifyPreviewToken } from "./preview-token.js";
+import {
+  classifyCheckEnvelope,
+  extractCheckJson,
+  loadVendoredRuntimeBundles,
+  sanitizeCompositionForOffline,
+} from "./runtime-vendor.js";
 
 const app = express();
 app.use(express.json({ limit: "200mb" }));
@@ -34,6 +40,7 @@ const CHROME_PATH = process.env.CHROME_PATH || "/usr/bin/chromium";
 // V4-3g.5 (R5): quando definido, GET /preview/:id exige ?token= HMAC válido
 // (mesmo segredo que VIDEO_V4_PREVIEW_SECRET no orchestrator edge).
 const PREVIEW_SECRET = process.env.PREVIEW_SECRET || "";
+const runtimeBundles = loadVendoredRuntimeBundles();
 
 const supabase = SUPABASE_URL && SUPABASE_KEY
   ? createClient(SUPABASE_URL, SUPABASE_KEY)
@@ -114,9 +121,96 @@ export function formatExecError(err) {
   return detail ? `${base}\n${detail}`.slice(0, 4000) : base;
 }
 
+/** Run a command while retaining stdout/stderr even when it exits non-zero. */
+export function spawnCommand(command, args, { timeout = 60000, env = process.env } = {}) {
+  return new Promise((resolve, reject) => {
+    const child = spawn(command, args, { env });
+    let stdout = "";
+    let stderr = "";
+    let timedOut = false;
+    const timer = setTimeout(() => {
+      timedOut = true;
+      child.kill("SIGTERM");
+    }, timeout);
+
+    child.stdout?.on("data", (chunk) => { stdout += chunk.toString(); });
+    child.stderr?.on("data", (chunk) => { stderr += chunk.toString(); });
+    child.once("error", (error) => {
+      clearTimeout(timer);
+      reject(Object.assign(error, { stdout, stderr }));
+    });
+    child.once("close", (code, signal) => {
+      clearTimeout(timer);
+      resolve({ code, signal, stdout, stderr, timedOut });
+    });
+  });
+}
+
+export async function runCheck(jobDir) {
+  const command = process.env.HYPERFRAMES_BIN || "npx";
+  const args = process.env.HYPERFRAMES_BIN
+    ? ["check", "--json", jobDir]
+    : ["hyperframes", "check", "--json", jobDir];
+  const result = await spawnCommand(command, args, {
+    timeout: 60000,
+    env: { ...process.env, CHROME_PATH },
+  });
+  if (result.timedOut) {
+    const error = new Error(`Command timed out: ${command} ${args.join(" ")}`);
+    error.stdout = result.stdout;
+    error.stderr = result.stderr;
+    throw error;
+  }
+  const envelope = extractCheckJson(result.stdout) ?? extractCheckJson(result.stderr);
+  if (!envelope) {
+    const error = new Error(`Command failed: ${command} ${args.join(" ")}`);
+    error.stdout = result.stdout;
+    error.stderr = result.stderr;
+    error.code = result.code;
+    throw error;
+  }
+
+  const classified = classifyCheckEnvelope(envelope);
+  if (!classified.ok) {
+    const findingText = classified.fatal
+      .map((finding) => `${finding.code ?? "runtime_error"}: ${finding.message ?? "unknown error"}`)
+      .join("\n");
+    const error = new Error(`HyperFrames check failed${findingText ? `\n${findingText}` : ""}`);
+    error.stdout = result.stdout;
+    error.stderr = result.stderr;
+    error.code = result.code;
+    throw error;
+  }
+  if (classified.warnings.length || result.code !== 0) {
+    console.warn(`[worker] hyperframes check continued with ${classified.warnings.length} tolerated warning(s)`);
+  }
+  return { envelope, classified, result };
+}
+
 // ── Health ──────────────────────────────────────────────────────────
 app.get("/health", (_req, res) => {
   res.json({ ok: true, ts: Date.now(), chrome: CHROME_PATH });
+});
+
+// Vendored browser dependencies are also exposed for local compositions that
+// refer to the worker runtime by URL. Normal build output is inline, but these
+// routes make the worker useful for previews and provide a deterministic
+// fallback without reaching a public CDN.
+function runtimeCors(_req, res, next) {
+  res.setHeader("Access-Control-Allow-Origin", "*");
+  res.setHeader("Access-Control-Allow-Methods", "GET, OPTIONS");
+  if (_req.method === "OPTIONS") return res.sendStatus(204);
+  next();
+}
+app.options("/runtime/hyperframes.min.js", runtimeCors);
+app.options("/runtime/gsap.min.js", runtimeCors);
+app.get("/runtime/hyperframes.min.js", runtimeCors, (_req, res) => {
+  if (!runtimeBundles.hyperframes) return res.status(404).json({ error: "hyperframes runtime unavailable" });
+  res.type("application/javascript").send(runtimeBundles.hyperframes);
+});
+app.get("/runtime/gsap.min.js", runtimeCors, (_req, res) => {
+  if (!runtimeBundles.gsap) return res.status(404).json({ error: "gsap runtime unavailable" });
+  res.type("application/javascript").send(runtimeBundles.gsap);
 });
 
 // ── Submit job ──────────────────────────────────────────────────────
@@ -157,18 +251,11 @@ app.post("/job", async (req, res) => {
   const jobDir = join(WORK_DIR, jobId);
   mkdirSync(join(jobDir, "assets"), { recursive: true });
 
-  // Post-process: fix incorrect HyperFrames runtime CDN URLs
-  const CORRECT_RUNTIME = "https://cdn.jsdelivr.net/npm/@heygen/hyperframes@0.7.109/dist/hyperframes.min.js";
+  // Post-process generated HTML before it enters the offline render pipeline.
+  // The CLI launches Chromium inside this container, so public CDN references
+  // are both unnecessary and a source of fatal ERR_BLOCKED_BY_ORB failures.
   if (typeof index_html === 'string') {
-    // Replace common wrong CDN URLs with the correct one
-    index_html = index_html
-      .replace(/https?:\/\/cdn\.hyperframes\.io\/[^"'\s]*/g, CORRECT_RUNTIME)
-      .replace(/https?:\/\/unpkg\.com\/[^"'\s]*hyperframes[^"'\s]*/g, CORRECT_RUNTIME)
-      .replace(/https?:\/\/cdn\.jsdelivr\.net\/npm\/hyperframes[^"'\s]*/g, CORRECT_RUNTIME);
-    // If no runtime script tag at all, inject one before </head>
-    if (!index_html.includes('hyperframes') && index_html.includes('</head>')) {
-      index_html = index_html.replace('</head>', `<script src="${CORRECT_RUNTIME}"></script>\n</head>`);
-    }
+    index_html = sanitizeCompositionForOffline(index_html, runtimeBundles);
   }
 
   // Write the composition HTML
@@ -326,7 +413,7 @@ app.get("/preview/:id/assets/:file", previewCors, (req, res) => {
 });
 
 // ── Render pipeline ─────────────────────────────────────────────────
-async function runRender(jobId, jobDir) {
+export async function runRender(jobId, jobDir) {
   const job = jobs.get(jobId);
   job.status = "running";
   job.started_at = new Date().toISOString();
@@ -345,10 +432,7 @@ async function runRender(jobId, jobDir) {
 
     // Step 2: check
     timings.check_start = Date.now();
-    execSync(
-      `npx hyperframes check --json "${jobDir}"`,
-      { encoding: "utf-8", timeout: 60000, env: { ...process.env, CHROME_PATH } }
-    );
+    await runCheck(jobDir);
     timings.check_ms = Date.now() - timings.check_start;
 
     // Step 3: snapshot
