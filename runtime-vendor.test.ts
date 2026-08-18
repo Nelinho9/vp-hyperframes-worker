@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   classifyCheckEnvelope,
   extractCheckJson,
+  loadVendoredRuntimeBundles,
   sanitizeCompositionForOffline,
 } from "./runtime-vendor.js";
 
@@ -23,6 +24,19 @@ describe("offline runtime vendor", () => {
     expect(result).toContain('data-vp-vendored="gsap"');
     expect(result).toContain('data-vp-vendored="hyperframes"');
     expect(result.indexOf('data-vp-vendored="gsap"')).toBeLessThan(result.indexOf('data-vp-vendored="hyperframes"'));
+  });
+
+  it("injects the actual installed bundle shape used by the server", () => {
+    const bundles = loadVendoredRuntimeBundles();
+    const result = sanitizeCompositionForOffline("<html><head></head><body></body></html>", {
+      hyperframesRuntime: bundles.hyperframes,
+      gsapRuntime: bundles.gsap,
+    });
+
+    expect(bundles.hyperframesPath).toBeTruthy();
+    expect(bundles.gsapPath).toBeTruthy();
+    expect(result).toContain('data-vp-vendored="gsap"');
+    expect(result).toContain('data-vp-vendored="hyperframes"');
   });
 
   it("tolerates only external request/http failures when lint and layout pass", () => {

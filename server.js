@@ -255,7 +255,10 @@ app.post("/job", async (req, res) => {
   // The CLI launches Chromium inside this container, so public CDN references
   // are both unnecessary and a source of fatal ERR_BLOCKED_BY_ORB failures.
   if (typeof index_html === 'string') {
-    index_html = sanitizeCompositionForOffline(index_html, runtimeBundles);
+    index_html = sanitizeCompositionForOffline(index_html, {
+      hyperframesRuntime: runtimeBundles.hyperframes,
+      gsapRuntime: runtimeBundles.gsap,
+    });
   }
 
   // Write the composition HTML
