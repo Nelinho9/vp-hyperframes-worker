@@ -229,8 +229,21 @@ app.post("/job", async (req, res) => {
     return res.status(400).json({ error: "project_id required" });
   }
 
-  // If no index_html yet (V4-2 mode before build step generates it), accept
-  // the job but mark it as waiting for content.
+  // Finalize intentionally reuses the composition that just completed the
+  // build step. The orchestrator only sends upload URLs for this follow-up
+  // job, so recover the latest staged build HTML from the project mapping.
+  // This also works after a worker restart because rehydrateJobs restores the
+  // project → job index from the persistent volume.
+  if (!index_html && step === "finalize") {
+    const previousJobId = projectJobs.get(project_id);
+    const previousJob = previousJobId ? jobs.get(previousJobId) : null;
+    const previousHtml = previousJob?.job_dir ? join(previousJob.job_dir, "index.html") : "";
+    if (previousHtml && existsSync(previousHtml)) {
+      index_html = readFileSync(previousHtml, "utf-8");
+      console.log(`[worker] finalize reused staged build composition for project ${project_id}`);
+    }
+  }
+
   if (!index_html) {
     return res.status(400).json({ error: "index_html or inputs.index_html required" });
   }
