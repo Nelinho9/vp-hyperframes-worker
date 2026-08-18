@@ -122,6 +122,19 @@ export function formatExecError(err) {
   return detail ? `${base}\n${detail}`.slice(0, 4000) : base;
 }
 
+/** Upload an artifact using the signed PUT URL supplied by the orchestrator. */
+export async function uploadToSignedUrl(url, body, contentType) {
+  const response = await fetch(url, {
+    method: "PUT",
+    headers: { "Content-Type": contentType },
+    body,
+  });
+  if (!response.ok) {
+    const detail = (await response.text().catch(() => "")).trim();
+    throw new Error(`signed upload failed (${response.status})${detail ? `: ${detail.slice(0, 400)}` : ""}`);
+  }
+}
+
 /** Run a command while retaining stdout/stderr even when it exits non-zero. */
 export function spawnCommand(command, args, { timeout = 60000, env = process.env } = {}) {
   return new Promise((resolve, reject) => {
@@ -486,9 +499,18 @@ export async function runRender(jobId, jobDir) {
       snapshots,
     };
 
-    // Upload to Supabase (if configured)
+    // Upload through the signed URL from the orchestrator. This keeps the
+    // worker independent of Supabase credentials; the direct client remains
+    // a backwards-compatible fallback for older deployments.
     const uploaded = {};
-    if (supabase) {
+    const signedMp4Url = typeof job.outputs?.mp4_upload_url === "string"
+      ? job.outputs.mp4_upload_url
+      : "";
+    if (signedMp4Url) {
+      await uploadToSignedUrl(signedMp4Url, readFileSync(outputPath), "video/mp4");
+      job.output.mp4_url = `projects/${job.project_id}/renders/output.mp4`;
+      uploaded.mp4 = true;
+    } else if (supabase) {
       const mp4Buf = readFileSync(outputPath);
       const { error } = await supabase.storage
         .from("video-artifacts")
@@ -501,6 +523,8 @@ export async function runRender(jobId, jobDir) {
         job.output.mp4_url = `projects/${job.project_id}/renders/output.mp4`;
         uploaded.mp4 = true;
       }
+    } else {
+      throw new Error("no MP4 upload target configured");
     }
 
     // Callback to orchestrator (V4-1 contract)
