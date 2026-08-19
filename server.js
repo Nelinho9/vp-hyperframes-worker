@@ -428,7 +428,20 @@ app.get("/preview/:id", previewCors, (req, res) => {
 
   // V4-3f.3 (A3): inject the click-to-edit helper script before serving so
   // the editor iframe can select elements and receive hot-swap patches.
-  const html = readFileSync(indexPath, "utf-8");
+  let html = readFileSync(indexPath, "utf-8");
+
+  // V4-3f.9: inject <base> tag so relative asset URLs (e.g.
+  // assets/__vp_gsap.min.js) resolve correctly regardless of whether the
+  // preview URL carries a trailing slash. Without it, the browser resolves
+  // "assets/foo.js" against /preview/ (the parent directory of /preview/<id>)
+  // producing /preview/assets/foo.js instead of /preview/<id>/assets/foo.js.
+  const baseTag = `<base href="/preview/${req.params.id}/">`;
+  if (/<head[^>]*>/i.test(html)) {
+    html = html.replace(/<head[^>]*>/i, (match) => `${match}${baseTag}`);
+  } else {
+    html = baseTag + html;
+  }
+
   res.type("html").send(injectPreviewHelper(html));
 });
 

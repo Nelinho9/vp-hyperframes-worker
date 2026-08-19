@@ -157,6 +157,30 @@ describe('GET /preview/:id — injeção sobre HTTP', () => {
     const res = await fetch(`${base}/preview/nao-existe`);
     expect(res.status).toBe(404);
   });
+
+  // V4-3f.9: base tag injection for correct relative URL resolution
+  it('injeta <base> tag com href correto para resolver assets relativos', async () => {
+    const res = await post('/job', {
+      job_id: 'job-base-tag',
+      project_id: 'proj-base-tag',
+      mode: 'preview',
+      index_html: COMPOSITION_HTML,
+    });
+    expect(res.status).toBe(200);
+
+    const preview = await fetch(`${base}/preview/proj-base-tag`);
+    expect(preview.status).toBe(200);
+    const html = await preview.text();
+    // Base tag must appear inside <head>, before the helper script.
+    expect(html).toContain('<base href="/preview/proj-base-tag/">');
+    const headOpen = html.search(/<head[^>]*>/i);
+    const baseIdx = html.indexOf('<base href="/preview/proj-base-tag/">');
+    const helperIdx = html.indexOf(`id="${HELPER_SCRIPT_ID}"`);
+    expect(baseIdx).toBeGreaterThan(headOpen);
+    expect(baseIdx).toBeLessThan(helperIdx);
+    // The GSAP asset path is still relative — it resolves correctly with the base tag.
+    expect(html).toContain('src="assets/__vp_gsap.min.js"');
+  });
 });
 
 describe('GET /preview/:id — enforcement do token HMAC (V4-3g.5, R5)', () => {
