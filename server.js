@@ -25,6 +25,7 @@ import {
   classifyCheckEnvelope,
   extractCheckJson,
   loadVendoredRuntimeBundles,
+  prepareOfflineFonts,
   sanitizeCompositionForOffline,
   VENDORED_GSAP_ASSET_PATH,
 } from "./runtime-vendor.js";
@@ -282,8 +283,23 @@ app.post("/job", async (req, res) => {
   // The CLI launches Chromium inside this container, so public CDN references
   // are both unnecessary and a source of fatal ERR_BLOCKED_BY_ORB failures.
   if (typeof index_html === 'string') {
+    // V4-3f.10: resolve Google Fonts into local woff2 assets BEFORE the
+    // sanitizer strips the references — lint's font_family_without_font_face
+    // rule needs an @font-face declaration for every brand family.
+    let fontFaceStyle = "";
+    try {
+      const fonts = await prepareOfflineFonts(index_html, {
+        jobDir,
+        cacheDir: join(WORK_DIR, "__vp-font-cache"),
+        log: console.log,
+      });
+      fontFaceStyle = fonts.style;
+    } catch (err) {
+      console.warn(`[worker] font preparation failed: ${err?.message ?? err}`);
+    }
     index_html = sanitizeCompositionForOffline(index_html, {
       gsapRuntime: runtimeBundles.gsap,
+      fontFaceStyle,
     });
   }
 
