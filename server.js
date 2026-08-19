@@ -445,16 +445,43 @@ app.get("/preview/:id", previewCors, (req, res) => {
   res.type("html").send(injectPreviewHelper(html));
 });
 
-// Serve static assets from job dirs
+// Serve static assets from job dirs.
+// V4-3f.9 follow-up: the preview URL carries the project_id (orchestrator
+// format), so resolve the job exactly like GET /preview/:id — project_id
+// first, then internal job_id. Previously only job_id was accepted, which
+// 404'd every subresource (e.g. assets/__vp_gsap.min.js) because the
+// `jobs` map is keyed by job_id, not project_id.
+// NOTE: no HMAC token check here on purpose — browser subresources
+// (<script>/<img> src) cannot carry the parent document's ?token= query.
+// Exposure equals the vendored runtime + project media; the HTML itself
+// (the attack surface that reveals composition content) stays token-gated.
 app.get("/preview/:id/assets/:file", previewCors, (req, res) => {
-  const job = jobs.get(req.params.id);
+  let job = null;
+  const internalJobId = projectJobs.get(req.params.id);
+  if (internalJobId) {
+    job = jobs.get(internalJobId);
+  }
+  if (!job) {
+    job = jobs.get(req.params.id);
+  }
   if (!job) return res.status(404).json({ error: "not found" });
 
-  const filePath = join(job.job_dir, "assets", req.params.file);
-  if (!existsSync(filePath)) {
+  // :file must be a plain file name — reject anything that could escape
+  // the assets dir (e.g. encoded traversal segments).
+  const file = basename(req.params.file);
+  if (!file || file !== req.params.file) {
     return res.status(404).json({ error: "asset not found" });
   }
-  res.sendFile(filePath);
+
+  const filePath = join(job.job_dir, "assets", file);
+  if (existsSync(filePath)) return res.sendFile(filePath);
+
+  // Jobs staged before the local-runtime rollout may lack the vendored
+  // GSAP file on disk — serve the in-memory bundle so old previews work.
+  if (file === basename(VENDORED_GSAP_ASSET_PATH) && runtimeBundles.gsap) {
+    return res.type("application/javascript").send(runtimeBundles.gsap);
+  }
+  return res.status(404).json({ error: "asset not found" });
 });
 
 // ── Render pipeline ─────────────────────────────────────────────────

@@ -183,6 +183,68 @@ describe('GET /preview/:id — injeção sobre HTTP', () => {
   });
 });
 
+describe('GET /preview/:id/assets/:file — subresources (V4-3f.9 follow-up)', () => {
+  // Regression: the preview URL carries the project_id, but the asset route
+  // only looked up by internal job_id → every asset 404'd
+  // (net::ERR_ABORTED 404 on __vp_gsap.min.js in the Studio editor).
+  it('serve o asset vendored GSAP por project_id', async () => {
+    const res = await post('/job', {
+      job_id: 'job-asset-proj',
+      project_id: 'proj-asset-1',
+      mode: 'preview',
+      index_html: COMPOSITION_HTML,
+    });
+    expect(res.status).toBe(200);
+
+    const asset = await fetch(`${base}/preview/proj-asset-1/assets/__vp_gsap.min.js`);
+    expect(asset.status).toBe(200);
+    expect(asset.headers.get('content-type')).toContain('javascript');
+    const body = await asset.text();
+    expect(body.length).toBeGreaterThan(1000);
+  });
+
+  it('lookup por job_id também funciona', async () => {
+    const res = await post('/job', {
+      job_id: 'job-asset-byjob',
+      project_id: 'proj-asset-2',
+      mode: 'preview',
+      index_html: COMPOSITION_HTML,
+    });
+    expect(res.status).toBe(200);
+    const asset = await fetch(`${base}/preview/job-asset-byjob/assets/__vp_gsap.min.js`);
+    expect(asset.status).toBe(200);
+  });
+
+  it('serve assets enviados no POST /job', async () => {
+    const res = await post('/job', {
+      job_id: 'job-asset-custom',
+      project_id: 'proj-asset-3',
+      mode: 'preview',
+      index_html: COMPOSITION_HTML,
+      assets: { 'hello.txt': Buffer.from('vp-asset-ok').toString('base64') },
+    });
+    expect(res.status).toBe(200);
+    const asset = await fetch(`${base}/preview/proj-asset-3/assets/hello.txt`);
+    expect(asset.status).toBe(200);
+    expect(await asset.text()).toBe('vp-asset-ok');
+  });
+
+  it('404 para projeto inexistente', async () => {
+    const res = await fetch(`${base}/preview/nao-existe/assets/__vp_gsap.min.js`);
+    expect(res.status).toBe(404);
+  });
+
+  it('404 para asset inexistente de projeto válido', async () => {
+    const res = await fetch(`${base}/preview/proj-asset-1/assets/nao-existe.png`);
+    expect(res.status).toBe(404);
+  });
+
+  it('rejeita segmentos com traversal codificado', async () => {
+    const res = await fetch(`${base}/preview/proj-asset-1/assets/..%2Findex.html`);
+    expect(res.status).toBe(404);
+  });
+});
+
 describe('GET /preview/:id — enforcement do token HMAC (V4-3g.5, R5)', () => {
   const SECRET = 'test-preview-secret';
   const PROJECT = 'proj-token-guard';
