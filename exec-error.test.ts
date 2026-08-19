@@ -43,6 +43,29 @@ describe("formatExecError", () => {
     expect(formatExecError(err).length).toBe(4000);
   });
 
+  it("keeps the TAIL when truncating (render errors sit at the end)", () => {
+    // Head = progress chatter, tail = the actionable failure line. The old
+    // head-keep truncation hid the real render error behind INFO logs.
+    const chatter = "[INFO] [Render] progress line\n".repeat(400);
+    const err = Object.assign(new Error("Command failed: npx hyperframes render"), {
+      stdout: Buffer.from(chatter + "FATAL: capture worker OOM — JavaScript heap out of memory"),
+      stderr: Buffer.from(""),
+    });
+    const out = formatExecError(err);
+    expect(out.length).toBeLessThanOrEqual(4000);
+    expect(out).toContain("FATAL: capture worker OOM");
+    expect(out).toContain("…truncated…");
+  });
+
+  it("não trunca erros curtos", () => {
+    const err = Object.assign(new Error("Command failed"), {
+      stderr: Buffer.from("small finding"),
+    });
+    const out = formatExecError(err);
+    expect(out).toContain("small finding");
+    expect(out).not.toContain("truncated");
+  });
+
   it("keeps a non-zero check useful when stdout contains a tolerant network finding", () => {
     const envelope = extractCheckJson('check failed\n{"ok":false,"lint":{"ok":true},"layout":{"ok":true},"runtime":{"ok":false,"findings":[{"code":"request_failed","severity":"error","url":"https://fonts.googleapis.com/css2"}]}}');
     expect(classifyCheckEnvelope(envelope).ok).toBe(true);

@@ -112,15 +112,25 @@ rehydrateJobs();
  * object. Surface them in the job error so the orchestrator (and the
  * Studio UI) shows actionable lint findings instead of the opaque
  * "Command failed: npx hyperframes lint ..." message.
+ *
+ * V4-3f.11: keep BOTH ends when truncating. The head of CLI output is
+ * progress chatter; the actionable failure line sits at the tail — the
+ * old head-keep truncation was hiding the actual render error.
  */
-export function formatExecError(err) {
+export function formatExecError(err, { limit = 4000 } = {}) {
   const base = err?.message ?? String(err);
   const detail = [err?.stderr, err?.stdout]
     .map((b) => (b ? b.toString() : ""))
     .filter((s) => s.trim())
     .join("\n")
     .trim();
-  return detail ? `${base}\n${detail}`.slice(0, 4000) : base;
+  if (!detail) return base;
+  const full = `${base}\n${detail}`;
+  if (full.length <= limit) return full;
+  const marker = "\n[…truncated…]\n";
+  const headSize = Math.floor(limit * 0.25);
+  const tailSize = limit - headSize - marker.length;
+  return `${full.slice(0, headSize)}${marker}${full.slice(-tailSize)}`;
 }
 
 /** Upload an artifact using the signed PUT URL supplied by the orchestrator. */
@@ -535,10 +545,37 @@ export async function runRender(jobId, jobDir) {
     timings.render_start = Date.now();
     const outputPath = join(jobDir, "renders", "output.mp4");
     mkdirSync(join(jobDir, "renders"), { recursive: true });
-    execSync(
-      `npx hyperframes render --quality high -o "${outputPath}" "${jobDir}"`,
-      { encoding: "utf-8", timeout: 300000, env: { ...process.env, CHROME_PATH } }
-    );
+    // V4-3f.11: spawn (not execSync) so full stdout/stderr survive a
+    // non-zero exit, with a timeout above the CLI's own protocolTimeout.
+    // R3 (V4_01_INFRA §4 / docker-compose): VPS RAM ≤ 4GB — pin a single
+    // capture worker + low-memory profile; "auto" spawns multiple Chrome
+    // instances that OOM the box mid-capture.
+    const renderCommand = process.env.HYPERFRAMES_BIN || "npx";
+    const renderArgs = process.env.HYPERFRAMES_BIN
+      ? ["render", "--quality", "high", "--workers", "1", "-o", outputPath, jobDir]
+      : ["hyperframes", "render", "--quality", "high", "--workers", "1", "-o", outputPath, jobDir];
+    const renderResult = await spawnCommand(renderCommand, renderArgs, {
+      timeout: 600000,
+      env: { ...process.env, CHROME_PATH, PRODUCER_LOW_MEMORY_MODE: "true" },
+    });
+    // Persist the full CLI output on the (now persistent) volume for
+    // post-mortem; keep only the tail in the in-memory job error.
+    try {
+      writeFileSync(
+        join(jobDir, "render.log"),
+        `exit=${renderResult.code} timedOut=${renderResult.timedOut}\n--- stdout ---\n${renderResult.stdout}\n--- stderr ---\n${renderResult.stderr}`
+      );
+    } catch (logErr) {
+      console.warn(`[worker] failed to persist render.log: ${logErr.message}`);
+    }
+    if (renderResult.timedOut || renderResult.code !== 0) {
+      const error = new Error(
+        `Command failed: npx hyperframes render (exit ${renderResult.code}${renderResult.timedOut ? ", worker timeout 600s" : ""})`
+      );
+      error.stdout = renderResult.stdout;
+      error.stderr = renderResult.stderr;
+      throw error;
+    }
     timings.render_ms = Date.now() - timings.render_start;
 
     // Collect results
@@ -611,6 +648,8 @@ export async function runRender(jobId, jobDir) {
     job.status = "failed";
     job.error = formatExecError(err);
     job.total_ms = Date.now() - startTime;
+    // Full-tail echo to container logs (Coolify) for post-mortem.
+    console.error(`[worker] job ${jobId} (${job?.project_id ?? "?"}) failed:\n${job.error.slice(-2000)}`);
 
     // Callback to orchestrator on failure
     if (job.callback?.url) {
