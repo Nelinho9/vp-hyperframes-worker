@@ -29,6 +29,7 @@ import {
   sanitizeCompositionForOffline,
   VENDORED_GSAP_ASSET_PATH,
 } from "./runtime-vendor.js";
+import { prestageExternalMedia } from "./media-preloader.js";
 
 const app = express();
 app.use(express.json({ limit: "200mb" }));
@@ -313,6 +314,63 @@ app.post("/job", async (req, res) => {
     });
   }
 
+  let jobMediaValidation = null;
+
+  // V4-3f.12: pre-stage external videos/audio locally. The HyperFrames CLI
+  // downloads remote URLs itself, but if the URL returns an HTML page, a 403,
+  // or a truncated response, ffprobe fails with "moov atom not found". We
+  // fetch + validate + rewrite here so the error is surfaced early and the
+  // render pipeline only sees valid local MP4 files.
+  if (typeof index_html === "string") {
+    const mediaResult = await prestageExternalMedia(index_html, jobDir, {
+      fetchImpl: fetch,
+      ffprobePath: "ffprobe",
+      timeoutMs: 60_000,
+      log: console.log,
+    });
+    if (!mediaResult.ok) {
+      const summary = mediaResult.failures
+        .map((f) => `${f.url} -> ${f.reason}: ${f.detail}`)
+        .join("; ");
+      const error = new Error(`MEDIA_VALIDATION_FAILED: ${summary}`);
+      jobs.set(jobId, {
+        id: jobId,
+        project_id,
+        step: step || "render",
+        status: "failed",
+        created_at: new Date().toISOString(),
+        job_dir: jobDir,
+        callback,
+        outputs,
+        artifact_paths,
+        error: formatExecError(error),
+        media_validation: { urls_found: mediaResult.failures.length, urls_failed: mediaResult.failures },
+      });
+      writeJobMarker(jobDir, {
+        job_id: jobId,
+        project_id,
+        step: step || "render",
+        mode: body.mode === "preview" ? "preview" : "render",
+        created_at: new Date().toISOString(),
+      });
+      return res.status(422).json({
+        job_id: jobId,
+        status: "failed",
+        error: "MEDIA_VALIDATION_FAILED",
+        failures: mediaResult.failures,
+      });
+    }
+    if (!mediaResult.skipped) {
+      console.log(`[worker] pre-staged ${mediaResult.downloaded.length} external media file(s)`);
+      index_html = mediaResult.html;
+    }
+    // Persist validation metadata for diagnostics in callbacks.
+    jobMediaValidation = {
+      urls_found: mediaResult.downloaded.length,
+      urls_downloaded: mediaResult.downloaded,
+    };
+  }
+
   // Write the composition HTML
   writeFileSync(join(jobDir, "index.html"), index_html);
 
@@ -348,6 +406,7 @@ app.post("/job", async (req, res) => {
     callback,
     outputs,
     artifact_paths,
+    media_validation: jobMediaValidation,
   });
   // Track by project_id for preview lookup
   projectJobs.set(project_id, jobId);
@@ -500,7 +559,14 @@ app.get("/preview/:id/assets/:file", previewCors, (req, res) => {
   }
 
   const filePath = join(job.job_dir, "assets", file);
-  if (existsSync(filePath)) return res.sendFile(filePath);
+  if (existsSync(filePath)) {
+    // Cross-platform: express.sendFile rejects Windows absolute paths in some
+    // versions, so read the buffer and send it with inferred content-type.
+    const ext = file.endsWith(".js") ? ".js" : file.slice(file.lastIndexOf("."));
+    const type = ext === ".js" ? "application/javascript" : ext === ".css" ? "text/css" : undefined;
+    const buf = readFileSync(filePath);
+    return type ? res.type(type).send(buf) : res.send(buf);
+  }
 
   // Jobs staged before the local-runtime rollout may lack the vendored
   // GSAP file on disk — serve the in-memory bundle so old previews work.
@@ -518,6 +584,12 @@ export async function runRender(jobId, jobDir) {
 
   const startTime = Date.now();
   const timings = {};
+
+  // V4-3f.12: isolate the HyperFrames extraction cache per job so a corrupted
+  // cache entry from a previous render can never be reused.
+  const extractCacheDir = join(jobDir, "__extract-cache");
+  mkdirSync(extractCacheDir, { recursive: true });
+  process.env.HYPERFRAMES_EXTRACT_CACHE_DIR = extractCacheDir;
 
   try {
     // Step 1: lint
@@ -667,6 +739,7 @@ export async function runRender(jobId, jobDir) {
             status: "failed",
             error: job.error,
             total_ms: job.total_ms,
+            media_validation: job.media_validation || null,
           }),
         });
         console.log(`[callback] sent failed for job ${job.id}`);

@@ -1,0 +1,277 @@
+// @vitest-environment node
+/**
+ * media-preloader.test.ts — V4-3f.12
+ *
+ * Covers the worker's media pre-staging logic: extracting external video/audio
+ * URLs from composition HTML, downloading + validating them with ffprobe,
+ * rewriting the HTML to use local assets, and surfacing clear errors early.
+ */
+import { describe, expect, it, vi } from 'vitest';
+import { mkdtempSync, readFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { EventEmitter } from 'node:events';
+import { PassThrough } from 'node:stream';
+import type { ChildProcess } from 'node:child_process';
+import {
+  extractMediaUrls,
+  rewriteHtmlMediaUrls,
+  downloadAndValidateMedia,
+  prestageExternalMedia,
+} from './media-preloader.js';
+
+const VALID_MP4_PREFIX = Buffer.concat([
+  Buffer.from([0x00, 0x00, 0x00, 0x18]), // box size
+  Buffer.from('ftyp', 'ascii'),
+  Buffer.from('isom', 'ascii'),
+  Buffer.from([0x00, 0x00, 0x00, 0x00]),
+  Buffer.from('isom', 'ascii'),
+  Buffer.from('mp41', 'ascii'),
+]);
+
+function minimalMp4Buffer() {
+  // Enough bytes to pass the magic check; ffprobe is mocked in these tests.
+  return Buffer.concat([VALID_MP4_PREFIX, Buffer.alloc(64, 0x00)]);
+}
+
+function fakeFfprobeStdout(duration = 12, width = 1920, height = 1080) {
+  return JSON.stringify({
+    format: { duration: String(duration) },
+    streams: [
+      {
+        codec_type: 'video',
+        codec_name: 'h264',
+        width,
+        height,
+      },
+    ],
+  });
+}
+
+function makeResponse(body: Buffer, opts: { status?: number; contentType?: string; contentLength?: string } = {}) {
+  const status = opts.status ?? 200;
+  const headers = new Map<string, string>([
+    ['content-type', opts.contentType ?? 'video/mp4'],
+  ]);
+  if (opts.contentLength !== undefined) headers.set('content-length', opts.contentLength);
+  return {
+    ok: status >= 200 && status < 300,
+    status,
+    statusText: status === 404 ? 'Not Found' : 'OK',
+    headers: headers as unknown as Headers,
+    text: async () => body.toString('utf8'),
+    arrayBuffer: async () => body.buffer.slice(body.byteOffset, body.byteOffset + body.byteLength),
+    body: {
+      getReader: () => {
+        let done = false;
+        return {
+          read: async () => {
+            if (done) return { done: true, value: undefined };
+            done = true;
+            return { done: false, value: new Uint8Array(body) };
+          },
+          releaseLock: () => {},
+        };
+      },
+    },
+  } as unknown as Response;
+}
+
+function makeFetchImpl(body: Buffer, opts: { status?: number; contentType?: string; contentLength?: string } = {}) {
+  return vi.fn().mockResolvedValue(makeResponse(body, opts));
+}
+
+function makeSpawnImpl({ exitCode = 0, stdout = '', stderr = '' } = {}) {
+  return vi.fn().mockImplementation(() => {
+    const child = new EventEmitter() as ChildProcess;
+    child.stdout = new PassThrough();
+    child.stderr = new PassThrough();
+    process.nextTick(() => {
+      if (stdout) child.stdout?.write(stdout);
+      child.stdout?.end();
+      if (stderr) child.stderr?.write(stderr);
+      child.stderr?.end();
+      child.emit('close', exitCode);
+    });
+    return child;
+  });
+}
+
+describe('extractMediaUrls', () => {
+  it('extrai URLs de video e audio absolutas', () => {
+    const html = `
+      <video id="v1" src="https://cdn.example.com/intro.mp4" muted></video>
+      <audio id="a1" src="https://cdn.example.com/music.mp4"></audio>
+    `;
+    const urls = extractMediaUrls(html);
+    expect(urls).toHaveLength(2);
+    expect(urls[0]).toMatchObject({ tag: 'video', originalSrc: 'https://cdn.example.com/intro.mp4' });
+    expect(urls[1]).toMatchObject({ tag: 'audio', originalSrc: 'https://cdn.example.com/music.mp4' });
+  });
+
+  it('ignora src locais, data URIs e blobs', () => {
+    const html = `
+      <video src="assets/local.mp4"></video>
+      <video src="data:video/mp4;base64,abc"></video>
+      <video src="blob:https://x"></video>
+      <video src="https://cdn.example.com/remote.mp4"></video>
+    `;
+    const urls = extractMediaUrls(html);
+    expect(urls).toHaveLength(1);
+    expect(urls[0].originalSrc).toBe('https://cdn.example.com/remote.mp4');
+  });
+
+  it('ignora tags sem src', () => {
+    const html = '<video id="no-src"></video>';
+    expect(extractMediaUrls(html)).toHaveLength(0);
+  });
+});
+
+describe('rewriteHtmlMediaUrls', () => {
+  it('substitui src externos por caminhos locais preservando atributos', () => {
+    const html = '<video id="v1" crossorigin="anonymous" muted playsinline src="https://cdn.example.com/intro.mp4">';
+    const out = rewriteHtmlMediaUrls(html, {
+      'https://cdn.example.com/intro.mp4': 'assets/vp-media-hash.mp4',
+    });
+    expect(out).toContain('src="assets/vp-media-hash.mp4"');
+    expect(out).toContain('crossorigin="anonymous"');
+    expect(out).toContain('muted');
+  });
+
+  it('não altera URLs que não estão no mapeamento', () => {
+    const html = '<video src="https://cdn.example.com/keep.mp4">';
+    expect(rewriteHtmlMediaUrls(html, {})).toBe(html);
+  });
+});
+
+describe('downloadAndValidateMedia', () => {
+  it('sucesso: descarrega MP4 válido e devolve metadata', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'vp-media-'));
+    const dest = join(dir, 'valid.mp4');
+    const fetchImpl = makeFetchImpl(minimalMp4Buffer(), { contentType: 'video/mp4' });
+    const spawnImpl = makeSpawnImpl({ stdout: fakeFfprobeStdout() });
+
+    const result = await downloadAndValidateMedia('https://cdn.example.com/intro.mp4', dest, {
+      fetchImpl,
+      spawnImpl,
+      ffprobePath: '/bin/ffprobe',
+      timeoutMs: 5000,
+    });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.path).toBe(dest);
+    expect(result.duration).toBe(12);
+    expect(result.width).toBe(1920);
+    expect(result.codec).toBe('h264');
+    expect(readFileSync(dest).length).toBeGreaterThan(0);
+  });
+
+  it('falha quando o servidor retorna HTML em vez de MP4', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'vp-media-'));
+    const dest = join(dir, 'fake.mp4');
+    const html = Buffer.from('<!doctype html><html>player page</html>', 'utf8');
+    const fetchImpl = makeFetchImpl(html, { contentType: 'text/html' });
+    const spawnImpl = makeSpawnImpl({ stdout: fakeFfprobeStdout() });
+
+    const result = await downloadAndValidateMedia('https://cdn.example.com/player', dest, {
+      fetchImpl,
+      spawnImpl,
+      ffprobePath: '/bin/ffprobe',
+      timeoutMs: 5000,
+    });
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.reason).toBe('not_mp4');
+    expect(result.detail).toContain('MP4 magic');
+  });
+
+  it('falha com HTTP 403', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'vp-media-'));
+    const dest = join(dir, 'forbidden.mp4');
+    const fetchImpl = makeFetchImpl(Buffer.from('forbidden'), { status: 403 });
+    const spawnImpl = makeSpawnImpl({ stdout: fakeFfprobeStdout() });
+
+    const result = await downloadAndValidateMedia('https://cdn.example.com/private.mp4', dest, {
+      fetchImpl,
+      spawnImpl,
+      ffprobePath: '/bin/ffprobe',
+      timeoutMs: 5000,
+    });
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.reason).toBe('download_failed');
+    expect(result.detail).toContain('403');
+  });
+
+  it('falha quando ffprobe rejeita o container', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'vp-media-'));
+    const dest = join(dir, 'broken.mp4');
+    const fetchImpl = makeFetchImpl(minimalMp4Buffer(), { contentType: 'video/mp4' });
+    const spawnImpl = makeSpawnImpl({ exitCode: 1, stderr: 'moov atom not found' });
+
+    const result = await downloadAndValidateMedia('https://cdn.example.com/broken.mp4', dest, {
+      fetchImpl,
+      spawnImpl,
+      ffprobePath: '/bin/ffprobe',
+      timeoutMs: 5000,
+    });
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.reason).toBe('ffprobe_failed');
+    expect(result.detail).toContain('moov atom not found');
+  });
+});
+
+describe('prestageExternalMedia', () => {
+  it('skipped quando não há media externa', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'vp-media-'));
+    const result = await prestageExternalMedia('<video src="assets/local.mp4"></video>', dir);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.skipped).toBe(true);
+    expect(result.downloaded).toHaveLength(0);
+  });
+
+  it('devolve failure quando uma URL externa falha', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'vp-media-'));
+    const fetchImpl = vi.fn().mockResolvedValue(
+      makeResponse(Buffer.from('not found'), { status: 404, contentType: 'text/plain' })
+    );
+
+    const result = await prestageExternalMedia(
+      '<video src="https://cdn.example.com/missing.mp4"></video>',
+      dir,
+      { fetchImpl }
+    );
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.reason).toBe('MEDIA_VALIDATION_FAILED');
+    expect(result.failures).toHaveLength(1);
+    expect(result.failures[0].reason).toBe('download_failed');
+  });
+
+  it('devolve html reescrito e downloaded quando todas as URLs são válidas', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'vp-media-'));
+    const url = 'https://cdn.example.com/clip.mp4';
+    const fetchImpl = vi.fn().mockResolvedValue(makeResponse(minimalMp4Buffer(), { contentType: 'video/mp4' }));
+    const spawnImpl = makeSpawnImpl({ stdout: fakeFfprobeStdout() });
+
+    const result = await prestageExternalMedia(
+      `<video id="v1" src="${url}" muted></video>`,
+      dir,
+      { fetchImpl, spawnImpl }
+    );
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.skipped).toBe(false);
+    expect(result.downloaded).toHaveLength(1);
+    expect(result.html).toContain('src="assets/vp-media-');
+    expect(result.html).not.toContain(url);
+  });
+});
