@@ -8,6 +8,7 @@ import {
   extractGoogleFontFamilies,
   loadVendoredRuntimeBundles,
   localFontFaceStyle,
+  markGsapDataUri,
   prepareOfflineFonts,
   sanitizeCompositionForOffline,
 } from "./runtime-vendor.js";
@@ -30,10 +31,33 @@ describe("offline runtime vendor", () => {
     expect(result).toContain('data-vp-vendored="gsap"');
     // V4-3f.13: GSAP é embutido como data URI (o ficheiro local 404ava no
     // render porque o compile serve o compiled dir sem copiar assets/).
-    expect(result).toContain('src="data:text/javascript;base64,');
+    expect(result).toContain('src="data:text/javascript;name=gsap.min.js;base64,');
     expect(result).not.toContain('src="assets/__vp_gsap.min.js"');
     expect(result).not.toContain('data-vp-vendored="hyperframes"');
     expect(result).not.toContain("window.__hf");
+  });
+
+  // V4-3f.14: regressão do missing_gsap_script — a regra de lint deteta o
+  // GSAP apenas por /gsap/i no src; o payload base64 opaco não contém "gsap",
+  // por isso o src da data URI carrega o parâmetro name=gsap.min.js.
+  it("injected GSAP src is detectable by lint's missing_gsap_script rule", () => {
+    const result = sanitizeCompositionForOffline("<html><head></head><body></body></html>", {
+      gsapRuntime: "window.gsap = {};",
+    });
+    const src = result.match(/data-vp-vendored="gsap" src="([^"]+)"/)?.[1] ?? "";
+    expect(src).toMatch(/^data:text\/javascript;name=gsap\.min\.js;base64,/);
+    expect(/gsap/i.test(src)).toBe(true);
+    // O payload mantém-se base64 válido e inalterado.
+    const payload = src.slice(src.indexOf("base64,") + 7);
+    expect(Buffer.from(payload, "base64").toString("utf8")).toBe("window.gsap = {};");
+  });
+
+  it("markGsapDataUri is idempotent and preserves already-marked srcs", () => {
+    expect(markGsapDataUri("")).toBe("");
+    const plain = "data:text/javascript;base64,d2luZG93";
+    expect(markGsapDataUri(plain)).toBe("data:text/javascript;name=gsap.min.js;base64,d2luZG93");
+    expect(markGsapDataUri(markGsapDataUri(plain))).toBe(markGsapDataUri(plain));
+    expect(markGsapDataUri("assets/__vp_gsap.min.js")).toBe("assets/__vp_gsap.min.js");
   });
 
   it("injects the actual installed bundle shape used by the server", () => {
@@ -46,7 +70,7 @@ describe("offline runtime vendor", () => {
     expect(bundles.hyperframesPath).toBeTruthy();
     expect(bundles.gsapPath).toBeTruthy();
     expect(result).toContain('data-vp-vendored="gsap"');
-    expect(result).toContain('src="data:text/javascript;base64,');
+    expect(result).toContain('src="data:text/javascript;name=gsap.min.js;base64,');
     expect(result).not.toContain(bundles.gsap.slice(0, 80));
     // O código do bundle nunca aparece em texto claro (lint não o inspeciona).
     expect(result).not.toContain("gsap.com");

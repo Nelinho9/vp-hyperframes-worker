@@ -81,7 +81,24 @@ function escapeInlineScript(bundle) {
  * everywhere with zero file-server dependency, and lint still sees it as an
  * external src (inlining the bundle as a script BODY trips lint's
  * non_deterministic_code rule on GSAP's own Math.random/Date.now).
+ *
+ * V4-3f.14: the URI carries an RFC 2397 `name=gsap.min.js` parameter so the
+ * src string itself contains "gsap" — lint's `missing_gsap_script` rule
+ * detects GSAP purely via `/gsap/i.test(src)`, and an opaque base64 payload
+ * never matches, so jobs staged with the plain data URI failed lint with
+ * "Composition uses GSAP but no GSAP script is loaded". Browsers ignore
+ * unknown data-URI parameters and execute the script normally.
  */
+
+/** Ensure a data-URI src is recognizable as GSAP by lint (`/gsap/i` on src). */
+export function markGsapDataUri(uri) {
+  const src = String(uri || "");
+  if (!src || /gsap/i.test(src)) return src;
+  // Insert a name parameter before the `base64` flag / payload.
+  return src.replace(/^data:([^,]*?)(;base64)?,/i, (_match, media, flag) =>
+    `data:${media};name=gsap.min.js${flag ?? ""},`);
+}
+
 export function sanitizeCompositionForOffline(html, {
   hyperframesRuntime = "",
   gsapRuntime = "",
@@ -106,8 +123,8 @@ export function sanitizeCompositionForOffline(html, {
   // (`hyperframesRuntime` stays accepted for callers that load both bundles).
   const localScripts = [];
   if (fontFaceStyle) localScripts.push(fontFaceStyle);
-  const resolvedGsapUri = gsapDataUri
-    || (gsapRuntime ? `data:text/javascript;base64,${Buffer.from(String(gsapRuntime), "utf8").toString("base64")}` : "");
+  const resolvedGsapUri = markGsapDataUri(gsapDataUri
+    || (gsapRuntime ? `data:text/javascript;base64,${Buffer.from(String(gsapRuntime), "utf8").toString("base64")}` : ""));
   if (resolvedGsapUri) {
     // base64 is quote-safe for attribute splicing.
     localScripts.push(`<script data-vp-vendored="gsap" src="${resolvedGsapUri}"></script>`);

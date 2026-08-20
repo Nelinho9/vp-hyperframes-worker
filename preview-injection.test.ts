@@ -181,8 +181,9 @@ describe('GET /preview/:id — injeção sobre HTTP', () => {
     // V4-3f.13: o GSAP passou a ser embutido como data URI (já não depende do
     // base tag); os restantes assets locais (imagens/fontes em assets/) continuam
     // relativos e dependem do <base> para resolver sob /preview/<id>/.
+    // V4-3f.14: o src carrega name=gsap.min.js para a regra missing_gsap_script.
     expect(html).toContain('data-vp-vendored="gsap"');
-    expect(html).toContain('src="data:text/javascript;base64,');
+    expect(html).toContain('src="data:text/javascript;name=gsap.min.js;base64,');
   });
 });
 
