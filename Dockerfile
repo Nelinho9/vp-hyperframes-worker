@@ -54,7 +54,7 @@ ENV NODE_ENV=production \
 
 WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
-COPY server.js runtime-vendor.js preview-token.js preview-helper.js package.json ./
+COPY server.js runtime-vendor.js preview-token.js preview-helper.js media-preloader.js package.json ./
 COPY fixtures ./fixtures
 
 RUN mkdir -p $WORK_DIR
