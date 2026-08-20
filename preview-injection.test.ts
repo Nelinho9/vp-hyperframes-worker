@@ -178,8 +178,11 @@ describe('GET /preview/:id — injeção sobre HTTP', () => {
     const helperIdx = html.indexOf(`id="${HELPER_SCRIPT_ID}"`);
     expect(baseIdx).toBeGreaterThan(headOpen);
     expect(baseIdx).toBeLessThan(helperIdx);
-    // The GSAP asset path is still relative — it resolves correctly with the base tag.
-    expect(html).toContain('src="assets/__vp_gsap.min.js"');
+    // V4-3f.13: o GSAP passou a ser embutido como data URI (já não depende do
+    // base tag); os restantes assets locais (imagens/fontes em assets/) continuam
+    // relativos e dependem do <base> para resolver sob /preview/<id>/.
+    expect(html).toContain('data-vp-vendored="gsap"');
+    expect(html).toContain('src="data:text/javascript;base64,');
   });
 });
 

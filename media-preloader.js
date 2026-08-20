@@ -2,13 +2,23 @@
  * Media pre-loader for the HyperFrames render worker.
  *
  * Before invoking `hyperframes render`, the worker parses the composition HTML,
- * downloads external <video>/<audio> sources, validates them with ffprobe,
- * rewrites the HTML to use local assets, and isolates the extraction cache.
+ * downloads external <video>/<audio>/<img> sources, validates them, rewrites the
+ * HTML to use local (or inline) assets, and isolates the extraction cache.
  *
  * This prevents `moov atom not found` errors caused by:
  *   - URLs that return HTML/player pages instead of real MP4 files
  *   - Truncated downloads
  *   - Corrupted shared extraction caches
+ *
+ * V4-3f.13 — image pre-staging: the HyperFrames compiler localizes remote
+ * <img> sources but names extension-less URLs `.mp4` (getFilenameFromUrl
+ * default). An SVG served from a Supabase signed URL (path `.../asset-0`, no
+ * extension) therefore lands on disk as `download_<hash>.mp4`; the render's
+ * HDR image probe then ffprobes it and, on container ffprobe builds without an
+ * SVG demuxer, dies with "moov atom not found". We pre-stage <img> ourselves:
+ * SVG payloads are inlined as base64 data URIs (browser renders them natively
+ * and ffprobe never sees a file), raster images are saved with a correct
+ * extension, and anything else is rejected early with an actionable error.
  */
 
 import { createHash, randomBytes } from "crypto";
@@ -28,7 +38,7 @@ const MP4_MAGIC = Buffer.from("ftyp", "ascii");
 
 /**
  * @typedef {object} MediaUrl
- * @property {'video' | 'audio'} tag
+ * @property {'video' | 'audio' | 'image'} tag
  * @property {string} originalSrc
  * @property {string} normalizedUrl
  */
@@ -44,14 +54,14 @@ export function extractMediaUrls(html) {
   const results = [];
   const seen = new Set();
 
-  // Match <video ... src="..." ...> and <audio ... src="..." ...>.
-  // This regex is intentionally strict: it only catches src attributes inside
-  // video/audio open tags. It does not handle malformed HTML, but the LLM
-  // output is expected to be well-formed.
-  const tagRe = /<(video|audio)\b([^>]*)>/gis;
+  // Match <video|audio|img ... src="..." ...>. This regex is intentionally
+  // strict: it only catches src attributes inside media open tags. It does not
+  // handle malformed HTML, but the LLM output is expected to be well-formed.
+  const tagRe = /<(video|audio|img)\b([^>]*)>/gis;
   let m;
   while ((m = tagRe.exec(html)) !== null) {
-    const tag = m[1].toLowerCase();
+    const rawTag = m[1].toLowerCase();
+    const tag = rawTag === "img" ? "image" : rawTag;
     const attrs = m[2];
     const srcMatch = attrs.match(/\bsrc\s*=\s*["']([^"']+)["']/i);
     if (!srcMatch) continue;
@@ -108,6 +118,152 @@ function streamToBuffer(webStream, maxBytes) {
 }
 
 /**
+ * Fetch a URL into a Buffer, enforcing HTTP success and the size cap. Shared
+ * by the video/audio and image pre-staging paths.
+ *
+ * @param {string} url
+ * @param {object} [options]
+ * @param {typeof fetch} [options.fetchImpl]
+ * @param {number} [options.timeoutMs]
+ * @param {number} [options.maxBytes]
+ * @returns {Promise<{ ok: true, buffer: Buffer } | { ok: false, reason: string, detail: string }>}
+ */
+async function fetchMediaBuffer(url, {
+  fetchImpl = globalThis.fetch,
+  timeoutMs = DEFAULT_MEDIA_TIMEOUT_MS,
+  maxBytes = DEFAULT_MAX_BYTES,
+} = {}) {
+  let res;
+  try {
+    res = await fetchWithTimeout(fetchImpl, url, timeoutMs);
+  } catch (err) {
+    return { ok: false, reason: "download_failed", detail: `fetch error: ${err?.message ?? err}` };
+  }
+
+  if (!res.ok) {
+    const bodyPreview = await res.text().catch(() => "");
+    return {
+      ok: false,
+      reason: "download_failed",
+      detail: `HTTP ${res.status} ${res.statusText}${bodyPreview ? ` — ${bodyPreview.slice(0, 200)}` : ""}`,
+    };
+  }
+
+  // Validate content-length hints early, but be permissive (some CDNs omit it).
+  const contentLength = res.headers.get("content-length");
+  if (contentLength && Number(contentLength) > maxBytes) {
+    return {
+      ok: false,
+      reason: "download_failed",
+      detail: `file too large (${Number(contentLength)} bytes > ${maxBytes})`,
+    };
+  }
+
+  let buffer;
+  if (typeof res.arrayBuffer === "function") {
+    const ab = await res.arrayBuffer();
+    buffer = Buffer.from(ab);
+  } else {
+    const body = res.body;
+    if (!body) {
+      return { ok: false, reason: "download_failed", detail: "empty response body" };
+    }
+    buffer = await streamToBuffer(body, maxBytes);
+  }
+  if (buffer.length > maxBytes) {
+    return { ok: false, reason: "download_failed", detail: `file exceeds ${maxBytes} bytes` };
+  }
+  return { ok: true, buffer };
+}
+
+/**
+ * Sniff the real image container from magic bytes (content-type headers from
+ * capture uploads are not reliable — e.g. an image/png object holding JPEG).
+ *
+ * @param {Buffer} buffer
+ * @returns {'png' | 'jpeg' | 'gif' | 'webp' | 'svg' | 'unknown'}
+ */
+export function sniffImageKind(buffer) {
+  if (!Buffer.isBuffer(buffer) || buffer.length < 12) {
+    // SVG can be short; still sniff text below for tiny payloads.
+  }
+  if (buffer.length >= 4) {
+    if (buffer[0] === 0x89 && buffer[1] === 0x50 && buffer[2] === 0x4e && buffer[3] === 0x47) return "png";
+    if (buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[2] === 0xff) return "jpeg";
+    if (buffer.slice(0, 4).toString("ascii") === "GIF8") return "gif";
+    if (
+      buffer.length >= 12 &&
+      buffer.slice(0, 4).toString("ascii") === "RIFF" &&
+      buffer.slice(8, 12).toString("ascii") === "WEBP"
+    ) {
+      return "webp";
+    }
+  }
+  const head = buffer.slice(0, 1024).toString("utf8").replace(/^\ufeff/, "").trim();
+  if (/^<svg[\s>]/i.test(head) || /^<\?xml[\s\S]*?<svg[\s>]/i.test(head) || /<!doctype\s+svg/i.test(head)) {
+    return "svg";
+  }
+  return "unknown";
+}
+
+/**
+ * Download an external <img> source and make it render-safe.
+ *
+ * SVG payloads are returned as a base64 data URI (no file on disk) so the
+ * render's HDR image probe never ffprobes them and the browser rasterizes them
+ * natively. Raster payloads are written with a correct extension. Anything else
+ * (HTML player pages, truncated bodies, unknown containers) is rejected.
+ *
+ * @param {string} url
+ * @param {string} assetsDir
+ * @param {string} hash
+ * @param {object} [options]
+ * @param {typeof fetch} [options.fetchImpl]
+ * @param {number} [options.timeoutMs]
+ * @param {number} [options.maxBytes]
+ * @param {(msg: string) => void} [options.log]
+ * @returns {Promise<{ ok: true, dataUri?: string, path?: string, assetName?: string, kind: string } | { ok: false, reason: string, detail: string }>}
+ */
+export async function downloadAndValidateImage(url, assetsDir, hash, {
+  fetchImpl = globalThis.fetch,
+  timeoutMs = DEFAULT_MEDIA_TIMEOUT_MS,
+  maxBytes = DEFAULT_MAX_BYTES,
+  log = () => {},
+} = {}) {
+  log(`[media-preloader] downloading image ${url.slice(0, 120)}...`);
+  const fetched = await fetchMediaBuffer(url, { fetchImpl, timeoutMs, maxBytes });
+  if (!fetched.ok) return fetched;
+  const buffer = fetched.buffer;
+  const kind = sniffImageKind(buffer);
+
+  if (kind === "svg") {
+    // base64 keeps the data URI free of quote/angle characters so it can be
+    // spliced straight into an src="..." attribute.
+    const dataUri = `data:image/svg+xml;base64,${buffer.toString("base64")}`;
+    log(`[media-preloader] inlining SVG as data URI (${buffer.length} bytes)`);
+    return { ok: true, dataUri, kind };
+  }
+
+  const extByKind = { png: ".png", jpeg: ".jpg", gif: ".gif", webp: ".webp" };
+  const ext = extByKind[kind];
+  if (!ext) {
+    const textHead = buffer.slice(0, 64).toString("utf8").replace(/\s+/g, " ").slice(0, 80);
+    return {
+      ok: false,
+      reason: "not_image",
+      detail: `response is not a recognized image format (head: "${textHead}")`,
+    };
+  }
+
+  mkdirSync(assetsDir, { recursive: true });
+  const assetName = `vp-media-${hash}${ext}`;
+  const destPath = join(assetsDir, assetName);
+  writeFileSync(destPath, buffer);
+  log(`[media-preloader] staged image ${assetName} (${buffer.length} bytes, ${kind})`);
+  return { ok: true, path: destPath, assetName, kind };
+}
+
+/**
  * Download a media URL, validate it is a real MP4, and run ffprobe.
  *
  * @param {string} url
@@ -135,56 +291,13 @@ export async function downloadAndValidateMedia(
 ) {
   mkdirSync(dirname(destPath), { recursive: true });
 
-  let res;
-  try {
-    log(`[media-preloader] downloading ${url.slice(0, 120)}...`);
-    res = await fetchWithTimeout(fetchImpl, url, timeoutMs);
-  } catch (err) {
-    return { ok: false, reason: "download_failed", detail: `fetch error: ${err?.message ?? err}` };
-  }
-
-  if (!res.ok) {
-    const bodyPreview = await res.text().catch(() => "");
-    return {
-      ok: false,
-      reason: "download_failed",
-      detail: `HTTP ${res.status} ${res.statusText}${bodyPreview ? ` — ${bodyPreview.slice(0, 200)}` : ""}`,
-    };
-  }
-
-  // Validate content-type hints early, but be permissive (some CDNs serve
-  // video/mp4 without a content-type).
-  const contentType = res.headers.get("content-type") || "";
-  const contentLength = res.headers.get("content-length");
-  if (contentLength && Number(contentLength) > maxBytes) {
-    return {
-      ok: false,
-      reason: "download_failed",
-      detail: `file too large (${Number(contentLength)} bytes > ${maxBytes})`,
-    };
-  }
+  log(`[media-preloader] downloading ${url.slice(0, 120)}...`);
+  const fetched = await fetchMediaBuffer(url, { fetchImpl, timeoutMs, maxBytes });
+  if (!fetched.ok) return fetched;
+  const buffer = fetched.buffer;
 
   const tempPath = `${destPath}.tmp-${randomBytes(4).toString("hex")}`;
   try {
-    let buffer;
-    if (typeof res.arrayBuffer === "function") {
-      const ab = await res.arrayBuffer();
-      buffer = Buffer.from(ab);
-      if (buffer.length > maxBytes) {
-        return {
-          ok: false,
-          reason: "download_failed",
-          detail: `file exceeds ${maxBytes} bytes`,
-        };
-      }
-    } else {
-      const body = res.body;
-      if (!body) {
-        return { ok: false, reason: "download_failed", detail: "empty response body" };
-      }
-      buffer = await streamToBuffer(body, maxBytes);
-    }
-
     writeFileSync(tempPath, buffer);
 
     // Magic-byte check.
@@ -256,10 +369,11 @@ function runFfprobe(ffprobePath, filePath, spawnImpl = defaultSpawn) {
 }
 
 /**
- * Rewrite HTML so external video/audio src attributes point to local files.
+ * Rewrite HTML so external video/audio/img src attributes point to local
+ * files (or inline data URIs for SVG images).
  *
  * @param {string} html
- * @param {Record<string, string>} mapping originalUrl -> localRelativePath
+ * @param {Record<string, string>} mapping originalUrl -> localRelativePath|dataUri
  * @returns {string}
  */
 export function rewriteHtmlMediaUrls(html, mapping) {
@@ -267,8 +381,8 @@ export function rewriteHtmlMediaUrls(html, mapping) {
   if (!mapping || Object.keys(mapping).length === 0) return html;
 
   // Replace only src values that exactly match a known original URL and that
-  // live inside a video/audio tag. This avoids touching unrelated elements.
-  const tagRe = /<(video|audio)\b([^>]*)>/gis;
+  // live inside a video/audio/img tag. This avoids touching unrelated elements.
+  const tagRe = /<(video|audio|img)\b([^>]*)>/gis;
   return html.replace(tagRe, (fullTag, tagName, attrs) => {
     const srcMatch = attrs.match(/(\bsrc\s*=\s*["'])([^"']+)(["'])/i);
     if (!srcMatch) return fullTag;
@@ -292,6 +406,7 @@ export function rewriteHtmlMediaUrls(html, mapping) {
  * @param {number} [options.timeoutMs]
  * @param {number} [options.maxBytes]
  * @param {(msg: string) => void} [options.log]
+ * @param {(command: string, args: string[]) => import('child_process').ChildProcess} [options.spawnImpl]
  * @returns {Promise<{ ok: true, html: string, downloaded: string[], skipped: boolean } | { ok: false, reason: string, failures: Array<{ url: string, reason: string, detail: string }> }>}
  */
 export async function prestageExternalMedia(html, jobDir, options = {}) {
@@ -307,8 +422,23 @@ export async function prestageExternalMedia(html, jobDir, options = {}) {
   const downloaded = [];
   const failures = [];
 
-  for (const { originalSrc } of urls) {
+  for (const { tag, originalSrc } of urls) {
     const hash = urlHash(originalSrc);
+
+    // V4-3f.13: images get content-sniffed handling (SVG -> inline data URI,
+    // raster -> correct extension). Leaving them to the CLI would name every
+    // extension-less capture URL `.mp4` and break the render's image probing.
+    if (tag === "image") {
+      const result = await downloadAndValidateImage(originalSrc, assetsDir, hash, options);
+      if (result.ok) {
+        mapping[originalSrc] = result.dataUri ?? `assets/${result.assetName}`;
+        downloaded.push(originalSrc);
+      } else {
+        failures.push({ url: originalSrc, reason: result.reason, detail: result.detail });
+      }
+      continue;
+    }
+
     const ext = ".mp4"; // we only accept validated mp4 containers
     const assetName = `vp-media-${hash}${ext}`;
     const destPath = join(assetsDir, assetName);

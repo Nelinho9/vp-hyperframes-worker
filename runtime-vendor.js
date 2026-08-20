@@ -71,10 +71,21 @@ function escapeInlineScript(bundle) {
  * exempt brand families — removing them without replacement made every
  * brand font a hard lint error. Callers must pass the replacement
  * `<style>` block produced by prepareOfflineFonts().
+ *
+ * GSAP embedding (V4-3f.13): the bundle is injected as a base64 data-URI
+ * `src`, not a project file. A file reference (`assets/__vp_gsap.min.js`)
+ * loads for lint/check (served from the project dir) but 404s during
+ * RENDER — the CLI's compile stage serves the compiled dir and never copies
+ * `assets/` into it — so the page script died on `gsap.timeline()` and every
+ * GSAP animation was silently dropped from the final mp4. The data URI loads
+ * everywhere with zero file-server dependency, and lint still sees it as an
+ * external src (inlining the bundle as a script BODY trips lint's
+ * non_deterministic_code rule on GSAP's own Math.random/Date.now).
  */
 export function sanitizeCompositionForOffline(html, {
   hyperframesRuntime = "",
   gsapRuntime = "",
+  gsapDataUri = "",
   gsapSrc = VENDORED_GSAP_ASSET_PATH,
   fontFaceStyle = "",
 } = {}) {
@@ -91,15 +102,15 @@ export function sanitizeCompositionForOffline(html, {
 
   // The HyperFrames CLI injects its own installed runtime at /runtime.js during
   // lint/check/render. Embedding that bundle here makes the linter inspect the
-  // library source as composition code. Keep GSAP as a local project asset for
-  // the same reason: it is loaded by Chromium from disk but never linted as an
-  // inline script. `hyperframesRuntime` is intentionally accepted for callers
-  // that already load both bundles, but is not embedded into the composition.
+  // library source as composition code, so it is intentionally never inlined
+  // (`hyperframesRuntime` stays accepted for callers that load both bundles).
   const localScripts = [];
   if (fontFaceStyle) localScripts.push(fontFaceStyle);
-  if (gsapRuntime) {
-    const safeSrc = String(gsapSrc || VENDORED_GSAP_ASSET_PATH).replace(/["<>]/g, "");
-    localScripts.push(`<script data-vp-vendored="gsap" src="${safeSrc}"></script>`);
+  const resolvedGsapUri = gsapDataUri
+    || (gsapRuntime ? `data:text/javascript;base64,${Buffer.from(String(gsapRuntime), "utf8").toString("base64")}` : "");
+  if (resolvedGsapUri) {
+    // base64 is quote-safe for attribute splicing.
+    localScripts.push(`<script data-vp-vendored="gsap" src="${resolvedGsapUri}"></script>`);
   }
   if (localScripts.length === 0) return sanitized;
 

@@ -28,7 +28,10 @@ describe("offline runtime vendor", () => {
     expect(result).not.toContain("jsdelivr");
     expect(result).not.toContain("fonts.googleapis");
     expect(result).toContain('data-vp-vendored="gsap"');
-    expect(result).toContain('src="assets/__vp_gsap.min.js"');
+    // V4-3f.13: GSAP é embutido como data URI (o ficheiro local 404ava no
+    // render porque o compile serve o compiled dir sem copiar assets/).
+    expect(result).toContain('src="data:text/javascript;base64,');
+    expect(result).not.toContain('src="assets/__vp_gsap.min.js"');
     expect(result).not.toContain('data-vp-vendored="hyperframes"');
     expect(result).not.toContain("window.__hf");
   });
@@ -43,8 +46,10 @@ describe("offline runtime vendor", () => {
     expect(bundles.hyperframesPath).toBeTruthy();
     expect(bundles.gsapPath).toBeTruthy();
     expect(result).toContain('data-vp-vendored="gsap"');
-    expect(result).toContain('src="assets/__vp_gsap.min.js"');
+    expect(result).toContain('src="data:text/javascript;base64,');
     expect(result).not.toContain(bundles.gsap.slice(0, 80));
+    // O código do bundle nunca aparece em texto claro (lint não o inspeciona).
+    expect(result).not.toContain("gsap.com");
   });
 
   it("tolerates only external request/http failures when lint and layout pass", () => {

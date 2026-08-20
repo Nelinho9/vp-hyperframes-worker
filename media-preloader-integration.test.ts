@@ -36,7 +36,14 @@ beforeAll(async () => {
   await new Promise<void>((r) => server.once('listening', () => r()));
   base = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
 
-  cdnServer = http.createServer((_req, res) => {
+  cdnServer = http.createServer((req, res) => {
+    // V4-3f.13: serve a real SVG on /logo (no file extension, like the
+    // Supabase capture URLs); everything else answers an HTML player page.
+    if (req.url === '/logo') {
+      res.writeHead(200, { 'Content-Type': 'image/svg+xml' });
+      res.end('<svg xmlns="http://www.w3.org/2000/svg" width="8" height="8"><rect width="8" height="8"/></svg>');
+      return;
+    }
     res.writeHead(200, { 'Content-Type': 'text/html' });
     res.end('<!doctype html><html>player page</html>');
   });
@@ -69,5 +76,53 @@ describe('POST /job — media pre-staging', () => {
     expect(body.status).toBe('failed');
     expect(body.error).toBe('MEDIA_VALIDATION_FAILED');
     expect(body.failures[0].reason).toBe('not_mp4');
+  });
+
+  it('aceita <img> SVG externo e faz staging com data URI inline (V4-3f.13)', async () => {
+    const logoUrl = `${cdnBase}/logo`;
+    const res = await post('/job', {
+      job_id: 'job-img-svg',
+      project_id: 'proj-img-svg',
+      step: 'build',
+      mode: 'preview',
+      index_html: `<!doctype html>
+        <html><head></head><body>
+        <div class="composition" data-composition-id="main" data-start="0" data-duration="5" data-width="1080" data-height="1920">
+          <img id="img-logo" class="clip" src="${logoUrl}" data-start="0" data-duration="5" alt="logo">
+        </div>
+        </body></html>`,
+    });
+
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.status).toBe('queued');
+
+    // O HTML staged (servido no preview) já não contém a URL externa —
+    // o SVG foi inlineado como data URI, evitando o download/ffprobe no CLI.
+    const preview = await fetch(`${base}/preview/proj-img-svg`);
+    expect(preview.status).toBe(200);
+    const stagedHtml = await preview.text();
+    expect(stagedHtml).toContain('src="data:image/svg+xml;base64,');
+    expect(stagedHtml).not.toContain(logoUrl);
+  });
+
+  it('rejeita <img> externa que devolve HTML em vez de imagem (V4-3f.13)', async () => {
+    const res = await post('/job', {
+      job_id: 'job-img-html',
+      project_id: 'proj-img-html',
+      step: 'build',
+      mode: 'preview',
+      index_html: `<!doctype html>
+        <html><head></head><body>
+        <div class="composition" data-composition-id="main" data-start="0" data-duration="5" data-width="1080" data-height="1920">
+          <img id="img-x" class="clip" src="${cdnBase}/player.html" data-start="0" data-duration="5">
+        </div>
+        </body></html>`,
+    });
+
+    expect(res.status).toBe(422);
+    const body = await res.json();
+    expect(body.error).toBe('MEDIA_VALIDATION_FAILED');
+    expect(body.failures[0].reason).toBe('not_image');
   });
 });

@@ -17,6 +17,8 @@ import {
   extractMediaUrls,
   rewriteHtmlMediaUrls,
   downloadAndValidateMedia,
+  downloadAndValidateImage,
+  sniffImageKind,
   prestageExternalMedia,
 } from './media-preloader.js';
 
@@ -83,18 +85,36 @@ function makeFetchImpl(body: Buffer, opts: { status?: number; contentType?: stri
 
 function makeSpawnImpl({ exitCode = 0, stdout = '', stderr = '' } = {}) {
   return vi.fn().mockImplementation(() => {
-    const child = new EventEmitter() as ChildProcess;
-    child.stdout = new PassThrough();
-    child.stderr = new PassThrough();
+    const stdoutStream = new PassThrough();
+    const stderrStream = new PassThrough();
+    const child = Object.assign(new EventEmitter(), {
+      stdout: stdoutStream,
+      stderr: stderrStream,
+    }) as unknown as ChildProcess;
     process.nextTick(() => {
-      if (stdout) child.stdout?.write(stdout);
-      child.stdout?.end();
-      if (stderr) child.stderr?.write(stderr);
-      child.stderr?.end();
+      if (stdout) stdoutStream.write(stdout);
+      stdoutStream.end();
+      if (stderr) stderrStream.write(stderr);
+      stderrStream.end();
       child.emit('close', exitCode);
     });
     return child;
   });
+}
+
+function minimalPngBuffer() {
+  // PNG magic + enough bytes for sniffing; not decoded anywhere these tests.
+  return Buffer.concat([
+    Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+    Buffer.alloc(32, 0x00),
+  ]);
+}
+
+function minimalSvgBuffer() {
+  return Buffer.from(
+    '<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"><rect width="10" height="10"/></svg>',
+    'utf8'
+  );
 }
 
 describe('extractMediaUrls', () => {
@@ -107,6 +127,13 @@ describe('extractMediaUrls', () => {
     expect(urls).toHaveLength(2);
     expect(urls[0]).toMatchObject({ tag: 'video', originalSrc: 'https://cdn.example.com/intro.mp4' });
     expect(urls[1]).toMatchObject({ tag: 'audio', originalSrc: 'https://cdn.example.com/music.mp4' });
+  });
+
+  it('extrai src de <img> como tag image (V4-3f.13)', () => {
+    const html = '<img id="img-logo" src="https://cdn.example.com/asset-0" alt="logo">';
+    const urls = extractMediaUrls(html);
+    expect(urls).toHaveLength(1);
+    expect(urls[0]).toMatchObject({ tag: 'image', originalSrc: 'https://cdn.example.com/asset-0' });
   });
 
   it('ignora src locais, data URIs e blobs', () => {
@@ -138,9 +165,100 @@ describe('rewriteHtmlMediaUrls', () => {
     expect(out).toContain('muted');
   });
 
+  it('substitui src de <img> preservando atributos (V4-3f.13)', () => {
+    const html = '<img id="img-logo" alt="logo" src="https://cdn.example.com/asset-0">';
+    const out = rewriteHtmlMediaUrls(html, {
+      'https://cdn.example.com/asset-0': 'data:image/svg+xml;base64,QUJD',
+    });
+    expect(out).toContain('src="data:image/svg+xml;base64,QUJD"');
+    expect(out).toContain('alt="logo"');
+  });
+
   it('não altera URLs que não estão no mapeamento', () => {
     const html = '<video src="https://cdn.example.com/keep.mp4">';
     expect(rewriteHtmlMediaUrls(html, {})).toBe(html);
+  });
+});
+
+describe('sniffImageKind', () => {
+  it('reconhece PNG, JPEG, GIF, WebP, SVG e desconhecido', () => {
+    expect(sniffImageKind(minimalPngBuffer())).toBe('png');
+    expect(sniffImageKind(Buffer.concat([Buffer.from([0xff, 0xd8, 0xff]), Buffer.alloc(16)]))).toBe('jpeg');
+    expect(sniffImageKind(Buffer.concat([Buffer.from('GIF89a'), Buffer.alloc(16)]))).toBe('gif');
+    expect(
+      sniffImageKind(Buffer.concat([Buffer.from('RIFF'), Buffer.alloc(4), Buffer.from('WEBP'), Buffer.alloc(8)]))
+    ).toBe('webp');
+    expect(sniffImageKind(minimalSvgBuffer())).toBe('svg');
+    expect(sniffImageKind(Buffer.from('<!doctype html><html>player</html>'))).toBe('unknown');
+  });
+
+  it('detecta SVG precedido de declaração XML', () => {
+    const svg = Buffer.from('<?xml version="1.0" encoding="utf-8"?>\n<svg xmlns="http://www.w3.org/2000/svg"></svg>');
+    expect(sniffImageKind(svg)).toBe('svg');
+  });
+});
+
+describe('downloadAndValidateImage', () => {
+  it('SVG → devolve data URI base64 e não grava ficheiro', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'vp-img-'));
+    const fetchImpl = makeFetchImpl(minimalSvgBuffer(), { contentType: 'image/svg+xml' });
+    const result = await downloadAndValidateImage('https://cdn.example.com/asset-0', dir, 'hashsvg', {
+      fetchImpl,
+      timeoutMs: 5000,
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.kind).toBe('svg');
+    expect(result.dataUri).toMatch(/^data:image\/svg\+xml;base64,/);
+    expect(result.dataUri).toBe(`data:image/svg+xml;base64,${minimalSvgBuffer().toString('base64')}`);
+    expect(result.path).toBeUndefined();
+  });
+
+  it('PNG → grava ficheiro local com extensão correta', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'vp-img-'));
+    const fetchImpl = makeFetchImpl(minimalPngBuffer(), { contentType: 'image/png' });
+    const result = await downloadAndValidateImage('https://cdn.example.com/asset-2', dir, 'hashpng', {
+      fetchImpl,
+      timeoutMs: 5000,
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.kind).toBe('png');
+    expect(result.assetName).toBe('vp-media-hashpng.png');
+    expect(readFileSync(join(dir, 'vp-media-hashpng.png')).length).toBe(minimalPngBuffer().length);
+  });
+
+  it('respeita o conteúdo (não o content-type) — JPEG com header PNG', () => {
+    // asset-7/asset-8 reais: content-type image/png mas bytes JPEG.
+    const jpeg = Buffer.concat([Buffer.from([0xff, 0xd8, 0xff]), Buffer.alloc(16)]);
+    expect(sniffImageKind(jpeg)).toBe('jpeg');
+  });
+
+  it('falha com not_image quando o corpo é uma página HTML', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'vp-img-'));
+    const fetchImpl = makeFetchImpl(Buffer.from('<!doctype html><html>player page</html>'), {
+      contentType: 'text/html',
+    });
+    const result = await downloadAndValidateImage('https://cdn.example.com/player', dir, 'hashhtml', {
+      fetchImpl,
+      timeoutMs: 5000,
+    });
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.reason).toBe('not_image');
+  });
+
+  it('falha com download_failed em HTTP 404', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'vp-img-'));
+    const fetchImpl = makeFetchImpl(Buffer.from('not found'), { status: 404, contentType: 'text/plain' });
+    const result = await downloadAndValidateImage('https://cdn.example.com/missing', dir, 'hash404', {
+      fetchImpl,
+      timeoutMs: 5000,
+    });
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.reason).toBe('download_failed');
+    expect(result.detail).toContain('404');
   });
 });
 
@@ -273,5 +391,61 @@ describe('prestageExternalMedia', () => {
     expect(result.downloaded).toHaveLength(1);
     expect(result.html).toContain('src="assets/vp-media-');
     expect(result.html).not.toContain(url);
+  });
+
+  it('inline SVG em <img> como data URI e remove a URL externa (V4-3f.13)', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'vp-media-'));
+    const url = 'https://cdn.example.com/asset-0';
+    const fetchImpl = vi.fn().mockResolvedValue(makeResponse(minimalSvgBuffer(), { contentType: 'image/svg+xml' }));
+
+    const result = await prestageExternalMedia(
+      `<img id="img-logo" src="${url}" alt="logo">`,
+      dir,
+      { fetchImpl }
+    );
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.skipped).toBe(false);
+    expect(result.downloaded).toEqual([url]);
+    expect(result.html).toContain('src="data:image/svg+xml;base64,');
+    expect(result.html).not.toContain(url);
+    expect(result.html).toContain('alt="logo"');
+  });
+
+  it('pré-estageia <img> raster com extensão correta (V4-3f.13)', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'vp-media-'));
+    const url = 'https://cdn.example.com/asset-2';
+    const fetchImpl = vi.fn().mockResolvedValue(makeResponse(minimalPngBuffer(), { contentType: 'image/png' }));
+
+    const result = await prestageExternalMedia(
+      `<img id="img-bg" src="${url}" alt="bg">`,
+      dir,
+      { fetchImpl }
+    );
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.html).toContain('src="assets/vp-media-');
+    expect(result.html).toContain('.png"');
+    expect(result.html).not.toContain(url);
+  });
+
+  it('falha quando uma <img> externa devolve HTML (V4-3f.13)', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'vp-media-'));
+    const fetchImpl = vi.fn().mockResolvedValue(
+      makeResponse(Buffer.from('<!doctype html><html>player</html>'), { status: 200, contentType: 'text/html' })
+    );
+
+    const result = await prestageExternalMedia(
+      '<img id="img-x" src="https://cdn.example.com/player">',
+      dir,
+      { fetchImpl }
+    );
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.reason).toBe('MEDIA_VALIDATION_FAILED');
+    expect(result.failures[0].reason).toBe('not_image');
   });
 });
