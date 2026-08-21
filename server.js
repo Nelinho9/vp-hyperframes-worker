@@ -21,6 +21,7 @@ import { randomUUID } from "crypto";
 import { pathToFileURL } from "url";
 import { injectPreviewHelper } from "./preview-helper.js";
 import { verifyPreviewToken } from "./preview-token.js";
+import { sanitizeCompositionTweens, extractLintFindings } from "./composition-sanitizer.js";
 import {
   classifyCheckEnvelope,
   extractCheckJson,
@@ -294,6 +295,17 @@ app.post("/job", async (req, res) => {
   // The CLI launches Chromium inside this container, so public CDN references
   // are both unnecessary and a source of fatal ERR_BLOCKED_BY_ORB failures.
   if (typeof index_html === 'string') {
+    // V4-3f.17 (Fase 5): mechanical tween sanitization BEFORE lint — the
+    // worker's last line of defense against the gsap_non_transform_motion
+    // error class (left/top tweens) that hard-failed the V4-3f.16 build.
+    // Mirrors the edge-side repair; every conversion is logged.
+    const tweenFix = sanitizeCompositionTweens(index_html);
+    if (tweenFix.repairs.length > 0) {
+      console.warn(
+        `[worker] sanitized ${tweenFix.repairs.length} layout-prop tween(s) before lint: ${tweenFix.repairs.join("; ")}`
+      );
+      index_html = tweenFix.html;
+    }
     // V4-3f.10: resolve Google Fonts into local woff2 assets BEFORE the
     // sanitizer strips the references — lint's font_family_without_font_face
     // rule needs an @font-face declaration for every brand family.
@@ -594,10 +606,36 @@ export async function runRender(jobId, jobDir) {
   try {
     // Step 1: lint
     timings.lint_start = Date.now();
-    execSync(
-      `npx hyperframes lint --json "${jobDir}"`,
-      { encoding: "utf-8", timeout: 30000, env: { ...process.env, CHROME_PATH } }
-    );
+    try {
+      execSync(
+        `npx hyperframes lint --json "${jobDir}"`,
+        { encoding: "utf-8", timeout: 30000, env: { ...process.env, CHROME_PATH } }
+      );
+    } catch (lintErr) {
+      // V4-3f.17 (Fase 5): parse the --json findings so the job error and
+      // the orchestrator callback carry the full structured list instead of
+      // a truncated opaque message. Warnings are tolerated; errors never.
+      const findings = extractLintFindings(lintErr);
+      if (findings && findings.length > 0) {
+        const errors = findings.filter((f) => (f.severity ?? "error") !== "warning");
+        if (errors.length === 0) {
+          console.warn(
+            `[worker] lint exited non-zero with warnings only — tolerating: ${findings.map((f) => f.code).join(", ")}`
+          );
+        } else {
+          job.lint_findings = findings;
+          const summary = errors
+            .map((f) => `[${f.code}]${f.selector ? ` ${f.selector}` : ""}: ${f.message ?? ""}`)
+            .join(" | ");
+          const rich = new Error(`HYPERFRAMES_LINT_FAILED: ${summary}`);
+          rich.stdout = lintErr.stdout;
+          rich.stderr = lintErr.stderr;
+          throw rich;
+        }
+      } else {
+        throw lintErr;
+      }
+    }
     timings.lint_ms = Date.now() - timings.lint_start;
 
     // Step 2: check
@@ -740,6 +778,10 @@ export async function runRender(jobId, jobDir) {
             error: job.error,
             total_ms: job.total_ms,
             media_validation: job.media_validation || null,
+            // V4-3f.17 (Fase 5): full structured lint findings (when the
+            // failure was a lint error) so the orchestrator/UI can surface
+            // actionable detail instead of a truncated message.
+            lint_findings: job.lint_findings || null,
           }),
         });
         console.log(`[callback] sent failed for job ${job.id}`);
