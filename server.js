@@ -37,6 +37,7 @@ import {
   VENDORED_GSAP_ASSET_PATH,
 } from "./runtime-vendor.js";
 import { prestageExternalMedia } from "./media-preloader.js";
+import { compositionStoragePath, persistCompositionArtifact } from "./composition-persist.js";
 
 const app = express();
 app.use(express.json({ limit: "200mb" }));
@@ -407,6 +408,15 @@ app.post("/job", async (req, res) => {
   // Write the composition HTML
   writeFileSync(join(jobDir, "index.html"), index_html);
 
+  // V4_04 fix: persistir a composição staged no storage — o editor usa
+  // `projects/{id}/compositions/index.html` como fonte primária pós-build
+  // (reconciliação de durações) e como alvo das edições. Fire-and-forget no
+  // staging; a promessa fica no job para o callback reportar o resultado.
+  // step:'preview' é o placeholder inicial — não pode competir com o HTML real.
+  const compositionUploadPromise = step !== "preview"
+    ? persistCompositionArtifact(supabase, project_id, index_html, console.log)
+    : null;
+
   // V4-3g.3 (B6): marcador para reidratação do registry no boot.
   writeJobMarker(jobDir, {
     job_id: jobId,
@@ -440,6 +450,7 @@ app.post("/job", async (req, res) => {
     outputs,
     artifact_paths,
     media_validation: jobMediaValidation,
+    compositionUploadPromise,
   });
   // Track by project_id for preview lookup
   projectJobs.set(project_id, jobId);
@@ -856,6 +867,13 @@ export async function runRender(jobId, jobDir) {
       }
     } else {
       throw new Error("no MP4 upload target configured");
+    }
+
+    // V4_04 fix: o staging fez upsert da composição no storage — esperar pela
+    // promessa (resolvida em ms face ao render) para reportar ao orquestrador,
+    // que registra o artifact nos steps do manifesto.
+    if (job.compositionUploadPromise) {
+      uploaded.composition_html = await job.compositionUploadPromise;
     }
 
     // Callback to orchestrator (V4-1 contract)
