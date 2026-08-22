@@ -54,8 +54,16 @@ ENV NODE_ENV=production \
 
 WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
-COPY server.js runtime-vendor.js preview-token.js preview-helper.js media-preloader.js package.json ./
+# Wildcard: a lista explícita já falhou 2x (media-preloader.js em fba2377;
+# patch-engine.js + composition-sanitizer.js em d40beaf — deploy 22-08-2026
+# com ERR_MODULE_NOT_FOUND e rollback do Coolify). Testes são *.ts, ficam fora.
+COPY package.json *.js ./
 COPY fixtures ./fixtures
+
+# Guard de build: falha cedo (com mensagem clara) se algum import local do
+# grafo server.js não existir na imagem — antes disto, o crash só aparecia no
+# boot (ERR_MODULE_NOT_FOUND) após o build, em crash-loop.
+RUN node -e "const fs=require('fs');const seen=new Set(['server.js']);const queue=['server.js'];const missing=[];while(queue.length){const f=queue.shift();const src=fs.readFileSync(f,'utf8');for(const m of src.matchAll(/(?:from|import)\s*\(?\s*['\"](\.\/[^'\"]+)['\"]/g)){const dep=m[1].replace(/^\.\//,'');if(seen.has(dep))continue;seen.add(dep);if(fs.existsSync(dep)){queue.push(dep)}else{missing.push(f+' -> '+dep)}}}if(missing.length){console.error('FATAL — módulos locais em falta na imagem:',missing);process.exit(1)}"
 
 RUN mkdir -p $WORK_DIR
 
