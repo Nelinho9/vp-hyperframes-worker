@@ -19,6 +19,8 @@ import vm from 'node:vm';
 import { app } from './server.js';
 import {
   injectPreviewHelper,
+  injectPreviewRuntime,
+  RUNTIME_SCRIPT_MARKER,
   PREVIEW_HELPER_SCRIPT,
   HELPER_SCRIPT_ID,
 } from './preview-helper.js';
@@ -119,6 +121,39 @@ describe('PREVIEW_HELPER_SCRIPT — contrato do protocolo', () => {
   });
 });
 
+describe('injectPreviewRuntime — unit (V4_04A fix)', () => {
+  it('injeta o runtime logo após <head>', () => {
+    const out = injectPreviewRuntime(COMPOSITION_HTML, '/preview/p1/__vp_runtime.js');
+    expect(out).toContain(`script ${RUNTIME_SCRIPT_MARKER} src="/preview/p1/__vp_runtime.js"`);
+    const headOpen = html_headEnd(COMPOSITION_HTML);
+    expect(out.indexOf(RUNTIME_SCRIPT_MARKER)).toBe(headOpen + '<script '.length);
+  });
+
+  it('é idempotente (não duplica a tag de runtime)', () => {
+    const once = injectPreviewRuntime(COMPOSITION_HTML, '/x.js');
+    const twice = injectPreviewRuntime(once, '/x.js');
+    expect(twice).toBe(once);
+  });
+
+  it('aceita HTML sem <head> (usa </body>) e sem <body> (prefixa)', () => {
+    const withBody = injectPreviewRuntime('<body><div>sem head</div></body>', '/x.js');
+    expect(withBody.indexOf(RUNTIME_SCRIPT_MARKER)).toBeLessThan(withBody.search(/<\/body>/i));
+    const bare = injectPreviewRuntime('<div>nada</div>', '/x.js');
+    expect(bare.startsWith(`<script ${RUNTIME_SCRIPT_MARKER}`)).toBe(true);
+  });
+
+  it('devolve input inválido sem alterações', () => {
+    expect(injectPreviewRuntime('', '/x.js')).toBe('');
+    expect(injectPreviewRuntime(null as unknown as string, '/x.js')).toBe(null);
+    expect(injectPreviewRuntime(COMPOSITION_HTML, '')).toBe(COMPOSITION_HTML);
+  });
+});
+
+function html_headEnd(html: string): number {
+  const m = html.match(/<head[^>]*>/i);
+  return m ? m.index! + m[0].length : -1;
+}
+
 describe('GET /preview/:id — injeção sobre HTTP', () => {
   it('serve o index.html com o helper injetado (mode preview)', async () => {
     const res = await post('/job', {
@@ -135,9 +170,24 @@ describe('GET /preview/:id — injeção sobre HTTP', () => {
     expect(preview.status).toBe(200);
     const html = await preview.text();
     expect(html).toContain(`id="${HELPER_SCRIPT_ID}"`);
+    // V4_04A fix: the vendored runtime is injected so the hf-preview bridge
+    // boots and answers the editor handshake.
+    expect(html).toContain(RUNTIME_SCRIPT_MARKER);
+    expect(html).toContain('src="/preview/proj-inject-1/__vp_runtime.js"');
     expect(html).toContain('data-composition-id="main"');
     expect(html.indexOf(HELPER_SCRIPT_ID)).toBeLessThan(html.search(/<\/body>/i));
     expect(preview.headers.get('content-type')).toContain('html');
+  });
+
+  it('serve o bundle de runtime em /preview/:id/__vp_runtime.js', async () => {
+    const runtime = await fetch(`${base}/preview/proj-inject-1/__vp_runtime.js`);
+    expect(runtime.status).toBe(200);
+    expect(runtime.headers.get('content-type')).toContain('javascript');
+    const body = await runtime.text();
+    // The real hyperframe.runtime.iife.js is a large minified bundle.
+    expect(body.length).toBeGreaterThan(10_000);
+    // It must be the bridge-capable build (posts hf-preview envelopes).
+    expect(body).toContain('hf-preview');
   });
 
   it('lookup por job_id também funciona', async () => {

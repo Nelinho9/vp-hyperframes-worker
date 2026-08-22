@@ -6,9 +6,14 @@
  *
  * Endpoints:
  *   GET  /health                  — health check
+ *   GET  /healthz                 — liveness probe (uptime + active jobs, V4-04D)
  *   POST /job                     — submit a render job
  *   GET  /job/:id/status          — poll job status
- *   POST /job/:id/patch           — patch text in a frame (click-to-edit PoC)
+ *   POST /patch/:id               — apply click-to-edit patches (linkedom,
+ *                                   persisted, V4-04C — replaces the old
+ *                                   text-only /job/:id/patch PoC)
+ *   POST /restructure/:id         — rewrite the timeline from editor scenes
+ *                                   (durations/starts/removals, V4-04C)
  *   GET  /preview/:id             — serve hyperframes preview for a project
  */
 
@@ -19,8 +24,9 @@ import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync } from 
 import { join, basename, dirname } from "path";
 import { randomUUID } from "crypto";
 import { pathToFileURL } from "url";
-import { injectPreviewHelper } from "./preview-helper.js";
+import { injectPreviewHelper, injectPreviewRuntime } from "./preview-helper.js";
 import { verifyPreviewToken } from "./preview-token.js";
+import { applyPatchesLinkedom, applyTimelineRestructure } from "./patch-engine.js";
 import { sanitizeCompositionTweens, extractLintFindings } from "./composition-sanitizer.js";
 import {
   classifyCheckEnvelope,
@@ -44,6 +50,11 @@ const CHROME_PATH = process.env.CHROME_PATH || "/usr/bin/chromium";
 // V4-3g.5 (R5): quando definido, GET /preview/:id exige ?token= HMAC válido
 // (mesmo segredo que VIDEO_V4_PREVIEW_SECRET no orchestrator edge).
 const PREVIEW_SECRET = process.env.PREVIEW_SECRET || "";
+// V4-04C: server-to-server auth para /patch/:id + /restructure/:id — a rota
+// Vercel envia o secret de serviço (VIDEO_V4_CALLBACK_SECRET no lado Vercel,
+// partilhado aqui como WORKER_SECRET). Sem nenhum dos dois secrets, as rotas
+// de escrita recusam-se (503) em vez de ficarem abertas.
+const WORKER_SECRET = process.env.WORKER_SECRET || "";
 const runtimeBundles = loadVendoredRuntimeBundles();
 
 const supabase = SUPABASE_URL && SUPABASE_KEY
@@ -217,6 +228,16 @@ export async function runCheck(jobDir) {
 // ── Health ──────────────────────────────────────────────────────────
 app.get("/health", (_req, res) => {
   res.json({ ok: true, ts: Date.now(), chrome: CHROME_PATH });
+});
+
+// V4-04D §2.5: liveness probe — lets the Studio poll distinguish
+// "worker down" from "composition not staged yet".
+app.get("/healthz", (_req, res) => {
+  res.json({
+    ok: true,
+    uptime_s: Math.round(process.uptime()),
+    active_jobs: jobs.size,
+  });
 });
 
 // Vendored browser dependencies are also exposed for local compositions that
@@ -448,36 +469,112 @@ app.get("/job/:id/status", (req, res) => {
   res.json(job);
 });
 
-// ── Patch text (click-to-edit PoC) ──────────────────────────────────
-app.post("/job/:id/patch", (req, res) => {
-  const job = jobs.get(req.params.id);
+// ── V4-04C: project-scoped write endpoints (patch / restructure) ────
+// Auth: server-to-server secret (X-Worker-Secret === WORKER_SECRET) or the
+// same preview HMAC token as GET /preview/:id. Without either secret the
+// routes refuse to open (503) — the preview is never publicly writable.
+function authorizeProjectWrite(req, projectId) {
+  const hasService = Boolean(WORKER_SECRET);
+  const hasPreview = Boolean(PREVIEW_SECRET);
+  if (!hasService && !hasPreview) {
+    return { ok: false, status: 503, error: "auth_not_configured" };
+  }
+  if (hasService && (req.get("x-worker-secret") || "") === WORKER_SECRET) {
+    return { ok: true };
+  }
+  if (hasPreview) {
+    const token = typeof req.query.token === "string" ? req.query.token : "";
+    if (verifyPreviewToken(token, projectId, PREVIEW_SECRET)) return { ok: true };
+    return { ok: false, status: 401, error: "invalid_token" };
+  }
+  return { ok: false, status: 401, error: "invalid_secret" };
+}
+
+/** Resolve a job by project_id (orchestrator format) or internal job_id. */
+function resolveJobById(id) {
+  const internalJobId = projectJobs.get(id);
+  if (internalJobId) {
+    const job = jobs.get(internalJobId);
+    if (job) return job;
+  }
+  return jobs.get(id) ?? null;
+}
+
+app.options("/patch/:id", previewCors);
+app.post("/patch/:id", previewCors, (req, res) => {
+  const projectId = req.params.id;
+  const auth = authorizeProjectWrite(req, projectId);
+  if (!auth.ok) return res.status(auth.status).json({ error: auth.error });
+
+  const job = resolveJobById(projectId);
   if (!job) return res.status(404).json({ error: "not found" });
 
-  const { selector, text } = req.body;
-  if (!selector || text === undefined) {
-    return res.status(400).json({ error: "selector and text required" });
+  const { patches } = req.body ?? {};
+  if (!Array.isArray(patches) || patches.length === 0) {
+    return res.status(400).json({ error: "patches must be a non-empty array" });
+  }
+  for (const p of patches) {
+    if (!p || typeof p.selector !== "string" || typeof p.property !== "string" || typeof p.value !== "string") {
+      return res.status(400).json({ error: "each patch must have {selector, property, value} strings" });
+    }
   }
 
   const indexPath = join(job.job_dir, "index.html");
-  let html = readFileSync(indexPath, "utf-8");
+  if (!existsSync(indexPath)) return res.status(404).json({ error: "index.html not found" });
+  const html = readFileSync(indexPath, "utf-8");
 
-  // Simple DOM patch: find element by id or class, replace textContent
-  // In production, use a proper HTML parser (linkedom / jsdom)
-  const idMatch = selector.startsWith("#");
-  const target = idMatch ? selector.slice(1) : null;
-
-  if (target) {
-    // Replace text inside the element with this id
-    const regex = new RegExp(
-      `(<[^>]*id=["']${target}["'][^>]*>)([^<]*)(</)`,
-      "g"
-    );
-    html = html.replace(regex, `$1${text}$3`);
-    writeFileSync(indexPath, html);
-    res.json({ ok: true, patched: selector, new_text: text });
-  } else {
-    res.status(400).json({ error: "only #id selectors supported in PoC" });
+  let result;
+  try {
+    result = applyPatchesLinkedom(html, patches);
+  } catch (err) {
+    const status = err?.status ?? 500;
+    return res.status(status).json({ error: err?.message ?? "patch failed" });
   }
+
+  writeFileSync(indexPath, result.html);
+  console.log(`[worker] /patch ${projectId}: ${result.applied}/${patches.length} patch(es) applied`);
+  // V4-04C §2.1: the PATCHED HTML rides on the response — the caller
+  // (Vercel route) persists it to Supabase storage; the worker stays
+  // Supabase-free.
+  res.json({ ok: true, applied: result.applied, html: result.html });
+});
+
+app.options("/restructure/:id", previewCors);
+app.post("/restructure/:id", previewCors, (req, res) => {
+  const projectId = req.params.id;
+  const auth = authorizeProjectWrite(req, projectId);
+  if (!auth.ok) return res.status(auth.status).json({ error: auth.error });
+
+  const job = resolveJobById(projectId);
+  if (!job) return res.status(404).json({ error: "not found" });
+
+  const { scenes, fps } = req.body ?? {};
+  if (!Array.isArray(scenes) || scenes.length === 0) {
+    return res.status(400).json({ error: "scenes must be a non-empty array" });
+  }
+  for (const s of scenes) {
+    if (!s || typeof s.id !== "string" || !Number.isFinite(Number(s.durationFrames))) {
+      return res.status(400).json({ error: "each scene must have {id, durationFrames}" });
+    }
+  }
+
+  const indexPath = join(job.job_dir, "index.html");
+  if (!existsSync(indexPath)) return res.status(404).json({ error: "index.html not found" });
+  const html = readFileSync(indexPath, "utf-8");
+
+  let result;
+  try {
+    result = applyTimelineRestructure(html, scenes, fps ?? 30);
+  } catch (err) {
+    const status = err?.status ?? 500;
+    return res.status(status).json({ error: err?.message ?? "restructure failed" });
+  }
+
+  writeFileSync(indexPath, result.html);
+  console.log(
+    `[worker] /restructure ${projectId}: ${result.applied} clip(s) rewritten, ${result.removed.length} removed`
+  );
+  res.json({ ok: true, applied: result.applied, removed: result.removed, html: result.html });
 });
 
 // ── Serve preview ───────────────────────────────────────────────────
@@ -526,6 +623,16 @@ app.get("/preview/:id", previewCors, (req, res) => {
   // V4-3f.3 (A3): inject the click-to-edit helper script before serving so
   // the editor iframe can select elements and receive hot-swap patches.
   let html = readFileSync(indexPath, "utf-8");
+
+  // V4_04A fix: boot the vendored HyperFrames runtime in previews. The
+  // sanitizer strips runtime <script> tags from the staged HTML (the CLI
+  // re-injects its own at render time) but mode:'preview' never runs the
+  // CLI — without this, the hf-preview bridge never boots, `ready` never
+  // reaches the editor and the "runtime did not respond" banner always
+  // shows. Serve-time injection keeps the stored HTML lint/render-clean.
+  if (runtimeBundles.hyperframes) {
+    html = injectPreviewRuntime(html, `/preview/${req.params.id}/__vp_runtime.js`);
+  }
 
   // V4-3f.9: inject <base> tag so relative asset URLs (e.g.
   // assets/__vp_gsap.min.js) resolve correctly regardless of whether the
@@ -586,6 +693,27 @@ app.get("/preview/:id/assets/:file", previewCors, (req, res) => {
     return res.type("application/javascript").send(runtimeBundles.gsap);
   }
   return res.status(404).json({ error: "asset not found" });
+});
+
+// ── V4_04A fix: vendored HyperFrames runtime for previews ───────────
+// The staged composition has no runtime script (sanitizeCompositionForOffline
+// strips it; the CLI only re-injects at render time) — see injectPreviewRuntime.
+// This route serves the worker's own vendored bundle so previews can boot it
+// and answer the editor's hf-preview handshake. Ungated like /assets: the
+// bundle is public library code; the composition HTML stays token-gated.
+app.get("/preview/:id/__vp_runtime.js", previewCors, (req, res) => {
+  const bundle = runtimeBundles.hyperframes;
+  if (!bundle) {
+    return res
+      .status(503)
+      .type("text/plain")
+      .send("// hyperframes runtime not vendored on this worker");
+  }
+  // Content-hash-free URL but stable bundle version → long cache is safe.
+  return res
+    .set("Cache-Control", "public, max-age=86400")
+    .type("application/javascript")
+    .send(bundle);
 });
 
 // ── Render pipeline ─────────────────────────────────────────────────
