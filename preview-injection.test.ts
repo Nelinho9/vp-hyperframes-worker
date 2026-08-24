@@ -522,6 +522,90 @@ describe('PREVIEW_HELPER_SCRIPT — edição inline de texto (V5-P1B)', () => {
   });
 });
 
+describe('PREVIEW_HELPER_SCRIPT — swap de imagem (V5-P1C)', () => {
+  function findAction(messages: unknown[], action: string) {
+    return messages.find((m) => (m as { action?: string }).action === action);
+  }
+
+  const SWAP_HTML = '<div id="text-title-1">T</div><img id="img-hero" src="assets/vp-media-x.jpg" />';
+
+  it("envelope select transporta o atributo src de elementos media", () => {
+    const h = bootHelper(SWAP_HTML);
+
+    h.click(h.document.querySelector('#img-hero'));
+    const sel = findAction(h.parentMessages, 'select') as {
+      elementId?: string;
+      src?: string;
+    };
+    expect(sel).toMatchObject({ elementId: 'img-hero', src: 'assets/vp-media-x.jpg' });
+
+    // Elemento sem src → envelope SEM a chave (não polui o contrato).
+    h.click(h.document.querySelector('#text-title-1'));
+    const selText = [...h.parentMessages].reverse().find(
+      (m) => (m as { action?: string }).action === 'select',
+    ) as { elementId?: string; src?: string };
+    expect(selText.elementId).toBe('text-title-1');
+    expect('src' in selText).toBe(false);
+  });
+
+  it('element-at-point responde com id/tipo/bbox do elemento sob o ponto', () => {
+    const h = bootHelper(SWAP_HTML);
+    const el = h.document.querySelector('#img-hero');
+    (h.document as unknown as Record<string, unknown>).elementFromPoint = () => el;
+
+    h.message({ action: 'element-at-point', x: 12, y: 34 });
+
+    const reply = findAction(h.parentMessages, 'element-at-point') as {
+      source?: string;
+      elementId?: string | null;
+      elementType?: string;
+      bbox?: unknown;
+      src?: string;
+    };
+    expect(reply).toMatchObject({
+      source: 'hf-preview',
+      action: 'element-at-point',
+      elementId: 'img-hero',
+      elementType: 'image',
+      src: 'assets/vp-media-x.jpg',
+    });
+    expect(reply.bbox).toEqual({ x: 0, y: 0, w: 0, h: 0 }); // linkedom sem layout
+  });
+
+  it('element-at-point fora de elemento responde elementId null', () => {
+    const h = bootHelper(SWAP_HTML);
+    (h.document as unknown as Record<string, unknown>).elementFromPoint = () => null;
+
+    h.message({ action: 'element-at-point', x: 5000, y: 5000 });
+
+    expect(findAction(h.parentMessages, 'element-at-point')).toEqual({
+      source: 'hf-preview',
+      action: 'element-at-point',
+      elementId: null,
+    });
+  });
+
+  it('element-at-point em ambiente sem layout (sem elementFromPoint) responde null', () => {
+    const h = bootHelper(SWAP_HTML);
+
+    h.message({ action: 'element-at-point', x: 1, y: 2 });
+
+    expect(findAction(h.parentMessages, 'element-at-point')).toMatchObject({
+      elementId: null,
+    });
+  });
+
+  it('mensagens inválidas para element-at-point são ignoradas', () => {
+    const h = bootHelper(SWAP_HTML);
+    (h.document as unknown as Record<string, unknown>).elementFromPoint = () => null;
+
+    h.message({ action: 'element-at-point' }); // sem x/y
+    h.message({ action: 'element-at-point', x: '12', y: 3 }); // x não numérico
+
+    expect(findAction(h.parentMessages, 'element-at-point')).toBeUndefined();
+  });
+});
+
 describe('injectPreviewRuntime — unit (V4_04A fix)', () => {
   it('injeta o runtime logo após <head>', () => {
     const out = injectPreviewRuntime(COMPOSITION_HTML, '/preview/p1/__vp_runtime.js');

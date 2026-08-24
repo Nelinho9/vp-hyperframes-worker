@@ -6,7 +6,9 @@
  * PreviewCanvas ↔ iframe protocol (docs: V4_03_STUDIO_UX_REFINED.md §3.1/§3.2):
  *
  * iframe → parent (sent with targetOrigin '*' — the PARENT validates origin):
- *   { action: 'select',   elementId, bbox: {x,y,w,h} }  on click of [id]/[data-hf-id]
+ *   { action: 'select',   elementId, bbox: {x,y,w,h}, src? }  on click of
+ *     [id]/[data-hf-id]; V5-P1C: src transporta o atributo vivo de elementos
+ *     media (hidrata a thumb do inspector — NUNCA entra nas props editáveis)
  *   { action: 'deselect' }                              on click outside any element
  *   { action: 'edit-start', elementId, bbox }           V5-P1B: dblclick on a
  *     TEXT element entered inline-edit mode (contentEditable on the element)
@@ -14,11 +16,16 @@
  *     input while editing (textContent of the editable)
  *   { action: 'edit-end',  elementId, text, bbox }      V5-P1B: commit on
  *     blur/Enter/Esc (Esc restores the original text first)
+ *   { source:'hf-preview', action:'element-at-point', elementId|null,
+ *     elementType?, bbox?, src? }                       V5-P1C: resposta ao
+ *     hit-test do drop mediado pelo pai (coords NATIVAS da composição)
  *
  * parent → iframe (V4-3e hot-swap receiver):
  *   { action: 'patch',     patches: [{selector, property, value}] }
  *   { action: 'seek',      frame }        (V4-04A legacy — shimmed)
  *   { action: 'playpause', playing }      (V4-04A legacy — shimmed)
+ *   { action: 'element-at-point', x, y }  (V5-P1C — hit-test para o drop;
+ *     coords NATIVAS: o pai converte clientX/Y via transform inverso do stage)
  *
  * V4-04A: transport (play/pause/seek) is owned by the runtime's own bridge
  * protocol — the frontend posts `hf-parent/hf-control` envelopes straight to
@@ -187,11 +194,16 @@ export const PREVIEW_HELPER_SCRIPT = `(function () {
       }
       var id = el.getAttribute('data-hf-id') || el.id;
       var r = el.getBoundingClientRect();
-      parent.postMessage({
+      var msg = {
         action: 'select',
         elementId: id,
         bbox: { x: Math.round(r.left), y: Math.round(r.top), w: Math.round(r.width), h: Math.round(r.height) }
-      }, '*');
+      };
+      // V5-P1C: atributo src VIVO (media elements) — hidrata a thumb do
+      // inspector; o pai guarda-o FORA das props editáveis (nunca persistido).
+      var liveSrc = typeof el.getAttribute === 'function' ? el.getAttribute('src') : null;
+      if (liveSrc) msg.src = liveSrc;
+      parent.postMessage(msg, '*');
     } catch (e) { /* never break the preview */ }
   }, true);
 
@@ -370,6 +382,33 @@ export const PREVIEW_HELPER_SCRIPT = `(function () {
     } else if (data.action === 'playpause') {
       // V4-04A: legacy channel — map to the runtime play/pause actions.
       shimControl(data.playing ? 'play' : 'pause', {});
+    } else if (data.action === 'element-at-point' && typeof data.x === 'number' && typeof data.y === 'number') {
+      // V5-P1C §2.3: hit-test para o drop de imagem mediado pelo pai.
+      // Coordenadas NATIVAS da composição; responde com o elemento sob o
+      // ponto (ou elementId:null). Ambientes sem layout (sem
+      // elementFromPoint) respondem null — o pai simplesmente não destaca.
+      try {
+        var hp = typeof document.elementFromPoint === 'function'
+          ? document.elementFromPoint(data.x, data.y)
+          : null;
+        var hitEl = hp && hp.closest ? hp.closest('[id],[data-hf-id]') : null;
+        if (!hitEl) {
+          sendToParent({ source: 'hf-preview', action: 'element-at-point', elementId: null });
+        } else {
+          var hitId = hitEl.getAttribute('data-hf-id') || hitEl.id;
+          var hitR = hitEl.getBoundingClientRect();
+          var hitMsg = {
+            source: 'hf-preview',
+            action: 'element-at-point',
+            elementId: hitId,
+            elementType: inferElementTypeFromId(hitId),
+            bbox: { x: Math.round(hitR.left), y: Math.round(hitR.top), w: Math.round(hitR.width), h: Math.round(hitR.height) }
+          };
+          var hitSrc = typeof hitEl.getAttribute === 'function' ? hitEl.getAttribute('src') : null;
+          if (hitSrc) hitMsg.src = hitSrc;
+          sendToParent(hitMsg);
+        }
+      } catch (e) { /* never break the preview */ }
     }
   });
 })();`;
