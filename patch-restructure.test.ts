@@ -18,6 +18,9 @@ import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest
 import http from 'node:http';
 import { app } from './server.js';
 import { createPreviewToken } from './preview-token.js';
+import { parseHTML } from 'linkedom';
+import { normalizeClipWindows } from './patch-engine.js';
+import { lintClipWindows } from './window-lint.js';
 
 const COMPOSITION_HTML = `<!doctype html>
 <html><head><title>t</title></head>
@@ -375,5 +378,163 @@ describe('GET /healthz — V4-04D §2.5', () => {
     expect(body.ok).toBe(true);
     expect(body.uptime_s).toBeGreaterThanOrEqual(0);
     expect(body.active_jobs).toBeGreaterThan(0);
+  });
+});
+
+// ── V5-P0C: seek determinism (frame-exact windows) ───────────────────────────
+
+/** Parse the served top-level clip windows exactly like the runtime does.
+ *  Clips without a usable numeric window are skipped (no timeline presence). */
+function extractWindows(html: string): Array<{ id: string; start: number; end: number }> {
+  const { document } = parseHTML(html);
+  const rootEl = document.querySelector('[data-composition-id]');
+  return Array.from(document.querySelectorAll('.clip'))
+    .filter((el) => {
+      const owner = el.closest('[data-composition-id]');
+      return owner === null || owner === rootEl;
+    })
+    .map((el) => {
+      const start = parseFloat(el.getAttribute('data-start') ?? '');
+      const duration = parseFloat(el.getAttribute('data-duration') ?? '');
+      return { id: el.id || '', start, end: start + duration };
+    })
+    .filter((w) => Number.isFinite(w.start) && Number.isFinite(w.end));
+}
+
+describe('POST /restructure/:id — V5-P0C frame-exact quantization', () => {
+  it.each([
+    ['uniform sub-frame grid', [
+      { id: 'scene-1', durationFrames: 10 },
+      { id: 'scene-2', durationFrames: 10 },
+      { id: 'scene-3', durationFrames: 10 },
+    ]],
+    ['mixed durations', [
+      { id: 'scene-1', durationFrames: 45 },
+      { id: 'scene-2', durationFrames: 15 },
+      { id: 'scene-3', durationFrames: 10 },
+    ]],
+    ['integer legacy case', [
+      { id: 'scene-1', durationFrames: 90 },
+      { id: 'scene-2', durationFrames: 150 },
+    ]],
+  ])('%s → exactly one clip visible at every frame tick (B2 invariant)', async (_, scenes) => {
+    await stage('proj-p0c-1');
+    const res = await post('/restructure/proj-p0c-1', { scenes, fps: 30 }, { 'X-Worker-Secret': SECRET });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { html: string; findings?: unknown[] };
+
+    // The lint validates the SAME served HTML — must be clean by construction.
+    expect(body.findings).toEqual([]);
+    expect(lintClipWindows(body.html)).toEqual([]);
+
+    const wins = extractWindows(body.html);
+    expect(wins.length).toBe(scenes.length);
+
+    // THE invariant: for every integer frame tick f of the timeline, the
+    // runtime-style window test sees EXACTLY ONE clip.
+    const totalFrames = scenes.reduce((s, sc) => s + sc.durationFrames, 0);
+    for (let f = 0; f < totalFrames; f += 1) {
+      const t = f / 30;
+      const visible = wins.filter((w) => t >= w.start && t < w.end);
+      if (visible.length !== 1) {
+        throw new Error(
+          `frame ${f} (t=${t}): ${visible.length} clips visible [${visible.map((v) => v.id).join(', ')}]`,
+        );
+      }
+    }
+    // Past the end: nothing visible.
+    const afterEnd = totalFrames / 30 + 1;
+    expect(wins.filter((w) => afterEnd >= w.start && afterEnd < w.end)).toHaveLength(0);
+  });
+
+  it('serializes starts as shortest round-trip doubles on the k/fps grid', async () => {
+    await stage('proj-p0c-2');
+    const res = await post(
+      '/restructure/proj-p0c-2',
+      { scenes: [{ id: 'scene-1', durationFrames: 10 }, { id: 'scene-2', durationFrames: 10 }] },
+      { 'X-Worker-Secret': SECRET },
+    );
+    const body = (await res.json()) as { html: string };
+    // Round-trip: parseFloat(start_i) === fl(k_i/fps) EXACTLY.
+    const wins = extractWindows(body.html);
+    expect(wins[0].start).toBe(0);
+    expect(wins[1].start).toBe(10 / 30);
+  });
+
+  it('legacy integer expectations are unchanged ("3"/"5"/"8")', async () => {
+    await stage('proj-restr-legacy');
+    const res = await post(
+      '/restructure/proj-restr-legacy',
+      { scenes: [{ id: 'scene-3', durationFrames: 90 }, { id: 'scene-1', durationFrames: 150 }], fps: 30 },
+      { 'X-Worker-Secret': SECRET },
+    );
+    const body = (await res.json()) as { html: string };
+    expect(body.html).toMatch(/id="scene-3"[^>]*data-start="0"[^>]*data-duration="3"/s);
+    expect(body.html).toMatch(/id="scene-1"[^>]*data-start="3"[^>]*data-duration="5"/s);
+    expect(body.html).toMatch(/data-composition-id="main"[^>]*data-duration="8"/s);
+  });
+
+  it('is idempotent — restructuring twice converges byte-exactly', async () => {
+    await stage('proj-p0c-idem');
+    const scenes = { scenes: [{ id: 'scene-1', durationFrames: 10 }, { id: 'scene-2', durationFrames: 25 }], fps: 30 };
+    const first = await post('/restructure/proj-p0c-idem', scenes, { 'X-Worker-Secret': SECRET });
+    const a = ((await first.json()) as { html: string }).html;
+    const second = await post('/restructure/proj-p0c-idem', scenes, { 'X-Worker-Secret': SECRET });
+    const b = ((await second.json()) as { html: string }).html;
+    expect(b).toBe(a);
+  });
+
+  it('normalization at staging repairs authored overlaps/gaps onto the grid', async () => {
+    const BAD_HTML = `<!doctype html>
+<html><head><title>t</title></head>
+<body>
+<div class="composition" data-composition-id="main" data-start="0" data-duration="20">
+  <div id="scene-1" class="clip" data-start="0" data-duration="6"></div>
+  <div id="scene-2" class="clip" data-start="5.9" data-duration="6"></div>
+  <div id="scene-3" class="clip" data-start="13.5" data-duration="6"></div>
+</div>
+</body></html>`;
+    const stageRes = await fetch(`${base}/job`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ job_id: 'job-p0c-stage', project_id: 'proj-p0c-stage', mode: 'preview', index_html: BAD_HTML }),
+    });
+    expect(stageRes.status).toBe(200);
+
+    const preview = await fetch(`${base}/preview/proj-p0c-stage`);
+    const html = await preview.text();
+    // Contiguous integer-second grid: overlap/gap eliminated.
+    const wins = extractWindows(html);
+    expect(wins.map((w) => w.start)).toEqual([0, 6, 12]);
+    expect(lintClipWindows(html)).toEqual([]);
+
+    // Unit-level: the normalizer reports what it changed.
+    const norm = normalizeClipWindows(BAD_HTML, 30);
+    expect(norm.adjusted.map((a) => a.id)).toEqual(['scene-2', 'scene-3']);
+    expect(norm.adjusted[0].from.start).toBe('5.9');
+    expect(norm.adjusted[0].to.start).toBe('6');
+    // Idempotent on clean input.
+    const twice = normalizeClipWindows(norm.html, 30);
+    expect(twice.adjusted).toEqual([]);
+    expect(twice.html).toBe(norm.html);
+  });
+
+  it('normalization skips clips without usable durations and nested timelines', () => {
+    const HTML = `<!doctype html><html><body>
+<div class="composition" data-composition-id="main" data-duration="9">
+  <div id="keep-me" class="clip" data-start="0"></div>
+  <div id="nested" class="clip" data-composition-id="nested" data-start="0" data-duration="99">
+    <div id="inner" class="clip" data-start="77" data-duration="3"></div>
+  </div>
+  <div id="scene-a" class="clip" data-start="0" data-duration="2.9999"></div>
+  <div id="scene-b" class="clip" data-start="3.5" data-duration="3"></div>
+</div>
+</body></html>`;
+    const norm = normalizeClipWindows(HTML, 30);
+    expect(norm.adjusted.map((a) => a.id)).toEqual(['scene-a', 'scene-b']);
+    expect(norm.adjusted[1].from.start).toBe('3.5');
+    expect(norm.adjusted[1].to.start).toBe('3');
+    expect(norm.html).toMatch(/id="inner"[^>]*data-start="77"/s); // untouched
+    expect(extractWindows(norm.html).map((w) => w.start)).toEqual([0, 3]);
   });
 });

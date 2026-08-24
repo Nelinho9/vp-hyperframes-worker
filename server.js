@@ -26,8 +26,9 @@ import { randomUUID } from "crypto";
 import { pathToFileURL } from "url";
 import { injectPreviewHelper, injectPreviewRuntime } from "./preview-helper.js";
 import { verifyPreviewToken } from "./preview-token.js";
-import { applyPatchesLinkedom, applyTimelineRestructure } from "./patch-engine.js";
+import { applyPatchesLinkedom, applyTimelineRestructure, normalizeClipWindows } from "./patch-engine.js";
 import { sanitizeCompositionTweens, extractLintFindings } from "./composition-sanitizer.js";
+import { lintClipWindows } from "./window-lint.js";
 import {
   classifyCheckEnvelope,
   extractCheckJson,
@@ -408,6 +409,32 @@ app.post("/job", async (req, res) => {
   // Write the composition HTML
   writeFileSync(join(jobDir, "index.html"), index_html);
 
+  // V5-P0C §2.1: quantize top-level clip windows onto the fps frame grid with
+  // float-exact contiguous boundaries BEFORE anything consumes the file —
+  // authored drift (ms rounding, gaps) must never reach preview/render.
+  let windowLintFindings = [];
+  if (typeof index_html === "string") {
+    try {
+      const stagingFps = Number.isFinite(Number(body.fps)) && Number(body.fps) > 0 ? Number(body.fps) : 30;
+      const norm = normalizeClipWindows(index_html, stagingFps);
+      if (norm.adjusted.length > 0) {
+        console.log(
+          `[worker] window normalization: ${norm.adjusted.length} clip window(s) quantized to the ${stagingFps}fps grid`
+        );
+        index_html = norm.html;
+        writeFileSync(join(jobDir, "index.html"), index_html);
+      }
+      windowLintFindings = lintClipWindows(index_html, { fps: stagingFps });
+      if (windowLintFindings.length > 0) {
+        console.warn(
+          `[worker] clip window lint: ${windowLintFindings.map((f) => `[${f.code}] ${f.selector ?? ""}`).join(", ")}`
+        );
+      }
+    } catch (err) {
+      console.warn(`[worker] window normalization skipped: ${err?.message ?? err}`);
+    }
+  }
+
   // V4_04 fix: persistir a composição staged no storage — o editor usa
   // `projects/{id}/compositions/index.html` como fonte primária pós-build
   // (reconciliação de durações) e como alvo das edições. Fire-and-forget no
@@ -450,6 +477,7 @@ app.post("/job", async (req, res) => {
     outputs,
     artifact_paths,
     media_validation: jobMediaValidation,
+    window_lint_findings: windowLintFindings,
     compositionUploadPromise,
   });
   // Track by project_id for preview lookup
@@ -581,11 +609,20 @@ app.post("/restructure/:id", previewCors, (req, res) => {
     return res.status(status).json({ error: err?.message ?? "restructure failed" });
   }
 
+  // V5-P0C §2.2: validate the rewritten windows — the quantization above
+  // guarantees a clean sequence, so any finding here is a real regression.
+  const findings = lintClipWindows(result.html, { fps: fps ?? 30 });
+  if (findings.length > 0) {
+    console.warn(
+      `[worker] /restructure ${projectId}: clip window findings: ${findings.map((f) => `[${f.code}] ${f.selector ?? ""}`).join(", ")}`
+    );
+  }
+
   writeFileSync(indexPath, result.html);
   console.log(
     `[worker] /restructure ${projectId}: ${result.applied} clip(s) rewritten, ${result.removed.length} removed`
   );
-  res.json({ ok: true, applied: result.applied, removed: result.removed, html: result.html });
+  res.json({ ok: true, applied: result.applied, removed: result.removed, html: result.html, findings });
 });
 
 // ── Serve preview ───────────────────────────────────────────────────
