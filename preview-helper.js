@@ -25,10 +25,13 @@
  * parent as `{source:'hf-preview', type:'diagnostic', code:'page.error'}` so
  * broken compositions are diagnosable from the editor.
  *
- * Patch semantics mirror src/video/v4/patchHtml.ts via the shared V5-P0B
+ * Patch semantics mirror src/video/v4/patchHtml.ts via the shared V5-P0B/P1A
  * canonical table (`prop-map.js`, JSON-stringified into the inline script):
- *   textContent → innerText; src → attribute; background-image → url(...) wrap;
- *   decl props (font/size/weight/color/opacity) → mapped CSS property (+px).
+ *   textContent / `text` alias → innerText; src → attribute;
+ *   background-image → url(...) wrap; decl props (font/size/color/align/
+ *   radius/…) → mapped CSS property with the table unit (V5-P1A);
+ *   animation props → `data-anim-*` ATTRIBUTES, never style (V5-P1A; S09
+ *   materializes the tweens); UI-only flags filtered out (aceitação P1 #4).
  *   GEOMETRY (x/y/width/height/rotation) → AD-1: `--el-*` custom properties
  *   consumed by individual transforms / layout vars on the SAME element —
  *   NEVER left/top literals (B1.3). x/y are ABSOLUTE composition coordinates
@@ -77,11 +80,11 @@ export function injectPreviewRuntime(html, src) {
 }
 
 /**
- * V5-P0B: inspector prop → CSS/geometry mapping — JSON-stringified into the
- * inline script below. Mirror of `prop-map.js` (see that module for the
- * cross-repo parity contract).
+ * V5-P0B: inspector prop → CSS/geometry/attribute mapping — JSON-stringified
+ * into the inline script below. Mirror of `prop-map.js` (see that module for
+ * the cross-repo parity contract). V5-P1A adds UI_ONLY_PROPS (filtered).
  */
-import { PROP_MAP, GEOM_CONSUMPTION } from "./prop-map.js";
+import { PROP_MAP, GEOM_CONSUMPTION, UI_ONLY_PROPS } from "./prop-map.js";
 
 /**
  * The inline helper script body (browser-only, ES5-compatible, no imports).
@@ -94,6 +97,8 @@ export const PREVIEW_HELPER_SCRIPT = `(function () {
   // V5-P0B canonical table (prop-map.js) — geometry NEVER maps to left/top.
   var PROP_MAP = ${JSON.stringify(PROP_MAP)};
   var GEOM_CONSUMPTION = ${JSON.stringify(GEOM_CONSUMPTION)};
+  // V5-P1A: UI-only flags are filtered (never become invalid CSS).
+  var UI_ONLY_PROPS = ${JSON.stringify([...UI_ONLY_PROPS])};
   var NUMERIC_VALUE_RE = /^-?\\d+(\\.\\d+)?$/;
   var DECL_NUMERIC_PROPS = { 'font-size': 1, margin: 1, padding: 1, 'border-width': 1 };
 
@@ -197,18 +202,30 @@ export const PREVIEW_HELPER_SCRIPT = `(function () {
         try { el = document.querySelector(p.selector); } catch (e) { continue; }
         if (!el) continue;
         var value = String(p.value == null ? '' : p.value);
-        if (p.property === 'textContent') {
+        if (p.property === 'textContent' || p.property === 'text') {
+          // V5-P1A: 'text' é alias aceite de textContent (modelo §6.1).
           el.textContent = value;
         } else if (p.property === 'src') {
           el.setAttribute('src', value);
         } else if (p.property === 'background-image') {
           el.style.backgroundImage = value.indexOf('url(') === 0 ? value : ('url(' + value + ')');
+        } else if (UI_ONLY_PROPS.indexOf(p.property) !== -1) {
+          // V5-P1A (aceitação P1 #4): flag sem efeito render — filtrada.
         } else if (applyGeometryPatch(el, p.property, value)) {
           // V5-P0B: geometry via --el-* vars + individual transforms (AD-1).
         } else {
           var entry = PROP_MAP[p.property];
-          var cssProp = entry && entry.kind === 'decl' ? entry.output : p.property;
-          el.style.setProperty(cssProp, addUnit(cssProp, value));
+          if (entry && entry.kind === 'attr') {
+            // V5-P1A §2.2: animação via atributos data-anim-* (nunca style).
+            el.setAttribute(entry.output, value);
+          } else if (entry && entry.kind === 'decl') {
+            var out = (entry.unit && NUMERIC_VALUE_RE.test(value)) ? value + entry.unit : value;
+            el.style.setProperty(entry.output, out);
+          } else {
+            // Desconhecida: verbatim (comportamento legado).
+            var cssProp = p.property;
+            el.style.setProperty(cssProp, addUnit(cssProp, value));
+          }
         }
       }
     } else if (data.action === 'seek') {

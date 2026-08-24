@@ -258,6 +258,100 @@ describe('POST /patch/:id — geometria V5-P0B (AD-1)', () => {
   });
 });
 
+describe('POST /patch/:id — modelo expandido V5-P1A (§6.1)', () => {
+  async function stageP1A(projectId: string) {
+    await stage(projectId);
+  }
+
+  it('novos decl props produzem CSS com unidades da tabela', async () => {
+    await stageP1A('proj-p1a-1');
+    const res = await post(
+      '/patch/proj-p1a-1',
+      {
+        patches: [
+          { selector: '#text-headline-1', property: 'align', value: 'right' },
+          { selector: '#text-headline-1', property: 'letterSpacing', value: '2' },
+          { selector: '#text-headline-1', property: 'lineHeight', value: '1.2' },
+          { selector: '#img-hero', property: 'radius', value: '16' },
+          { selector: '#img-hero', property: 'borderWidth', value: '4' },
+          { selector: '#img-hero', property: 'borderColor', value: '#ff0000' },
+          { selector: '#img-hero', property: 'fit', value: 'contain' },
+          { selector: '#img-hero', property: 'z', value: '3' },
+        ],
+      },
+      { 'X-Worker-Secret': SECRET },
+    );
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { ok: boolean; applied: number; html: string };
+    expect(body.ok).toBe(true);
+    expect(body.applied).toBe(8);
+    expect(body.html).toContain('text-align: right');
+    expect(body.html).toMatch(/letter-spacing:\s*2px/);
+    // Multiplicador numérico fica unitless.
+    expect(body.html).toMatch(/line-height:\s*1\.2(?!px)/);
+    expect(body.html).toMatch(/border-radius:\s*16px/);
+    expect(body.html).toMatch(/border-width:\s*4px/);
+    expect(body.html).toMatch(/border-color:\s*(rgb\(255, 0, 0\)|#ff0000)/);
+    expect(body.html).toMatch(/object-fit:\s*contain/);
+    expect(body.html).toMatch(/z-index:\s*3(?!\d)/);
+  });
+
+  it("'text' é alias de textContent; animação escreve data-anim-* (nunca style)", async () => {
+    await stageP1A('proj-p1a-2');
+    const res = await post(
+      '/patch/proj-p1a-2',
+      {
+        patches: [
+          { selector: '#text-headline-1', property: 'text', value: 'Novo headline' },
+          { selector: '#text-headline-1', property: 'animIn', value: 'riseIn' },
+          { selector: '#text-headline-1', property: 'animOut', value: 'fade' },
+          { selector: '#text-headline-1', property: 'animDurMs', value: '600' },
+          { selector: '#text-headline-1', property: 'animDelayMs', value: '120' },
+        ],
+      },
+      { 'X-Worker-Secret': SECRET },
+    );
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { ok: boolean; applied: number; html: string };
+    expect(body.ok).toBe(true);
+    expect(body.applied).toBe(5);
+    expect(body.html).toContain('Novo headline');
+    expect(body.html).toContain('data-anim-in="riseIn"');
+    expect(body.html).toContain('data-anim-out="fade"');
+    expect(body.html).toContain('data-anim-dur-ms="600"');
+    expect(body.html).toContain('data-anim-delay-ms="120"');
+    // Nenhum vazamento para o estilo inline.
+    expect(body.html).not.toMatch(/\b(animIn|animOut|animDurMs|animDelayMs)\s*:/);
+  });
+
+  it('props UI-only são filtradas sem poluir o HTML nem contar applied', async () => {
+    await stageP1A('proj-p1a-3');
+    const res = await post(
+      '/patch/proj-p1a-3',
+      {
+        patches: [
+          { selector: '#img-hero', property: 'autoAspect', value: 'true' },
+          { selector: '#scene-1', property: 'volume', value: '0.8' },
+          { selector: '#scene-1', property: 'trimStart', value: '10' },
+          { selector: '#scene-2', property: 'speed', value: '1.5' },
+        ],
+      },
+      { 'X-Worker-Secret': SECRET },
+    );
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { ok: boolean; applied: number; html: string };
+    expect(body.ok).toBe(true);
+    // Nada mudou no HTML → nada contado como aplicado (honesto).
+    expect(body.applied).toBe(0);
+    expect(body.html).not.toMatch(/autoAspect|volume|trimStart|speed\s*:/);
+    // E a persistência não alterou o index.html servido (o helper injetado
+    // contém "autoAspect" na lista UI-only embutida — procurar USO real:
+    // declaração de estilo ou atributo).
+    const preview = await fetch(`${base}/preview/proj-p1a-3`);
+    expect(await preview.text()).not.toMatch(/autoAspect\s*[=:]/);
+  });
+});
+
 describe('POST /restructure/:id — V4-04C', () => {
   it('rewrites durations, recomputes cumulative starts and removes vanished clips', async () => {
     await stage('proj-restr-1');

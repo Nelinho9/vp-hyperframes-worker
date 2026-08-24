@@ -1,13 +1,17 @@
 /**
  * patch-engine — V4-04C: linkedom-backed HTML patch + timeline restructure
  *
- * Shared semantics with src/video/v4/patchHtml.ts via the V5-P0B canonical
+ * Shared semantics with src/video/v4/patchHtml.ts via the V5-P0B/P1A canonical
  * table (`prop-map.js`, mirrored in the app as `src/video/v4/propMap.ts`;
  * parity enforced byte-a-byte by tests in BOTH repos):
- *   - `textContent` → textContent
+ *   - `textContent` / `text` (V5-P1A alias) → textContent
  *   - `src`         → attribute
  *   - `background-image` → wrap `url(...)`
- *   - decl props (font/size/weight/color/opacity) → mapped CSS property
+ *   - UI-only flags (autoAspect/volume/…) → FILTERED (no invalid CSS, P1 #4)
+ *   - decl props (font/size/color/align/radius/…) → mapped CSS property with
+ *     the unit from the table entry (V5-P1A)
+ *   - attr props (animIn/out/dur/delay) → `data-anim-*` attributes (V5-P1A;
+ *     visual materialization lands in S09)
  *   - GEOMETRY (x/y/width/height/rotation) → AD-1: `--el-*` custom properties
  *     consumed by individual transforms / layout vars on the same element.
  *     x/y values are ABSOLUTE composition coordinates converted to a translate
@@ -31,22 +35,10 @@
  */
 
 import { parseHTML } from "linkedom";
-import { PROP_MAP, GEOM_CONSUMPTION, computeGeomDelta } from "./prop-map.js";
+import { PROP_MAP, UI_ONLY_PROPS, GEOM_CONSUMPTION, computeGeomDelta } from "./prop-map.js";
 
 /** Numeric CSS value (px/deg candidates) — integers, decimals and negatives. */
 const NUMERIC_VALUE_RE = /^-?\d+(\.\d+)?$/;
-
-/** Decl props that still get a px unit appended to bare numbers. */
-const DECL_NUMERIC_PROPS = new Set([
-  "font-size", "margin", "padding", "border-width",
-]);
-
-function addDeclUnit(cssProp, value) {
-  if (DECL_NUMERIC_PROPS.has(cssProp) && NUMERIC_VALUE_RE.test(value)) {
-    return `${value}px`;
-  }
-  return value;
-}
 
 /** Extract one authored declaration value from a style attribute string. */
 export function parseInlineDecl(styleAttr, prop) {
@@ -116,17 +108,25 @@ export function applyPatchesLinkedom(html, patches) {
     if (!el) continue;
     const property = String(patch.property);
     const value = String(patch.value ?? "");
-    if (property === "textContent") {
+    if (property === "textContent" || property === "text") {
       el.textContent = value;
     } else if (property === "src") {
       el.setAttribute("src", value);
     } else if (property === "background-image") {
       el.setAttribute("style", mergeStyle(el.getAttribute("style"), "background-image", value.startsWith("url(") ? value : `url(${value})`));
+    } else if (UI_ONLY_PROPS.has(property)) {
+      // V5-P1A (aceitação P1 #4): flag sem efeito render — nada muda no HTML
+      // e o patch NÃO conta como aplicado.
+      continue;
     } else if (PROP_MAP[property]?.kind === "geom") {
       applyGeometryPatch(el, property, value);
+    } else if (PROP_MAP[property]?.kind === "attr") {
+      // V5-P1A §2.2: transporte de animação como atributo `data-anim-*`.
+      el.setAttribute(PROP_MAP[property].output, value);
     } else if (PROP_MAP[property]?.kind === "decl") {
-      const cssProp = PROP_MAP[property].output;
-      el.setAttribute("style", mergeStyle(el.getAttribute("style"), cssProp, addDeclUnit(cssProp, value)));
+      const entry = PROP_MAP[property];
+      const out = entry.unit && NUMERIC_VALUE_RE.test(value) ? `${value}${entry.unit}` : value;
+      el.setAttribute("style", mergeStyle(el.getAttribute("style"), entry.output, out));
     } else {
       // Unknown property: pass through verbatim (legacy behaviour).
       el.setAttribute("style", mergeStyle(el.getAttribute("style"), property, value));

@@ -120,6 +120,9 @@ describe('PREVIEW_HELPER_SCRIPT — contrato do protocolo', () => {
     expect(PREVIEW_HELPER_SCRIPT).toContain('getBoundingClientRect()');
     expect(PREVIEW_HELPER_SCRIPT).toContain('GEOM_BASELINES');
     expect(PREVIEW_HELPER_SCRIPT).toContain('var(--el-x, 0px) var(--el-y, 0px)');
+    // V5-P1A: animação via atributos data-anim-*; UI-only filtrado.
+    expect(PREVIEW_HELPER_SCRIPT).toContain('"animIn":{"output":"data-anim-in"');
+    expect(PREVIEW_HELPER_SCRIPT).toContain('UI_ONLY_PROPS');
   });
 
   it('é JavaScript válido (compila sem executar)', () => {
@@ -128,57 +131,57 @@ describe('PREVIEW_HELPER_SCRIPT — contrato do protocolo', () => {
   });
 });
 
-// ─── V5-P0B: comportamento real do helper (executado numa sandbox vm) ──────
+// ─── Comportamento real do helper (executado numa sandbox vm) ──────────────
+
+interface BootedHelper {
+  document: ReturnType<typeof parseHTML>['document'];
+  parentMessages: unknown[];
+  click: (target: unknown) => void;
+  message: (data: unknown) => void;
+}
+
+/** Execute the helper script against a linkedom document inside a VM. */
+function bootHelper(html: string): BootedHelper {
+  const { document } = parseHTML(html);
+  const parentMessages: unknown[] = [];
+  const clickListeners: ((ev: unknown) => void)[] = [];
+  const messageListeners: ((ev: unknown) => void)[] = [];
+
+  const sandboxWindow = {
+    postMessage: () => {},
+    addEventListener: (type: string, fn: (ev: unknown) => void) => {
+      if (type === 'message') messageListeners.push(fn);
+    },
+  };
+  const sandbox = {
+    window: sandboxWindow,
+    // The helper only uses querySelector + addEventListener on the document.
+    document: {
+      addEventListener: (type: string, fn: (ev: unknown) => void) => {
+        if (type === 'click') clickListeners.push(fn);
+      },
+      querySelector: (sel: string) => document.querySelector(sel),
+    },
+    parent: { postMessage: (m: unknown) => parentMessages.push(m) },
+    // NOTE: intrinsics (Object/JSON/WeakMap/…) come from the fresh VM
+    // context itself — passing HOST intrinsics here breaks contextification.
+  };
+  sandboxWindow.window = sandboxWindow;
+  vm.createContext(sandbox);
+  // NOTE: run the source string DIRECTLY (with a filename) — creating an
+  // extra `vm.Script` for already-compiled source trips a V8 double-compile
+  // quirk under worker threads ("Unexpected identifier").
+  vm.runInContext(PREVIEW_HELPER_SCRIPT, sandbox, { filename: 'vp-preview-helper.js' });
+
+  return {
+    document,
+    parentMessages,
+    click: (target: unknown) => clickListeners.forEach((fn) => fn({ target })),
+    message: (data: unknown) => messageListeners.forEach((fn) => fn({ data })),
+  };
+}
 
 describe('PREVIEW_HELPER_SCRIPT — geometria em execução (V5-P0B)', () => {
-  interface BootedHelper {
-    document: ReturnType<typeof parseHTML>['document'];
-    parentMessages: unknown[];
-    click: (target: unknown) => void;
-    message: (data: unknown) => void;
-  }
-
-  /** Execute the helper script against a linkedom document inside a VM. */
-  function bootHelper(html: string): BootedHelper {
-    const { document } = parseHTML(html);
-    const parentMessages: unknown[] = [];
-    const clickListeners: ((ev: unknown) => void)[] = [];
-    const messageListeners: ((ev: unknown) => void)[] = [];
-
-    const sandboxWindow = {
-      postMessage: () => {},
-      addEventListener: (type: string, fn: (ev: unknown) => void) => {
-        if (type === 'message') messageListeners.push(fn);
-      },
-    };
-    const sandbox = {
-      window: sandboxWindow,
-      // The helper only uses querySelector + addEventListener on the document.
-      document: {
-        addEventListener: (type: string, fn: (ev: unknown) => void) => {
-          if (type === 'click') clickListeners.push(fn);
-        },
-        querySelector: (sel: string) => document.querySelector(sel),
-      },
-      parent: { postMessage: (m: unknown) => parentMessages.push(m) },
-      // NOTE: intrinsics (Object/JSON/WeakMap/…) come from the fresh VM
-      // context itself — passing HOST intrinsics here breaks contextification.
-    };
-    sandboxWindow.window = sandboxWindow;
-    vm.createContext(sandbox);
-    // NOTE: run the source string DIRECTLY (with a filename) — creating an
-    // extra `vm.Script` for already-compiled source trips a V8 double-compile
-    // quirk under worker threads ("Unexpected identifier").
-    vm.runInContext(PREVIEW_HELPER_SCRIPT, sandbox, { filename: 'vp-preview-helper.js' });
-
-    return {
-      document,
-      parentMessages,
-      click: (target: unknown) => clickListeners.forEach((fn) => fn({ target })),
-      message: (data: unknown) => messageListeners.forEach((fn) => fn({ data })),
-    };
-  }
-
   it('converte x/y absolutos em deltas vs baseline rect e escreve vars+consumo', () => {
     const h = bootHelper('<div id="el" style="width: 10px;"></div>');
     const el = h.document.querySelector('#el');
@@ -241,6 +244,62 @@ describe('PREVIEW_HELPER_SCRIPT — geometria em execução (V5-P0B)', () => {
 
     h.click(null);
     expect(h.parentMessages).toContainEqual({ action: 'deselect' });
+  });
+});
+
+describe('PREVIEW_HELPER_SCRIPT — modelo expandido em execução (V5-P1A)', () => {
+  it('novos decl props escrevem CSS com unidades da tabela', () => {
+    const h = bootHelper('<div id="text-headline-1">H</div><img id="img-hero" />');
+    h.message({
+      action: 'patch',
+      patches: [
+        { selector: '#text-headline-1', property: 'align', value: 'right' },
+        { selector: '#text-headline-1', property: 'letterSpacing', value: '2' },
+        { selector: '#text-headline-1', property: 'lineHeight', value: '1.2' },
+        { selector: '#img-hero', property: 'radius', value: '16' },
+        { selector: '#img-hero', property: 'fit', value: 'contain' },
+      ],
+    });
+    const textStyle = h.document.querySelector('#text-headline-1')!.getAttribute('style') ?? '';
+    expect(textStyle).toMatch(/text-align\s*:\s*right/);
+    expect(textStyle).toMatch(/letter-spacing\s*:\s*2px/);
+    // Multiplicador numérico fica unitless.
+    expect(textStyle).toMatch(/line-height\s*:\s*1\.2(?!px)/);
+    const imgStyle = h.document.querySelector('#img-hero')!.getAttribute('style') ?? '';
+    expect(imgStyle).toMatch(/border-radius\s*:\s*16px/);
+    expect(imgStyle).toMatch(/object-fit\s*:\s*contain/);
+  });
+
+  it("'text' é alias de textContent; animação escreve atributos data-anim-*", () => {
+    const h = bootHelper('<div id="text-headline-1">Old</div>');
+    h.message({
+      action: 'patch',
+      patches: [
+        { selector: '#text-headline-1', property: 'text', value: 'Novo headline' },
+        { selector: '#text-headline-1', property: 'animIn', value: 'riseIn' },
+        { selector: '#text-headline-1', property: 'animDurMs', value: '600' },
+      ],
+    });
+    const el = h.document.querySelector('#text-headline-1')!;
+    expect(el.textContent).toBe('Novo headline');
+    expect(el.getAttribute('data-anim-in')).toBe('riseIn');
+    expect(el.getAttribute('data-anim-dur-ms')).toBe('600');
+    // Nenhum vazamento para o estilo inline.
+    expect(el.getAttribute('style') ?? '').not.toMatch(/anim/i);
+  });
+
+  it('props UI-only são ignoradas sem tocar no elemento (aceitação P1 #4)', () => {
+    const h = bootHelper('<img id="img-hero" src="a.jpg" /><video id="video-1"></video>');
+    h.message({
+      action: 'patch',
+      patches: [
+        { selector: '#img-hero', property: 'autoAspect', value: 'true' },
+        { selector: '#video-1', property: 'volume', value: '0.8' },
+        { selector: '#video-1', property: 'trimStart', value: '10' },
+      ],
+    });
+    expect(h.document.querySelector('#img-hero')!.getAttribute('style')).toBeNull();
+    expect(h.document.querySelector('#video-1')!.getAttribute('style')).toBeNull();
   });
 });
 
