@@ -125,6 +125,24 @@ describe('PREVIEW_HELPER_SCRIPT — contrato do protocolo', () => {
     expect(PREVIEW_HELPER_SCRIPT).toContain('UI_ONLY_PROPS');
   });
 
+  it('implementa o modo edit inline de texto (V5-P1B)', () => {
+    // Duplo-click entra em modo edit num elemento de texto.
+    expect(PREVIEW_HELPER_SCRIPT).toContain("'dblclick'");
+    expect(PREVIEW_HELPER_SCRIPT).toContain("setAttribute('contenteditable'");
+    expect(PREVIEW_HELPER_SCRIPT).toContain("removeAttribute('contenteditable'");
+    // Envelopes novos iframe → pai (action via elementEnvelope).
+    expect(PREVIEW_HELPER_SCRIPT).toContain("'edit-start'");
+    expect(PREVIEW_HELPER_SCRIPT).toContain("'text-input'");
+    expect(PREVIEW_HELPER_SCRIPT).toContain("'edit-end'");
+    // Commit por blur/Enter/Esc; Esc restaura o texto original.
+    expect(PREVIEW_HELPER_SCRIPT).toContain("'Escape'");
+    expect(PREVIEW_HELPER_SCRIPT).toContain("'Enter'");
+    // Debounce do input é drenado no commit (sem mensagens tardias).
+    expect(PREVIEW_HELPER_SCRIPT).toContain('clearTimeout');
+    // Eco suprimido no recetor patch durante edição.
+    expect(PREVIEW_HELPER_SCRIPT).toContain('activeEditor');
+  });
+
   it('é JavaScript válido (compila sem executar)', () => {
     // vm.Script only parses/compiles the static helper source — never runs it.
     expect(() => new vm.Script(PREVIEW_HELPER_SCRIPT)).not.toThrow();
@@ -137,32 +155,69 @@ interface BootedHelper {
   document: ReturnType<typeof parseHTML>['document'];
   parentMessages: unknown[];
   click: (target: unknown) => void;
+  /** V5-P1B: dblclick manual (mesmo padrão do click — só ev.target é lido). */
+  dblclick: (target: unknown) => void;
   message: (data: unknown) => void;
+  /**
+   * V5-P1B: drena os timers pendentes do sandbox (debounce do input) —
+   * determinístico, sem depender de fake timers globais.
+   */
+  runTimers: () => void;
 }
 
 /** Execute the helper script against a linkedom document inside a VM. */
 function bootHelper(html: string): BootedHelper {
   const { document } = parseHTML(html);
   const parentMessages: unknown[] = [];
-  const clickListeners: ((ev: unknown) => void)[] = [];
   const messageListeners: ((ev: unknown) => void)[] = [];
+  const docListeners: Record<string, ((ev: unknown) => void)[]> = {};
+
+  // V5-P1B: the REAL linkedom document is handed to the sandbox so events
+  // dispatched on elements (input/keydown bubble; blur direto) alcançam os
+  // listeners registados pelo helper. addEventListener é embrulhado para
+  // registar também os callbacks (firing manual do click/dblclick).
+  type DocWithListeners = {
+    addEventListener: (type: string, fn: (ev: unknown) => void) => void;
+    querySelector: (sel: string) => unknown;
+    createRange?: () => unknown;
+  };
+  const realDoc = document as unknown as DocWithListeners;
+  const origDocAdd = realDoc.addEventListener.bind(realDoc);
+  Object.defineProperty(realDoc, 'addEventListener', {
+    value: (type: string, fn: (ev: unknown) => void) => {
+      (docListeners[type] ??= []).push(fn);
+      origDocAdd(type, fn);
+    },
+    configurable: true,
+  });
+
+  // Timers manuais do sandbox: o debounce do modo edit fica sob controlo do
+  // teste (runTimers), sem fake timers globais.
+  const pendingTimers = new Map<number, () => void>();
+  let timerSeq = 0;
 
   const sandboxWindow = {
     postMessage: () => {},
     addEventListener: (type: string, fn: (ev: unknown) => void) => {
       if (type === 'message') messageListeners.push(fn);
     },
+    // getSelection intencionalmente ausente — o caminho do caret degrada
+    // para el.focus() (guard no helper).
   };
   const sandbox = {
     window: sandboxWindow,
-    // The helper only uses querySelector + addEventListener on the document.
-    document: {
-      addEventListener: (type: string, fn: (ev: unknown) => void) => {
-        if (type === 'click') clickListeners.push(fn);
-      },
-      querySelector: (sel: string) => document.querySelector(sel),
-    },
+    // The helper uses querySelector/addEventListener/createRange on the
+    // document; elementos reais suportam dispatchEvent (testes de edição).
+    document: realDoc,
     parent: { postMessage: (m: unknown) => parentMessages.push(m) },
+    setTimeout: (fn: () => void) => {
+      const id = ++timerSeq;
+      pendingTimers.set(id, fn);
+      return id;
+    },
+    clearTimeout: (id: number) => {
+      pendingTimers.delete(id);
+    },
     // NOTE: intrinsics (Object/JSON/WeakMap/…) come from the fresh VM
     // context itself — passing HOST intrinsics here breaks contextification.
   };
@@ -176,8 +231,16 @@ function bootHelper(html: string): BootedHelper {
   return {
     document,
     parentMessages,
-    click: (target: unknown) => clickListeners.forEach((fn) => fn({ target })),
+    click: (target: unknown) =>
+      (docListeners.click ?? []).forEach((fn) => fn({ target })),
+    dblclick: (target: unknown) =>
+      (docListeners.dblclick ?? []).forEach((fn) => fn({ target })),
     message: (data: unknown) => messageListeners.forEach((fn) => fn({ data })),
+    runTimers: () => {
+      const fns = [...pendingTimers.values()];
+      pendingTimers.clear();
+      fns.forEach((fn) => fn());
+    },
   };
 }
 
@@ -300,6 +363,162 @@ describe('PREVIEW_HELPER_SCRIPT — modelo expandido em execução (V5-P1A)', ()
     });
     expect(h.document.querySelector('#img-hero')!.getAttribute('style')).toBeNull();
     expect(h.document.querySelector('#video-1')!.getAttribute('style')).toBeNull();
+  });
+});
+
+/** Dispara um evento real num elemento linkedom (bubbles; key opcional p/ keydown). */
+function fireElementEvent(
+  h: BootedHelper,
+  el: unknown,
+  type: string,
+  opts?: { key?: string },
+): { defaultPrevented: boolean } {
+  const EventCtor = h.document.defaultView!.Event as unknown as {
+    new (type: string, init?: { bubbles?: boolean; cancelable?: boolean }): Event & { key?: string };
+  };
+  const ev = new EventCtor(type, { bubbles: true, cancelable: Boolean(opts?.key) });
+  if (opts?.key) ev.key = opts.key;
+  (el as { dispatchEvent: (e: unknown) => boolean }).dispatchEvent(ev);
+  return { defaultPrevented: ev.defaultPrevented };
+}
+
+describe('PREVIEW_HELPER_SCRIPT — edição inline de texto (V5-P1B)', () => {
+  const EDITOR_HTML = '<div id="text-headline-1">Old</div><img id="img-hero" src="a.jpg" />';
+
+  function findAction(messages: unknown[], action: string) {
+    return messages.find((m) => (m as { action?: string }).action === action) as
+      | { action: string; elementId?: string; text?: string }
+      | undefined;
+  }
+
+  function countAction(messages: unknown[], action: string) {
+    return messages.filter((m) => (m as { action?: string }).action === action).length;
+  }
+
+  it("dblclick em texto entra em modo edit: contenteditable + edit-start", () => {
+    const h = bootHelper(EDITOR_HTML);
+    const el = h.document.querySelector('#text-headline-1');
+    h.dblclick(el);
+
+    const start = findAction(h.parentMessages, 'edit-start');
+    expect(start).toMatchObject({ action: 'edit-start', elementId: 'text-headline-1' });
+    expect(el!.getAttribute('contenteditable')).toBe('true');
+  });
+
+  it('dblclick em imagem NÃO entra em modo edit', () => {
+    const h = bootHelper(EDITOR_HTML);
+    h.dblclick(h.document.querySelector('#img-hero'));
+
+    expect(findAction(h.parentMessages, 'edit-start')).toBeUndefined();
+    expect(h.document.querySelector('#img-hero')!.getAttribute('contenteditable')).toBeNull();
+  });
+
+  it('input é debounciado 300ms e coalesce para UM text-input', () => {
+    const h = bootHelper(EDITOR_HTML);
+    const el = h.document.querySelector('#text-headline-1');
+    h.dblclick(el);
+
+    el!.textContent = 'Hello';
+    fireElementEvent(h, el, 'input');
+    el!.textContent = 'Hello World';
+    fireElementEvent(h, el, 'input');
+
+    // Antes do debounce drenar: nada publicado.
+    expect(findAction(h.parentMessages, 'text-input')).toBeUndefined();
+
+    h.runTimers();
+    expect(countAction(h.parentMessages, 'text-input')).toBe(1);
+    const input = findAction(h.parentMessages, 'text-input')!;
+    expect(input.elementId).toBe('text-headline-1');
+    expect(input.text).toBe('Hello World');
+  });
+
+  it('blur commita imediatamente (edit-end) e drena o debounce pendente', () => {
+    const h = bootHelper(EDITOR_HTML);
+    const el = h.document.querySelector('#text-headline-1');
+    h.dblclick(el);
+
+    el!.textContent = 'Typed';
+    fireElementEvent(h, el, 'input');
+    fireElementEvent(h, el, 'blur');
+
+    const end = findAction(h.parentMessages, 'edit-end');
+    expect(end).toMatchObject({ action: 'edit-end', elementId: 'text-headline-1', text: 'Typed' });
+    expect(el!.getAttribute('contenteditable')).toBeNull();
+
+    // O debounce pendente foi drenado pelo commit — sem mensagens tardias.
+    const total = h.parentMessages.length;
+    h.runTimers();
+    expect(h.parentMessages.length).toBe(total);
+  });
+
+  it('Enter commita com preventDefault (sem <div>/<br> no conteúdo)', () => {
+    const h = bootHelper(EDITOR_HTML);
+    const el = h.document.querySelector('#text-headline-1');
+    h.dblclick(el);
+
+    const res = fireElementEvent(h, el, 'keydown', { key: 'Enter' });
+
+    expect(res.defaultPrevented).toBe(true);
+    expect(countAction(h.parentMessages, 'edit-end')).toBe(1);
+    expect(el!.getAttribute('contenteditable')).toBeNull();
+  });
+
+  it('Esc restaura o texto original antes do commit', () => {
+    const h = bootHelper(EDITOR_HTML);
+    const el = h.document.querySelector('#text-headline-1');
+    h.dblclick(el);
+
+    el!.textContent = 'Changed';
+    fireElementEvent(h, el, 'input');
+    h.runTimers(); // publica o text-input intermédio
+    fireElementEvent(h, el, 'keydown', { key: 'Escape' });
+
+    // DOM restaurado E o pai recebe o texto restaurado no edit-end.
+    expect(el!.textContent).toBe('Old');
+    const end = findAction(h.parentMessages, 'edit-end')!;
+    expect(end.text).toBe('Old');
+    expect(el!.getAttribute('contenteditable')).toBeNull();
+  });
+
+  it('eco de patch text com valor igual ao editor ativo não reescreve o nó; valor diferente aplica', () => {
+    const h = bootHelper(EDITOR_HTML);
+    const el = h.document.querySelector('#text-headline-1');
+    h.dblclick(el);
+
+    // Eco: o pai devolve exatamente o que o iframe acabou de reportar.
+    h.message({
+      action: 'patch',
+      patches: [{ selector: '#text-headline-1', property: 'text', value: 'Old' }],
+    });
+    expect(el!.textContent).toBe('Old');
+    expect(el!.getAttribute('contenteditable')).toBe('true'); // sessão intacta
+
+    // Valor diferente (ex.: undo) aplica-se mesmo durante a edição.
+    h.message({
+      action: 'patch',
+      patches: [{ selector: '#text-headline-1', property: 'text', value: 'Rewritten' }],
+    });
+    expect(el!.textContent).toBe('Rewritten');
+  });
+
+  it('dblclick noutro elemento durante edição commita o editor anterior', () => {
+    const h = bootHelper(
+      '<div id="text-a">A</div><div id="text-b">B</div>',
+    );
+    const a = h.document.querySelector('#text-a');
+    const b = h.document.querySelector('#text-b');
+    h.dblclick(a);
+    h.dblclick(b);
+
+    const endIdx = h.parentMessages.findIndex((m) => (m as { action?: string }).action === 'edit-end');
+    const startBIdx = h.parentMessages.findIndex(
+      (m) => (m as { action?: string }).action === 'edit-start' && (m as { elementId?: string }).elementId === 'text-b',
+    );
+    expect(endIdx).toBeGreaterThanOrEqual(0);
+    expect(endIdx).toBeLessThan(startBIdx);
+    expect(a!.getAttribute('contenteditable')).toBeNull();
+    expect(b!.getAttribute('contenteditable')).toBe('true');
   });
 });
 

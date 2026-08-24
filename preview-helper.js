@@ -8,6 +8,12 @@
  * iframe → parent (sent with targetOrigin '*' — the PARENT validates origin):
  *   { action: 'select',   elementId, bbox: {x,y,w,h} }  on click of [id]/[data-hf-id]
  *   { action: 'deselect' }                              on click outside any element
+ *   { action: 'edit-start', elementId, bbox }           V5-P1B: dblclick on a
+ *     TEXT element entered inline-edit mode (contentEditable on the element)
+ *   { action: 'text-input', elementId, text, bbox }     V5-P1B: debounced 300ms
+ *     input while editing (textContent of the editable)
+ *   { action: 'edit-end',  elementId, text, bbox }      V5-P1B: commit on
+ *     blur/Enter/Esc (Esc restores the original text first)
  *
  * parent → iframe (V4-3e hot-swap receiver):
  *   { action: 'patch',     patches: [{selector, property, value}] }
@@ -189,6 +195,129 @@ export const PREVIEW_HELPER_SCRIPT = `(function () {
     } catch (e) { /* never break the preview */ }
   }, true);
 
+  // ── V5-P1B: inline text editing (double-click → contentEditable) ─────
+  // The helper owns the edit session; the parent owns transport/persistence.
+  // Text flows OUT as debounced 'text-input' envelopes and comes back as
+  // ordinary hot-swap 'text' patches (echo — suppressed below while the
+  // value equals the live editable content, so the caret is never clobbered).
+  var EDIT_DEBOUNCE_MS = 300;
+  var activeEditor = null;      // element being edited (or null)
+  var originalText = '';        // textContent captured at edit-start (Esc restore)
+  var inputTimer = null;
+
+  function inferElementTypeFromId(id) {
+    var prefix = String(id || '').split('-')[0].toLowerCase();
+    if (prefix === 'img' || prefix === 'image') return 'image';
+    if (prefix === 'audio' || prefix === 'voice' || prefix === 'music' || prefix === 'sfx') return 'audio';
+    if (prefix === 'video' || prefix === 'footage') return 'video';
+    return 'text';
+  }
+
+  function sendToParent(msg) {
+    try { parent.postMessage(msg, '*'); } catch (e) { /* never break the preview */ }
+  }
+
+  function elementEnvelope(el, action) {
+    var id = el.getAttribute('data-hf-id') || el.id;
+    var r = el.getBoundingClientRect();
+    return {
+      action: action,
+      elementId: id,
+      bbox: { x: Math.round(r.left), y: Math.round(r.top), w: Math.round(r.width), h: Math.round(r.height) }
+    };
+  }
+
+  function placeCaretAtEnd(el) {
+    try {
+      var sel = window.getSelection ? window.getSelection() : null;
+      if (sel && document.createRange) {
+        var range = document.createRange();
+        range.selectNodeContents(el);
+        range.collapse(false);
+        sel.removeAllRanges();
+        sel.addRange(range);
+      }
+      el.focus();
+    } catch (e) {
+      try { el.focus(); } catch (e2) { /* non-focusable env (tests) */ }
+    }
+  }
+
+  function detachEditListeners(el) {
+    el.removeEventListener('input', onEditInput);
+    el.removeEventListener('keydown', onEditKeydown);
+    el.removeEventListener('blur', onEditBlur);
+  }
+
+  function finishEdit() {
+    var el = activeEditor;
+    if (!el) return;
+    if (inputTimer !== null) { clearTimeout(inputTimer); inputTimer = null; }
+    detachEditListeners(el);
+    el.removeAttribute('contenteditable');
+    el.removeAttribute('spellcheck');
+    activeEditor = null;
+    var msg = elementEnvelope(el, 'edit-end');
+    msg.text = el.textContent == null ? '' : el.textContent;
+    sendToParent(msg);
+  }
+
+  function enterEditMode(el) {
+    if (activeEditor === el) return;
+    if (activeEditor) finishEdit(); // defensive: blur may not fire in every env
+    activeEditor = el;
+    originalText = el.textContent == null ? '' : el.textContent;
+    el.setAttribute('contenteditable', 'true');
+    el.setAttribute('spellcheck', 'false');
+    el.addEventListener('input', onEditInput);
+    el.addEventListener('keydown', onEditKeydown);
+    el.addEventListener('blur', onEditBlur);
+    sendToParent(elementEnvelope(el, 'edit-start'));
+    placeCaretAtEnd(el);
+  }
+
+  function onEditInput() {
+    if (!activeEditor) return;
+    var el = activeEditor;
+    if (inputTimer !== null) clearTimeout(inputTimer);
+    inputTimer = setTimeout(function () {
+      inputTimer = null;
+      if (activeEditor !== el) return;
+      var msg = elementEnvelope(el, 'text-input');
+      msg.text = el.textContent == null ? '' : el.textContent;
+      sendToParent(msg);
+    }, EDIT_DEBOUNCE_MS);
+  }
+
+  function onEditKeydown(ev) {
+    if (!activeEditor) return;
+    if (ev.key === 'Escape') {
+      ev.preventDefault();
+      activeEditor.textContent = originalText; // restore before commit
+      finishEdit();
+    } else if (ev.key === 'Enter') {
+      // Enter is commit-only: contenteditable would insert <div>/<br> which
+      // textContent flattens — multi-line stays explicitly out of scope.
+      ev.preventDefault();
+      finishEdit();
+    }
+  }
+
+  function onEditBlur() {
+    if (activeEditor) finishEdit();
+  }
+
+  document.addEventListener('dblclick', function (ev) {
+    try {
+      var target = ev.target;
+      var el = target && target.closest ? target.closest('[id],[data-hf-id]') : null;
+      if (!el) return;
+      var id = el.getAttribute('data-hf-id') || el.id;
+      if (inferElementTypeFromId(id) !== 'text') return;
+      enterEditMode(el);
+    } catch (e) { /* never break the preview */ }
+  }, true);
+
   // ── parent → iframe: hot-swap receiver (patch / seek / playpause) ────
   window.addEventListener('message', function (ev) {
     var data = ev.data;
@@ -204,6 +333,13 @@ export const PREVIEW_HELPER_SCRIPT = `(function () {
         var value = String(p.value == null ? '' : p.value);
         if (p.property === 'textContent' || p.property === 'text') {
           // V5-P1A: 'text' é alias aceite de textContent (modelo §6.1).
+          // V5-P1B: eco da própria edição inline — quando o valor é IGUAL ao
+          // conteúdo vivo do editor ativo não reescreve o nó (reescrever
+          // substituiria os child nodes e colapsaria o caret). Valor
+          // diferente (ex.: undo) aplica-se mesmo em edição.
+          if (el === activeEditor && (el.textContent == null ? '' : el.textContent) === value) {
+            break;
+          }
           el.textContent = value;
         } else if (p.property === 'src') {
           el.setAttribute('src', value);
