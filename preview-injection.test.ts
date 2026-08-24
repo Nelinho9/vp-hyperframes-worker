@@ -16,6 +16,7 @@
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import http from 'node:http';
 import vm from 'node:vm';
+import { parseHTML } from 'linkedom';
 import { app } from './server.js';
 import {
   injectPreviewHelper,
@@ -105,19 +106,141 @@ describe('PREVIEW_HELPER_SCRIPT — contrato do protocolo', () => {
     expect(PREVIEW_HELPER_SCRIPT).toContain("data.action === 'patch'");
     expect(PREVIEW_HELPER_SCRIPT).toContain("data.action === 'seek'");
     expect(PREVIEW_HELPER_SCRIPT).toContain("data.action === 'playpause'");
-    // Patch semantics mirror patchHtml.ts.
+    // Patch semantics mirror prop-map.js / patchHtml.ts (V5-P0B).
     expect(PREVIEW_HELPER_SCRIPT).toContain('textContent');
     expect(PREVIEW_HELPER_SCRIPT).toContain("setAttribute('src'");
     expect(PREVIEW_HELPER_SCRIPT).toContain('background-image');
     expect(PREVIEW_HELPER_SCRIPT).toContain('style.setProperty');
-    // Inspector prop → CSS mapping (x→left, y→top) present.
-    expect(PREVIEW_HELPER_SCRIPT).toContain('"x":"left"');
-    expect(PREVIEW_HELPER_SCRIPT).toContain('"y":"top"');
+    // V5-P0B geometry: --el-* vars + individual transforms, NEVER left/top.
+    expect(PREVIEW_HELPER_SCRIPT).toContain('"x":{"output":"--el-x"');
+    expect(PREVIEW_HELPER_SCRIPT).toContain('"y":{"output":"--el-y"');
+    expect(PREVIEW_HELPER_SCRIPT).not.toContain('"x":"left"');
+    expect(PREVIEW_HELPER_SCRIPT).not.toContain('"y":"top"');
+    // Delta baseline capture + consumption declarations present.
+    expect(PREVIEW_HELPER_SCRIPT).toContain('getBoundingClientRect()');
+    expect(PREVIEW_HELPER_SCRIPT).toContain('GEOM_BASELINES');
+    expect(PREVIEW_HELPER_SCRIPT).toContain('var(--el-x, 0px) var(--el-y, 0px)');
   });
 
   it('é JavaScript válido (compila sem executar)', () => {
     // vm.Script only parses/compiles the static helper source — never runs it.
     expect(() => new vm.Script(PREVIEW_HELPER_SCRIPT)).not.toThrow();
+  });
+});
+
+// ─── V5-P0B: comportamento real do helper (executado numa sandbox vm) ──────
+
+describe('PREVIEW_HELPER_SCRIPT — geometria em execução (V5-P0B)', () => {
+  interface BootedHelper {
+    document: ReturnType<typeof parseHTML>['document'];
+    parentMessages: unknown[];
+    click: (target: unknown) => void;
+    message: (data: unknown) => void;
+  }
+
+  /** Execute the helper script against a linkedom document inside a VM. */
+  function bootHelper(html: string): BootedHelper {
+    const { document } = parseHTML(html);
+    const parentMessages: unknown[] = [];
+    const clickListeners: ((ev: unknown) => void)[] = [];
+    const messageListeners: ((ev: unknown) => void)[] = [];
+
+    const sandboxWindow = {
+      postMessage: () => {},
+      addEventListener: (type: string, fn: (ev: unknown) => void) => {
+        if (type === 'message') messageListeners.push(fn);
+      },
+    };
+    const sandbox = {
+      window: sandboxWindow,
+      // The helper only uses querySelector + addEventListener on the document.
+      document: {
+        addEventListener: (type: string, fn: (ev: unknown) => void) => {
+          if (type === 'click') clickListeners.push(fn);
+        },
+        querySelector: (sel: string) => document.querySelector(sel),
+      },
+      parent: { postMessage: (m: unknown) => parentMessages.push(m) },
+      // NOTE: intrinsics (Object/JSON/WeakMap/…) come from the fresh VM
+      // context itself — passing HOST intrinsics here breaks contextification.
+    };
+    sandboxWindow.window = sandboxWindow;
+    vm.createContext(sandbox);
+    // NOTE: run the source string DIRECTLY (with a filename) — creating an
+    // extra `vm.Script` for already-compiled source trips a V8 double-compile
+    // quirk under worker threads ("Unexpected identifier").
+    vm.runInContext(PREVIEW_HELPER_SCRIPT, sandbox, { filename: 'vp-preview-helper.js' });
+
+    return {
+      document,
+      parentMessages,
+      click: (target: unknown) => clickListeners.forEach((fn) => fn({ target })),
+      message: (data: unknown) => messageListeners.forEach((fn) => fn({ data })),
+    };
+  }
+
+  it('converte x/y absolutos em deltas vs baseline rect e escreve vars+consumo', () => {
+    const h = bootHelper('<div id="el" style="width: 10px;"></div>');
+    const el = h.document.querySelector('#el');
+
+    // First geometry session — linkedom rects are (0,0), so delta == absolute.
+    h.message({
+      action: 'patch',
+      patches: [
+        { selector: '#el', property: 'x', value: '100' },
+        { selector: '#el', property: 'y', value: '50' },
+      ],
+    });
+    const style = el!.getAttribute('style') ?? '';
+    expect(style).toMatch(/--el-x:\s*100px/);
+    expect(style).toMatch(/--el-y:\s*50px/);
+    // linkedom serializes style without separator spacing → whitespace-tolerant.
+    expect(style).toMatch(/translate\s*:\s*var\(--el-x,\s*0px\)\s+var\(--el-y,\s*0px\)/);
+    // No layout literals written by the helper.
+    expect(style).not.toMatch(/\bleft\s*:/);
+
+    // Second session on the SAME element: baseline is cached, the new
+    // absolute target replaces the accumulated delta (fixed point).
+    h.message({ action: 'patch', patches: [{ selector: '#el', property: 'x', value: '160' }] });
+    expect(el!.getAttribute('style')).toMatch(/--el-x:\s*160px/);
+    expect(el!.getAttribute('style')).not.toMatch(/--el-x:\s*260px/);
+  });
+
+  it('width/height são absolutos; rotation usa deg; decl props mantêm px', () => {
+    const h = bootHelper('<div id="badge-1">B</div>');
+    h.message({
+      action: 'patch',
+      patches: [
+        { selector: '#badge-1', property: 'width', value: '420' },
+        { selector: '#badge-1', property: 'height', value: '280' },
+        { selector: '#badge-1', property: 'rotation', value: '-12.5' },
+        { selector: '#badge-1', property: 'size', value: '72' },
+      ],
+    });
+    const style = h.document.querySelector('#badge-1')!.getAttribute('style') ?? '';
+    expect(style).toMatch(/--el-w:\s*420px/);
+    expect(style).toMatch(/--el-h:\s*280px/);
+    expect(style).toMatch(/width\s*:\s*var\(--el-w\)/);
+    expect(style).toMatch(/height\s*:\s*var\(--el-h\)/);
+    expect(style).toMatch(/--el-rotate:\s*-12\.5deg/);
+    expect(style).toMatch(/rotate\s*:\s*var\(--el-rotate,\s*0deg\)/);
+    // Non-geometry decl prop unchanged (size → font-size +px).
+    expect(style).toMatch(/font-size\s*:\s*72px/);
+  });
+
+  it('seleção por click continua a reportar bbox ao pai (regressão)', () => {
+    const h = bootHelper('<div id="text-headline-1">Olá</div>');
+    h.click(h.document.querySelector('#text-headline-1'));
+    const select = h.parentMessages.find(
+      (m) => (m as { action?: string }).action === 'select',
+    ) as { elementId: string; bbox: { x: number; y: number; w: number; h: number } };
+    expect(select).toBeTruthy();
+    expect(select.elementId).toBe('text-headline-1');
+    // linkedom has no layout — rects are zeroed, but the envelope is intact.
+    expect(select.bbox).toEqual({ x: 0, y: 0, w: 0, h: 0 });
+
+    h.click(null);
+    expect(h.parentMessages).toContainEqual({ action: 'deselect' });
   });
 });
 

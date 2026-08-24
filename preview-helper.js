@@ -25,9 +25,16 @@
  * parent as `{source:'hf-preview', type:'diagnostic', code:'page.error'}` so
  * broken compositions are diagnosable from the editor.
  *
- * Patch semantics mirror src/video/v4/patchHtml.ts (kept in sync manually):
+ * Patch semantics mirror src/video/v4/patchHtml.ts via the shared V5-P0B
+ * canonical table (`prop-map.js`, JSON-stringified into the inline script):
  *   textContent → innerText; src → attribute; background-image → url(...) wrap;
- *   anything else → CSS property (inspector names mapped, px units added).
+ *   decl props (font/size/weight/color/opacity) → mapped CSS property (+px).
+ *   GEOMETRY (x/y/width/height/rotation) → AD-1: `--el-*` custom properties
+ *   consumed by individual transforms / layout vars on the SAME element —
+ *   NEVER left/top literals (B1.3). x/y are ABSOLUTE composition coordinates
+ *   converted to a translate DELTA against the element rect captured at the
+ *   first geometry edit of the session (WeakMap baseline); accumulated deltas
+ *   converge with the worker's authored-left/top recomputation on persist.
  */
 
 /** Marker id used to keep injection idempotent. */
@@ -70,19 +77,11 @@ export function injectPreviewRuntime(html, src) {
 }
 
 /**
- * Inspector prop → CSS property mapping (same table as patchHtml.PROP_TO_CSS).
+ * V5-P0B: inspector prop → CSS/geometry mapping — JSON-stringified into the
+ * inline script below. Mirror of `prop-map.js` (see that module for the
+ * cross-repo parity contract).
  */
-const PROP_TO_CSS = {
-  font: 'font-family',
-  size: 'font-size',
-  weight: 'font-weight',
-  color: 'color',
-  opacity: 'opacity',
-  width: 'width',
-  height: 'height',
-  x: 'left',
-  y: 'top',
-};
+import { PROP_MAP, GEOM_CONSUMPTION } from "./prop-map.js";
 
 /**
  * The inline helper script body (browser-only, ES5-compatible, no imports).
@@ -92,12 +91,55 @@ export const PREVIEW_HELPER_SCRIPT = `(function () {
   if (window.__vpPreviewHelperLoaded) return;
   window.__vpPreviewHelperLoaded = true;
 
-  var PROP_TO_CSS = ${JSON.stringify(PROP_TO_CSS)};
-  var NUMERIC_PROPS = { 'font-size': 1, width: 1, height: 1, left: 1, top: 1, margin: 1, padding: 1, 'border-width': 1 };
+  // V5-P0B canonical table (prop-map.js) — geometry NEVER maps to left/top.
+  var PROP_MAP = ${JSON.stringify(PROP_MAP)};
+  var GEOM_CONSUMPTION = ${JSON.stringify(GEOM_CONSUMPTION)};
+  var NUMERIC_VALUE_RE = /^-?\\d+(\\.\\d+)?$/;
+  var DECL_NUMERIC_PROPS = { 'font-size': 1, margin: 1, padding: 1, 'border-width': 1 };
 
   function addUnit(cssProp, value) {
-    if (NUMERIC_PROPS[cssProp] && /^\\d+(\\.\\d+)?$/.test(value)) return value + 'px';
+    if (DECL_NUMERIC_PROPS[cssProp] && NUMERIC_VALUE_RE.test(value)) return value + 'px';
     return value;
+  }
+
+  // ── V5-P0B (AD-1): geometry via --el-* vars + individual transforms ──
+  // x/y arrive as ABSOLUTE composition coordinates; the translate DELTA is
+  // computed against the element rect captured at the FIRST geometry edit of
+  // the session (translate starts unset ⇒ rect == authored visual position).
+  // Accumulated deltas always equal desired_latest − baseline_first, which
+  // converges with the worker's authored-left/top recomputation on persist.
+  var GEOM_BASELINES = (typeof WeakMap === 'function') ? new WeakMap() : null;
+
+  function geomBaseline(el) {
+    if (!GEOM_BASELINES) return { x: 0, y: 0 };
+    var b = GEOM_BASELINES.get(el);
+    if (!b) {
+      var r = el.getBoundingClientRect();
+      b = { x: r.left, y: r.top };
+      GEOM_BASELINES.set(el, b);
+    }
+    return b;
+  }
+
+  function applyGeometryPatch(el, property, value) {
+    var entry = PROP_MAP[property];
+    if (!entry || entry.kind !== 'geom') return false;
+    var out = value;
+    if (NUMERIC_VALUE_RE.test(value)) {
+      var num = parseFloat(value);
+      if (property === 'x' || property === 'y') {
+        var b = geomBaseline(el);
+        num = property === 'x' ? num - b.x : num - b.y;
+      }
+      out = num + entry.unit;
+    }
+    el.style.setProperty(entry.output, out);
+    var consumption = GEOM_CONSUMPTION[property] || null;
+    if (consumption) {
+      var sep = consumption.indexOf(':');
+      el.style.setProperty(consumption.slice(0, sep).trim(), consumption.slice(sep + 1).trim());
+    }
+    return true;
   }
 
   // ── V4-04D §2.4: surface page errors as runtime diagnostics ──────────
@@ -161,8 +203,11 @@ export const PREVIEW_HELPER_SCRIPT = `(function () {
           el.setAttribute('src', value);
         } else if (p.property === 'background-image') {
           el.style.backgroundImage = value.indexOf('url(') === 0 ? value : ('url(' + value + ')');
+        } else if (applyGeometryPatch(el, p.property, value)) {
+          // V5-P0B: geometry via --el-* vars + individual transforms (AD-1).
         } else {
-          var cssProp = PROP_TO_CSS[p.property] || p.property;
+          var entry = PROP_MAP[p.property];
+          var cssProp = entry && entry.kind === 'decl' ? entry.output : p.property;
           el.style.setProperty(cssProp, addUnit(cssProp, value));
         }
       }

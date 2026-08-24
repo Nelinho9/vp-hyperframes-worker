@@ -105,7 +105,10 @@ describe('POST /patch/:id — V4-04C', () => {
     expect(body.html).toContain('font-size: 72px');
     expect(body.html).toContain('src="assets/new.jpg"');
     expect(body.html).toContain('url(https://cdn/bg.jpg)');
-    expect(body.html).toContain('left: 120px');
+    // V5-P0B (AD-1): x is a translate DELTA var — no left/top literals.
+    expect(body.html).toMatch(/--el-x:\s*120px/);
+    expect(body.html).toContain('translate: var(--el-x, 0px) var(--el-y, 0px)');
+    expect(body.html).not.toContain('left: 120px');
     // …and is persisted (served back on the preview).
     const preview = await fetch(`${base}/preview/proj-patch-1`);
     const html = await preview.text();
@@ -143,6 +146,112 @@ describe('POST /patch/:id — V4-04C', () => {
       { 'X-Worker-Secret': SECRET },
     );
     expect(res.status).toBe(404);
+  });
+});
+
+describe('POST /patch/:id — geometria V5-P0B (AD-1)', () => {
+  const GEOM_HTML = `<!doctype html>
+<html><head><title>t</title></head>
+<body>
+<div data-composition-id="main" data-start="0" data-duration="6">
+  <h1 id="headline-1" style="position: absolute; left: 340px; top: 80px;">H</h1>
+  <img id="img-hero" src="assets/hero.jpg" style="width: 400px;" />
+</div>
+</body>
+</html>`;
+
+  async function stageGeom(projectId: string) {
+    const res = await fetch(`${base}/job`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ job_id: `job-${projectId}`, project_id: projectId, mode: 'preview', index_html: GEOM_HTML }),
+    });
+    expect(res.status).toBe(200);
+  }
+
+  it('converte x/y absolutos em DELTA vs left/top authored e nunca escreve left/top', async () => {
+    await stageGeom('proj-geom-1');
+    const res = await post(
+      '/patch/proj-geom-1',
+      {
+        patches: [
+          { selector: '#headline-1', property: 'x', value: '100' },
+          { selector: '#headline-1', property: 'y', value: '60' },
+        ],
+      },
+      { 'X-Worker-Secret': SECRET },
+    );
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { ok: boolean; html: string };
+
+    // Delta semantics: desired − authored baseline.
+    expect(body.html).toMatch(/--el-x:\s*-240px/);
+    expect(body.html).toMatch(/--el-y:\s*-20px/);
+    // Individual-transform consumption, exactly once.
+    expect(body.html.match(/translate\s*:/g)?.length).toBe(1);
+    // Authored origin untouched — no NEW layout literals.
+    expect(body.html.match(/\bleft\s*:/g)?.length).toBe(1);
+    expect(body.html).toContain('left: 340px');
+    expect(body.html.match(/\btop\s*:/g)?.length).toBe(1);
+
+    // Persisted for the preview/render path.
+    const preview = await fetch(`${base}/preview/proj-geom-1`);
+    expect(await preview.text()).toMatch(/--el-x:\s*-240px/);
+  });
+
+  it('width/height são absolutos (--el-w/--el-h + consumo que substitui o authored)', async () => {
+    await stageGeom('proj-geom-2');
+    const res = await post(
+      '/patch/proj-geom-2',
+      {
+        patches: [
+          { selector: '#img-hero', property: 'width', value: '420' },
+          { selector: '#img-hero', property: 'height', value: '280' },
+        ],
+      },
+      { 'X-Worker-Secret': SECRET },
+    );
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { ok: boolean; html: string };
+    expect(body.html).toMatch(/--el-w:\s*420px/);
+    expect(body.html).toMatch(/--el-h:\s*280px/);
+    // Consumption replaces the authored width decl (no duplicates).
+    expect(body.html).toContain('width: var(--el-w)');
+    expect(body.html).toContain('height: var(--el-h)');
+    expect(body.html.match(/\bwidth\s*:/g)?.length).toBe(1);
+  });
+
+  it('re-patch converge para o mesmo estado (idempotente)', async () => {
+    await stageGeom('proj-geom-3');
+    const patches = {
+      patches: [
+        { selector: '#headline-1', property: 'x', value: '180' },
+        { selector: '#headline-1', property: 'y', value: '90' },
+      ],
+    };
+    const once = await post('/patch/proj-geom-3', patches, { 'X-Worker-Secret': SECRET });
+    const twice = await post('/patch/proj-geom-3', patches, { 'X-Worker-Secret': SECRET });
+    const a = ((await once.json()) as { html: string }).html;
+    const b = ((await twice.json()) as { html: string }).html;
+
+    expect(b).toMatch(/--el-x:\s*-160px/);
+    expect(b).toMatch(/--el-y:\s*10px/);
+    // Second application is byte-identical to the first (fully converged).
+    expect(b.replace(/\s+/g, ' ')).toBe(a.replace(/\s+/g, ' '));
+    // The authored left/top were never rewritten as deltas.
+    expect(b).toContain('left: 340px');
+  });
+
+  it('rotation escreve --el-rotate com consumo rotate()', async () => {
+    await stageGeom('proj-geom-4');
+    const res = await post(
+      '/patch/proj-geom-4',
+      { patches: [{ selector: '#img-hero', property: 'rotation', value: '-12.5' }] },
+      { 'X-Worker-Secret': SECRET },
+    );
+    const body = (await res.json()) as { ok: boolean; html: string };
+    expect(body.html).toMatch(/--el-rotate:\s*-12\.5deg/);
+    expect(body.html).toContain('rotate: var(--el-rotate, 0deg)');
   });
 });
 

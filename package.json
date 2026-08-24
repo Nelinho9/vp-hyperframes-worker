@@ -7,7 +7,7 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "test": "vitest run preview-injection.test.ts exec-error.test.ts job-persistence.test.ts runtime-vendor.test.ts signed-upload.test.ts media-preloader.test.ts media-preloader-integration.test.ts worker-sanitize.test.ts patch-restructure.test.ts docker-copy.test.ts composition-persist.test.ts",
+    "test": "vitest run preview-injection.test.ts exec-error.test.ts job-persistence.test.ts runtime-vendor.test.ts signed-upload.test.ts media-preloader.test.ts media-preloader-integration.test.ts worker-sanitize.test.ts prop-map.test.ts patch-restructure.test.ts docker-copy.test.ts composition-persist.test.ts",
     "test:all": "vitest run"
   },
   "dependencies": {

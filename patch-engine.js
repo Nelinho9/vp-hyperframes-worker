@@ -1,14 +1,18 @@
 /**
  * patch-engine — V4-04C: linkedom-backed HTML patch + timeline restructure
  *
- * Shared semantics with src/video/v4/patchHtml.ts (kept in sync — the table
- * below mirrors PROP_TO_CSS / NUMERIC_PROPS):
+ * Shared semantics with src/video/v4/patchHtml.ts via the V5-P0B canonical
+ * table (`prop-map.js`, mirrored in the app as `src/video/v4/propMap.ts`;
+ * parity enforced byte-a-byte by tests in BOTH repos):
  *   - `textContent` → textContent
  *   - `src`         → attribute
  *   - `background-image` → wrap `url(...)`
- *   - `x`→`left`, `y`→`top`, `font`→`font-family`, `size`→`font-size`,
- *     `weight`→`font-weight`
- *   - numeric values get `px` (NUMERIC_PROPS list)
+ *   - decl props (font/size/weight/color/opacity) → mapped CSS property
+ *   - GEOMETRY (x/y/width/height/rotation) → AD-1: `--el-*` custom properties
+ *     consumed by individual transforms / layout vars on the same element.
+ *     x/y values are ABSOLUTE composition coordinates converted to a translate
+ *     DELTA against the authored inline `left/top` baseline — the engine never
+ *     writes `left/top` literals (B1.3 fix).
  *
  * Patches target `#id` selectors ONLY (400 from the routes otherwise) —
  * arbitrary selectors would let an authenticated user rewrite the runtime
@@ -21,27 +25,66 @@
  */
 
 import { parseHTML } from "linkedom";
+import { PROP_MAP, GEOM_CONSUMPTION, computeGeomDelta } from "./prop-map.js";
 
-const PROP_TO_CSS = {
-  font: "font-family",
-  size: "font-size",
-  weight: "font-weight",
-  color: "color",
-  opacity: "opacity",
-  width: "width",
-  height: "height",
-  x: "left",
-  y: "top",
-};
+/** Numeric CSS value (px/deg candidates) — integers, decimals and negatives. */
+const NUMERIC_VALUE_RE = /^-?\d+(\.\d+)?$/;
 
-const NUMERIC_PROPS = new Set([
-  "font-size", "width", "height", "left", "top",
-  "margin", "padding", "border-width",
+/** Decl props that still get a px unit appended to bare numbers. */
+const DECL_NUMERIC_PROPS = new Set([
+  "font-size", "margin", "padding", "border-width",
 ]);
 
-function addUnit(cssProp, value) {
-  if (NUMERIC_PROPS.has(cssProp) && /^\d+(\.\d+)?$/.test(value)) return `${value}px`;
+function addDeclUnit(cssProp, value) {
+  if (DECL_NUMERIC_PROPS.has(cssProp) && NUMERIC_VALUE_RE.test(value)) {
+    return `${value}px`;
+  }
   return value;
+}
+
+/** Extract one authored declaration value from a style attribute string. */
+export function parseInlineDecl(styleAttr, prop) {
+  if (!styleAttr) return null;
+  const re = new RegExp(`(^|;)\\s*${prop}\\s*:\\s*([^;]*)`, "i");
+  const m = styleAttr.match(re);
+  return m ? m[2].trim() : null;
+}
+
+/** Authored px baseline for translate deltas (missing/auto/non-numeric → 0). */
+function authoredOffsetPx(styleAttr, prop) {
+  const raw = parseInlineDecl(styleAttr, prop);
+  if (!raw) return 0;
+  const n = parseFloat(raw); // '340px' → 340 · 'auto'/'' → NaN → 0
+  return Number.isFinite(n) ? n : 0;
+}
+
+/**
+ * Apply one geometry patch (V5-P0B / AD-1): write the `--el-*` var (+ unit
+ * for numeric values; non-numeric pass verbatim without delta math) plus its
+ * consumption declaration on the SAME element. x/y deltas are computed
+ * against the authored inline left/top so the persisted HTML reproduces the
+ * preview exactly while keeping the authored origin untouched.
+ */
+function applyGeometryPatch(el, property, value) {
+  const entry = PROP_MAP[property];
+  const existing = el.getAttribute("style");
+
+  let out = value;
+  if (NUMERIC_VALUE_RE.test(value)) {
+    let num = Number(value);
+    if (property === "x") num = computeGeomDelta(authoredOffsetPx(existing, "left"), num);
+    if (property === "y") num = computeGeomDelta(authoredOffsetPx(existing, "top"), num);
+    out = `${num}${entry.unit}`;
+  }
+  el.setAttribute("style", mergeStyle(existing, entry.output, out));
+
+  const consumption = GEOM_CONSUMPTION[property] || null;
+  if (!consumption) return;
+  const sep = consumption.indexOf(":");
+  el.setAttribute(
+    "style",
+    mergeStyle(el.getAttribute("style"), consumption.slice(0, sep).trim(), consumption.slice(sep + 1).trim()),
+  );
 }
 
 /** Only `#id` selectors are accepted for patch application. */
@@ -73,22 +116,32 @@ export function applyPatchesLinkedom(html, patches) {
       el.setAttribute("src", value);
     } else if (property === "background-image") {
       el.setAttribute("style", mergeStyle(el.getAttribute("style"), "background-image", value.startsWith("url(") ? value : `url(${value})`));
+    } else if (PROP_MAP[property]?.kind === "geom") {
+      applyGeometryPatch(el, property, value);
+    } else if (PROP_MAP[property]?.kind === "decl") {
+      const cssProp = PROP_MAP[property].output;
+      el.setAttribute("style", mergeStyle(el.getAttribute("style"), cssProp, addDeclUnit(cssProp, value)));
     } else {
-      const cssProp = PROP_TO_CSS[property] || property;
-      el.setAttribute("style", mergeStyle(el.getAttribute("style"), cssProp, addUnit(cssProp, value)));
+      // Unknown property: pass through verbatim (legacy behaviour).
+      el.setAttribute("style", mergeStyle(el.getAttribute("style"), property, value));
     }
     applied += 1;
   }
   return { html: document.toString(), applied };
 }
 
-/** Merge one `prop: value` declaration into an existing style attribute. */
+/** Merge one `prop: value` declaration into an existing style attribute.
+ * Canonical form (single spaces, no trailing `;`) guarantees re-applying the
+ * same geometry patches converges byte-exactly (idempotent persists). */
 function mergeStyle(existing, prop, value) {
   const decl = `${prop}: ${value}`;
   if (!existing) return decl;
   const re = new RegExp(`(^|;)\\s*${prop}\\s*:\\s*[^;]*;?`, "i");
-  if (re.test(existing)) {
-    return existing.replace(re, (_match, sep) => `${sep}${decl};`);
+  const m = existing.match(re);
+  if (m) {
+    const sep = m[1];
+    const atEnd = m.index + m[0].length >= existing.length;
+    return existing.replace(re, () => `${sep ? `${sep} ` : ""}${decl}${atEnd ? "" : ";"}`);
   }
   return `${existing.replace(/;\s*$/, "")}; ${decl}`;
 }
