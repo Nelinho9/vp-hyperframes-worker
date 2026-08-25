@@ -39,6 +39,7 @@ import {
 } from "./runtime-vendor.js";
 import { prestageExternalMedia } from "./media-preloader.js";
 import { compositionStoragePath, persistCompositionArtifact } from "./composition-persist.js";
+import { captureThumbnails, computeArtifactHash } from "./thumbnails.js";
 
 const app = express();
 app.use(express.json({ limit: "200mb" }));
@@ -787,6 +788,75 @@ app.get("/preview/:id/__vp_runtime.js", previewCors, (req, res) => {
     .set("Cache-Control", "public, max-age=86400")
     .type("application/javascript")
     .send(bundle);
+});
+
+// ── V5-P2D: per-scene timeline thumbnails ───────────────────────────
+// One CLI boot per artifact (sha1 of the served index.html): each ROOT scene
+// window contributes one frame at its midpoint, captured with
+// `hyperframes snapshot --at … --no-end --describe false -o thumbs/`.
+// HMAC-gated like GET /preview/:id — the frames reveal composition content.
+app.get("/preview/:id/thumbnails", previewCors, async (req, res) => {
+  if (PREVIEW_SECRET) {
+    const token = typeof req.query.token === "string" ? req.query.token : "";
+    if (!verifyPreviewToken(token, req.params.id, PREVIEW_SECRET)) {
+      return res.status(401).json({ error: "invalid_token" });
+    }
+  }
+  let job = null;
+  const internalJobId = projectJobs.get(req.params.id);
+  if (internalJobId) job = jobs.get(internalJobId);
+  if (!job) job = jobs.get(req.params.id);
+  if (!job) return res.status(404).json({ error: "not found" });
+
+  const indexPath = join(job.job_dir, "index.html");
+  if (!existsSync(indexPath)) return res.status(404).json({ error: "index.html not found" });
+  const html = readFileSync(indexPath, "utf-8");
+
+  try {
+    const result = await captureThumbnails({
+      jobDir: job.job_dir,
+      html,
+      env: { ...process.env, CHROME_PATH },
+      run: (command, args, opts) =>
+        spawnCommand(command, args, { timeout: 90000, ...opts }),
+    });
+    res.json({
+      ok: true,
+      artifact: computeArtifactHash(html),
+      fps: result.fps,
+      cached: result.cached,
+      items: result.items.map((it) => ({
+        time_s: it.time_s,
+        file: it.file,
+        url: `/preview/${req.params.id}/thumbs/${it.file}`,
+      })),
+    });
+  } catch (err) {
+    console.error(`[worker] /thumbnails ${req.params.id}: ${err.message}`);
+    res.status(502).json({ error: "thumbnail capture failed", detail: String(err.message).slice(0, 400) });
+  }
+});
+
+// Static PNG serving for the manifest items. Basename-guarded like
+// /preview/:id/assets/:file; filenames embed their timestamp and are bound to
+// a per-artifact manifest, so a long cache is safe.
+app.get("/preview/:id/thumbs/:file", previewCors, (req, res) => {
+  let job = null;
+  const internalJobId = projectJobs.get(req.params.id);
+  if (internalJobId) job = jobs.get(internalJobId);
+  if (!job) job = jobs.get(req.params.id);
+  if (!job) return res.status(404).json({ error: "not found" });
+
+  const file = basename(req.params.file);
+  if (!file || file !== req.params.file || !/^frame-\d+-at-.*\.png$/.test(file)) {
+    return res.status(404).json({ error: "thumbnail not found" });
+  }
+  const filePath = join(job.job_dir, "thumbs", file);
+  if (!existsSync(filePath)) return res.status(404).json({ error: "thumbnail not found" });
+  return res
+    .set("Cache-Control", "public, max-age=86400")
+    .type("image/png")
+    .send(readFileSync(filePath));
 });
 
 // ── Render pipeline ─────────────────────────────────────────────────
