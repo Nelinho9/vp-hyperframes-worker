@@ -36,9 +36,13 @@
 
 import { parseHTML } from "linkedom";
 import { PROP_MAP, UI_ONLY_PROPS, GEOM_CONSUMPTION, computeGeomDelta } from "./prop-map.js";
+import { collectAnimSpecs, upsertAnimBlock } from "./anim-presets.js";
 
 /** Numeric CSS value (px/deg candidates) — integers, decimals and negatives. */
 const NUMERIC_VALUE_RE = /^-?\d+(\.\d+)?$/;
+
+/** Props de animação (V5-P1D): o lote que as toca regenera o bloco materializado. */
+const ANIM_PROP_RE = /^anim(In|Out|DurMs|DelayMs)$/;
 
 /** Extract one authored declaration value from a style attribute string. */
 export function parseInlineDecl(styleAttr, prop) {
@@ -102,6 +106,7 @@ export function assertIdSelector(selector) {
 export function applyPatchesLinkedom(html, patches) {
   const { document } = parseHTML(html);
   let applied = 0;
+  let touchedAnim = false;
   for (const patch of patches) {
     const id = assertIdSelector(patch.selector);
     const el = document.getElementById(id);
@@ -123,6 +128,8 @@ export function applyPatchesLinkedom(html, patches) {
     } else if (PROP_MAP[property]?.kind === "attr") {
       // V5-P1A §2.2: transporte de animação como atributo `data-anim-*`.
       el.setAttribute(PROP_MAP[property].output, value);
+      // V5-P1D §2.3: o lote que toca animação regenera o bloco materializado.
+      touchedAnim = true;
     } else if (PROP_MAP[property]?.kind === "decl") {
       const entry = PROP_MAP[property];
       const out = entry.unit && NUMERIC_VALUE_RE.test(value) ? `${value}${entry.unit}` : value;
@@ -133,7 +140,13 @@ export function applyPatchesLinkedom(html, patches) {
     }
     applied += 1;
   }
-  return { html: document.toString(), applied };
+  // V5-P1D §2.3: materialização dos presets de animação — UM bloco
+  // `<script id="__vp-anim-materialized__">` regenerado a partir do DOM
+  // (determinístico → convergência byte-exata; zero specs remove o bloco).
+  const outHtml = touchedAnim
+    ? upsertAnimBlock(document.toString(), collectAnimSpecs(document))
+    : document.toString();
+  return { html: outHtml, applied };
 }
 
 /** Merge one `prop: value` declaration into an existing style attribute.

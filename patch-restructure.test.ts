@@ -352,6 +352,129 @@ describe('POST /patch/:id — modelo expandido V5-P1A (§6.1)', () => {
   });
 });
 
+describe('POST /patch/:id — materialização de animação V5-P1D (§6.4)', () => {
+  async function stageP1D(projectId: string) {
+    await stage(projectId);
+  }
+
+  it('patch animIn materializa o bloco estático (atributos ficam no elemento)', async () => {
+    await stageP1D('proj-p1d-1');
+    const res = await post(
+      '/patch/proj-p1d-1',
+      { patches: [{ selector: '#text-headline-1', property: 'animIn', value: 'riseIn' }] },
+      { 'X-Worker-Secret': SECRET },
+    );
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { ok: boolean; applied: number; html: string };
+    expect(body.applied).toBe(1);
+    // Atributo transportado no elemento.
+    expect(body.html).toContain('data-anim-in="riseIn"');
+    // Bloco ÚNICO, estático, antes de </body>.
+    expect(body.html.match(/id="__vp-anim-materialized__"/g)?.length).toBe(1);
+    expect(body.html).not.toContain('__vpAnimSpecs');
+    expect(body.html).toContain('__vpApplyAnimations()');
+    const blockIdx = body.html.indexOf('__vp-anim-materialized__');
+    expect(blockIdx).toBeGreaterThan(-1);
+    expect(blockIdx).toBeLessThan(body.html.search(/<\/body>/i));
+  });
+
+  it('re-patch converge byte-exato e mantém bloco único', async () => {
+    await stageP1D('proj-p1d-2');
+    const first = await post(
+      '/patch/proj-p1d-2',
+      { patches: [{ selector: '#text-headline-1', property: 'animIn', value: 'popIn' }] },
+      { 'X-Worker-Secret': SECRET },
+    );
+    const once = ((await first.json()) as { html: string }).html;
+    const second = await post(
+      '/patch/proj-p1d-2',
+      { patches: [{ selector: '#text-headline-1', property: 'animIn', value: 'popIn' }] },
+      { 'X-Worker-Secret': SECRET },
+    );
+    const twice = ((await second.json()) as { html: string }).html;
+    expect(twice).toBe(once);
+
+    // Mudar o preset troca o ATRIBUTO; o bloco permanece único/estático.
+    const third = await post(
+      '/patch/proj-p1d-2',
+      { patches: [{ selector: '#text-headline-1', property: 'animIn', value: 'zoomIn' }] },
+      { 'X-Worker-Secret': SECRET },
+    );
+    const changed = ((await third.json()) as { html: string }).html;
+    expect(changed.match(/id="__vp-anim-materialized__"/g)?.length).toBe(1);
+    expect(changed).toContain('data-anim-in="zoomIn"');
+    expect(changed).not.toContain('data-anim-in="popIn"');
+  });
+
+  it('animIn "none" remove o bloco (HTML limpo, sem órfãos)', async () => {
+    await stageP1D('proj-p1d-3');
+    await post(
+      '/patch/proj-p1d-3',
+      { patches: [{ selector: '#img-hero', property: 'animOut', value: 'fade' }] },
+      { 'X-Worker-Secret': SECRET },
+    );
+    const preview1 = await fetch(`${base}/preview/proj-p1d-3`);
+    expect(await preview1.text()).toContain('__vp-anim-materialized__');
+
+    const off = await post(
+      '/patch/proj-p1d-3',
+      { patches: [{ selector: '#img-hero', property: 'animOut', value: 'none' }] },
+      { 'X-Worker-Secret': SECRET },
+    );
+    const body = (await off.json()) as { html: string };
+    expect(body.html).not.toContain('__vp-anim-materialized__');
+    expect(body.html).not.toContain('__vpAnimSpecs');
+
+    // E o estado persistido é servido limpo.
+    const preview2 = await fetch(`${base}/preview/proj-p1d-3`);
+    expect(await preview2.text()).not.toContain('__vpAnimSpecs');
+  });
+
+  it('batch SEM props de animação não altera o HTML além da própria patch', async () => {
+    await stageP1D('proj-p1d-4');
+    const before = await fetch(`${base}/preview/proj-p1d-4`);
+    const beforeText = await before.text();
+    const res = await post(
+      '/patch/proj-p1d-4',
+      { patches: [{ selector: '#text-headline-1', property: 'color', value: '#ff0000' }] },
+      { 'X-Worker-Secret': SECRET },
+    );
+    const body = (await res.json()) as { html: string };
+    expect(body.html).not.toContain('__vp-anim-materialized__');
+    // A única diferença é o CSS da patch (o preview serve helper injetado —
+    // comparar por marcador do bloco, não por igualdade total).
+    expect(beforeText).not.toContain('__vp-anim-materialized__');
+  });
+
+  it('/restructure mantém o bloco (posições são resolvidas em runtime)', async () => {
+    await stageP1D('proj-p1d-5');
+    await post(
+      '/patch/proj-p1d-5',
+      { patches: [{ selector: '#text-headline-1', property: 'animIn', value: 'riseIn' }] },
+      { 'X-Worker-Secret': SECRET },
+    );
+    const restr = await post(
+      '/restructure/proj-p1d-5',
+      {
+        scenes: [
+          { id: 'scene-1', durationFrames: 90 },
+          { id: 'scene-2', durationFrames: 120 },
+        ],
+        fps: 30,
+      },
+      { 'X-Worker-Secret': SECRET },
+    );
+    expect(restr.status).toBe(200);
+    const body = (await restr.json()) as { html: string };
+    // Bloco mantido; janelas mudaram mas o bloco é estático (resolução é
+    // runtime pela janela timed do DOM).
+    expect(body.html).toContain('__vp-anim-materialized__');
+    expect(body.html).toContain('data-anim-in="riseIn"');
+    const specsCount = body.html.match(/id="__vp-anim-materialized__"/g)?.length ?? 0;
+    expect(specsCount).toBe(1);
+  });
+});
+
 describe('POST /restructure/:id — V4-04C', () => {
   it('rewrites durations, recomputes cumulative starts and removes vanished clips', async () => {
     await stage('proj-restr-1');

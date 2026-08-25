@@ -143,6 +143,20 @@ describe('PREVIEW_HELPER_SCRIPT — contrato do protocolo', () => {
     expect(PREVIEW_HELPER_SCRIPT).toContain('activeEditor');
   });
 
+  it('implementa materialização local de animação e replay de cena (V5-P1D)', () => {
+    // Fonte aplicadora partilhada embutida no closure do helper (deriva as
+    // specs do DOM — sem payload externo).
+    expect(PREVIEW_HELPER_SCRIPT).toContain('function __vpApplyAnimations');
+    expect(PREVIEW_HELPER_SCRIPT).toContain('[data-anim-in]');
+    expect(PREVIEW_HELPER_SCRIPT).toContain('__vpAnimApplied');
+    // Lote com data-anim-* dispara a re-materialização local.
+    expect(PREVIEW_HELPER_SCRIPT).toContain('patchTouchesAnim');
+    // Pedido de replay pai→helper e resposta com a janela timed.
+    expect(PREVIEW_HELPER_SCRIPT).toContain("data.action === 'element-scene'");
+    expect(PREVIEW_HELPER_SCRIPT).toContain("action: 'element-scene', elementId: data.elementId");
+    expect(PREVIEW_HELPER_SCRIPT).toContain("closest('[data-start]')");
+  });
+
   it('é JavaScript válido (compila sem executar)', () => {
     // vm.Script only parses/compiles the static helper source — never runs it.
     expect(() => new vm.Script(PREVIEW_HELPER_SCRIPT)).not.toThrow();
@@ -166,7 +180,11 @@ interface BootedHelper {
 }
 
 /** Execute the helper script against a linkedom document inside a VM. */
-function bootHelper(html: string): BootedHelper {
+function bootHelper(
+  html: string,
+  /** V5-P1D: extras aditivos (gsap mock, __timelines) no sandbox/window. */
+  extras?: { gsap?: unknown; timelines?: Record<string, unknown> },
+): BootedHelper {
   const { document } = parseHTML(html);
   const parentMessages: unknown[] = [];
   const messageListeners: ((ev: unknown) => void)[] = [];
@@ -204,7 +222,11 @@ function bootHelper(html: string): BootedHelper {
     // getSelection intencionalmente ausente — o caminho do caret degrada
     // para el.focus() (guard no helper).
   };
-  const sandbox = {
+  if (extras?.timelines) {
+    (sandboxWindow as Record<string, unknown>).__timelines = extras.timelines;
+    (sandboxWindow as Record<string, unknown>).__vpAnimApplied = [];
+  }
+  const sandbox: Record<string, unknown> = {
     window: sandboxWindow,
     // The helper uses querySelector/addEventListener/createRange on the
     // document; elementos reais suportam dispatchEvent (testes de edição).
@@ -221,6 +243,7 @@ function bootHelper(html: string): BootedHelper {
     // NOTE: intrinsics (Object/JSON/WeakMap/…) come from the fresh VM
     // context itself — passing HOST intrinsics here breaks contextification.
   };
+  if (extras?.gsap !== undefined) sandbox.gsap = extras.gsap;
   sandboxWindow.window = sandboxWindow;
   vm.createContext(sandbox);
   // NOTE: run the source string DIRECTLY (with a filename) — creating an
@@ -363,6 +386,133 @@ describe('PREVIEW_HELPER_SCRIPT — modelo expandido em execução (V5-P1A)', ()
     });
     expect(h.document.querySelector('#img-hero')!.getAttribute('style')).toBeNull();
     expect(h.document.querySelector('#video-1')!.getAttribute('style')).toBeNull();
+  });
+
+  // ── V5-P1D: materialização local + replay de cena ──────────────────────
+
+  /** gsap mock mínimo com timeline registável no sandbox do helper. */
+  function makeSandboxGsap() {
+    const calls: Array<{ m: string; target: unknown; pos: number | undefined; to: Record<string, unknown> }> = [];
+    const children: Array<{ killed: boolean }> = [];
+    const gsap = {
+      timeline(cfg?: { paused?: boolean }) {
+        const childrenTl = children;
+        return {
+          paused: cfg?.paused ?? false,
+          time: () => 0,
+          fromTo(target: unknown, _from: unknown, to: Record<string, unknown>, pos: number) {
+            calls.push({ m: 'fromTo', target, pos, to });
+            const tw = { killed: false };
+            (tw as { kill(): void }).kill = () => { tw.killed = true; };
+            childrenTl.push(tw);
+            return tw;
+          },
+          to(target: unknown, to: Record<string, unknown>, pos: number) {
+            calls.push({ m: 'to', target, pos, to });
+            const tw = { killed: false };
+            (tw as { kill(): void }).kill = () => { tw.killed = true; };
+            childrenTl.push(tw);
+            return tw;
+          },
+          getChildren() {
+            return childrenTl.slice();
+          },
+        };
+      },
+    };
+    return { gsap, calls, children };
+  }
+
+  it('patch animIn aplica atributo E materializa tween local na timeline viva', () => {
+    const { gsap, calls } = makeSandboxGsap();
+    const mainTl = (
+      gsap as unknown as { timeline: (c?: { paused?: boolean }) => Record<string, unknown> }
+    ).timeline({ paused: true });
+    const h = bootHelper(
+      `<div id="main" data-composition-id="main" data-duration="8">
+         <h1 id="text-headline-1" style="color:#fff">Hi</h1>
+       </div>`,
+      { gsap, timelines: { main: mainTl } },
+    );
+
+    h.message({
+      action: 'patch',
+      patches: [
+        { selector: '#text-headline-1', property: 'animIn', value: 'riseIn' },
+        { selector: '#text-headline-1', property: 'animDurMs', value: '500' },
+      ],
+    });
+
+    // Atributos escritos pelo branch attr existente.
+    const el = h.document.querySelector('#text-headline-1')!;
+    expect(el.getAttribute('data-anim-in')).toBe('riseIn');
+    expect(el.getAttribute('data-anim-dur-ms')).toBe('500');
+
+    // Tween materializado localmente (sem reload): specs derivadas do DOM.
+    const winExtras = h as unknown as { sandboxWindow?: Record<string, unknown> };
+    void winExtras;
+    expect(calls.length).toBe(1);
+    expect(calls[0].m).toBe('fromTo');
+    expect((calls[0].target as { id?: string }).id).toBe('text-headline-1');
+    expect(calls[0].to).toMatchObject({ opacity: 1, y: 0, duration: 0.5, ease: 'power2.out' });
+    // Sem host timed → posição = delay (0).
+    expect(calls[0].pos).toBe(0);
+  });
+
+  it('batch sem anim NÃO re-materializa (zero tweens novos)', () => {
+    const { gsap, calls } = makeSandboxGsap();
+    const mainTl = (
+      gsap as unknown as { timeline: (c?: { paused?: boolean }) => Record<string, unknown> }
+    ).timeline({ paused: true });
+    const h = bootHelper('<div id="text-a">A</div>', { gsap, timelines: { main: mainTl } });
+    h.message({
+      action: 'patch',
+      patches: [{ selector: '#text-a', property: 'color', value: '#ff0000' }],
+    });
+    expect(calls.length).toBe(0);
+  });
+
+  it('element-scene responde com a janela timed mais próxima', () => {
+    const h = bootHelper(
+      `<div id="main" data-composition-id="main" data-duration="12">
+         <div id="scene-2" class="clip" data-start="6.5" data-duration="3">
+           <b id="text-b">b</b>
+         </div>
+         <i id="text-free">f</i>
+       </div>`,
+    );
+    h.message({ action: 'element-scene', elementId: 'text-b' });
+    h.message({ action: 'element-scene', elementId: 'text-free' });
+    h.message({ action: 'element-scene', elementId: 'desconhecido' });
+
+    const scenes = h.parentMessages.filter(
+      (m) => (m as { action?: string }).action === 'element-scene',
+    ) as Array<{
+      source: string;
+      elementId: string;
+      startSeconds: number | null;
+      durationSeconds: number | null;
+    }>;
+    expect(scenes.length).toBe(3);
+    // Dentro do clip: janela do HOST.
+    expect(scenes[0]).toMatchObject({
+      source: 'hf-preview',
+      elementId: 'text-b',
+      startSeconds: 6.5,
+      durationSeconds: 3,
+    });
+    // Fora de clips (root sem data-start): start 0, duração nula.
+    expect(scenes[1]).toMatchObject({
+      elementId: 'text-free',
+      startSeconds: 0,
+      durationSeconds: null,
+    });
+    // Id desconhecido: resposta nula explícita.
+    expect(scenes[2]).toMatchObject({
+      elementId: 'desconhecido',
+      startSeconds: null,
+      durationSeconds: null,
+    });
   });
 });
 

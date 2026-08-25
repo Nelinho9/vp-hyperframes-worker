@@ -19,6 +19,10 @@
  *   { source:'hf-preview', action:'element-at-point', elementId|null,
  *     elementType?, bbox?, src? }                       V5-P1C: resposta ao
  *     hit-test do drop mediado pelo pai (coords NATIVAS da composição)
+ *   { source:'hf-preview', action:'element-scene', elementId,
+ *     startSeconds, durationSeconds|null }              V5-P1D: resposta ao
+ *     pedido de replay — janela timed do elemento (host [data-start] mais
+ *     próximo; null = full-length)
  *
  * parent → iframe (V4-3e hot-swap receiver):
  *   { action: 'patch',     patches: [{selector, property, value}] }
@@ -26,6 +30,8 @@
  *   { action: 'playpause', playing }      (V4-04A legacy — shimmed)
  *   { action: 'element-at-point', x, y }  (V5-P1C — hit-test para o drop;
  *     coords NATIVAS: o pai converte clientX/Y via transform inverso do stage)
+ *   { action: 'element-scene', elementId } (V5-P1D — janela para o replay de
+ *     presets de animação; o pai faz seek+play curto com a resposta)
  *
  * V4-04A: transport (play/pause/seek) is owned by the runtime's own bridge
  * protocol — the frontend posts `hf-parent/hf-control` envelopes straight to
@@ -43,8 +49,11 @@
  *   textContent / `text` alias → innerText; src → attribute;
  *   background-image → url(...) wrap; decl props (font/size/color/align/
  *   radius/…) → mapped CSS property with the table unit (V5-P1A);
- *   animation props → `data-anim-*` ATTRIBUTES, never style (V5-P1A; S09
- *   materializes the tweens); UI-only flags filtered out (aceitação P1 #4).
+ *   animation props → `data-anim-*` ATTRIBUTES, never style (V5-P1A) and —
+ *   V5-P1D §2.4 — batches that touch them re-apply the animation presets
+ *   LOCALLY (shared ES5 source from `anim-presets.js`): tweens GSAP are
+ *   rebuilt on the LIVE timeline without reloading the iframe. UI-only flags
+ *   filtered out (aceitação P1 #4).
  *   GEOMETRY (x/y/width/height/rotation) → AD-1: `--el-*` custom properties
  *   consumed by individual transforms / layout vars on the SAME element —
  *   NEVER left/top literals (B1.3). x/y are ABSOLUTE composition coordinates
@@ -98,6 +107,7 @@ export function injectPreviewRuntime(html, src) {
  * the cross-repo parity contract). V5-P1A adds UI_ONLY_PROPS (filtered).
  */
 import { PROP_MAP, GEOM_CONSUMPTION, UI_ONLY_PROPS } from "./prop-map.js";
+import { ANIM_APPLY_SOURCE } from "./anim-presets.js";
 
 /**
  * The inline helper script body (browser-only, ES5-compatible, no imports).
@@ -330,6 +340,20 @@ export const PREVIEW_HELPER_SCRIPT = `(function () {
     } catch (e) { /* never break the preview */ }
   }, true);
 
+  // ── V5-P1D §2.4: materialização local de presets de animação ─────────
+  // Fonte partilhada com o bloco persistido (anim-presets.js). Um hot-swap
+  // que toque data-anim-* reconstrói os tweens GSAP na timeline JÁ BINDADA
+  // (children adicionados depois do bind continuam a ser conduzidos pelo
+  // runtime) — sem reload do iframe.
+  ${ANIM_APPLY_SOURCE}
+  function patchTouchesAnim(patches) {
+    for (var i = 0; i < patches.length; i++) {
+      var p = patches[i];
+      if (p && /^(animIn|animOut|animDurMs|animDelayMs)$/.test(String(p.property))) return true;
+    }
+    return false;
+  }
+
   // ── parent → iframe: hot-swap receiver (patch / seek / playpause) ────
   window.addEventListener('message', function (ev) {
     var data = ev.data;
@@ -376,6 +400,10 @@ export const PREVIEW_HELPER_SCRIPT = `(function () {
           }
         }
       }
+      // V5-P1D §2.4: lote tocou animação → re-materializar localmente.
+      if (patchTouchesAnim(data.patches)) {
+        try { __vpApplyAnimations(); } catch (eAnim) { /* nunca quebrar o preview */ }
+      }
     } else if (data.action === 'seek') {
       // V4-04A: legacy channel — forward through the runtime bridge envelope.
       shimControl('seek', { frame: data.frame, fps: data.fps || 30 });
@@ -409,6 +437,29 @@ export const PREVIEW_HELPER_SCRIPT = `(function () {
           sendToParent(hitMsg);
         }
       } catch (e) { /* never break the preview */ }
+    } else if (data.action === 'element-scene' && typeof data.elementId === 'string') {
+      // V5-P1D §2.5: janela timed do elemento para o replay de presets.
+      // Host = [data-start] mais próximo (o próprio elemento incluído —
+      // autostamp do runtime conta). Sem host: start 0, duração nula
+      // (o pai ancora o out ao fim da composição).
+      try {
+        var sceneEl = document.getElementById(data.elementId);
+        if (!sceneEl) {
+          sendToParent({ source: 'hf-preview', action: 'element-scene', elementId: data.elementId, startSeconds: null, durationSeconds: null });
+          return;
+        }
+        var host2 = sceneEl.closest ? sceneEl.closest('[data-start]') : null;
+        var s0 = 0, d0 = null;
+        if (host2) {
+          var hStart = parseFloat(host2.getAttribute('data-start'));
+          if (isFinite(hStart) && hStart >= 0) {
+            s0 = hStart;
+            var hDur = parseFloat(host2.getAttribute('data-duration'));
+            if (isFinite(hDur) && hDur > 0) d0 = hDur;
+          }
+        }
+        sendToParent({ source: 'hf-preview', action: 'element-scene', elementId: data.elementId, startSeconds: s0, durationSeconds: d0 });
+      } catch (eS) { /* never break the preview */ }
     }
   });
 })();`;
