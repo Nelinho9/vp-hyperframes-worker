@@ -156,6 +156,48 @@ describe('deriveElements', () => {
   });
 });
 
+// --- V5-P3B: IDs estáveis scene-N-{type}-K ----------------------------------
+
+describe('deriveElements — V5-P3B forma estável de ids', () => {
+  const STABLE = `<!doctype html>
+<html><body>
+<div data-composition-id="main">
+  <div id="scene-1" class="clip" data-start="0" data-duration="4" data-track-index="0">
+    <h1 id="scene-1-text-1">Headline</h1>
+    <img id="scene-1-img-1" src="assets/hero.jpg" />
+    <p id="scene-1-text-2-copy-1">Clone</p>
+    <video id="scene-1-footage-1" src="assets/b.mp4"></video>
+    <audio id="scene-1-music-1" src="assets/m.mp3"></audio>
+    <div id="scene-1-shape-1"><svg><circle r="2"></circle></svg></div>
+    <h2 id="scene-1-group-1">Group</h2>
+  </div>
+</div>
+</body></html>`;
+
+  it('classifica a forma estável pelo token do tipo (não pelo primeiro token)', () => {
+    const byId = new Map(deriveElements(STABLE).elements.map((e) => [e.id, e]));
+    expect(byId.get('scene-1-text-1')!.type).toBe('text');
+    expect(byId.get('scene-1-img-1')!.type).toBe('image');
+    expect(byId.get('scene-1-footage-1')!.type).toBe('video');
+    expect(byId.get('scene-1-music-1')!.type).toBe('audio');
+    // Reservas do contrato §8.1 (ainda não emitidos pelo build).
+    expect(byId.get('scene-1-group-1')!.type).toBe('group');
+  });
+
+  it('tolera a cauda -copy-M da duplicação (V5-P1E) preservando o tipo', () => {
+    const byId = new Map(deriveElements(STABLE).elements.map((e) => [e.id, e]));
+    expect(byId.get('scene-1-text-2-copy-1')!.type).toBe('text');
+  });
+
+  it('ids legados continuam classificados pelos prefixos (retrocompatível)', () => {
+    const byId = new Map(deriveElements(FIXTURE).elements.map((e) => [e.id, e]));
+    expect(byId.get('text-headline-1')!.type).toBe('text');
+    expect(byId.get('img-hero')!.type).toBe('image');
+    expect(byId.get('audio-vo')!.type).toBe('audio');
+    expect(byId.get('video-intro')!.type).toBe('video');
+  });
+});
+
 describe('elementsStoragePath', () => {
   it('devolve o caminho canónico ao lado da composição', () => {
     expect(elementsStoragePath('p1')).toBe('projects/p1/compositions/elements.json');

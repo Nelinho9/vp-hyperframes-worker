@@ -238,10 +238,17 @@ export const PREVIEW_HELPER_SCRIPT = `(function () {
   var inputTimer = null;
 
   function inferElementTypeFromId(id) {
-    var prefix = String(id || '').split('-')[0].toLowerCase();
-    if (prefix === 'img' || prefix === 'image') return 'image';
-    if (prefix === 'audio' || prefix === 'voice' || prefix === 'music' || prefix === 'sfx') return 'audio';
-    if (prefix === 'video' || prefix === 'footage') return 'video';
+    // V5-P3B: forma estavel scene-N-type-K (com cauda -copy-M da duplicacao)
+    // tem prioridade — o token do tipo e o 3.o segmento; prefixos legados
+    // mantem-se. NOTA: corpo embutido em PREVIEW_HELPER_SCRIPT (template
+    // literal) — nunca usar backticks nem interpolacoes neste bloco
+    // (backslashes de regex sao duplos, como em NUMERIC_VALUE_RE).
+    var s = String(id || '');
+    var m = s.match(/^scene-\\d+-([a-z]+)-\\d+(?:-copy-\\d+)*$/);
+    var tok = m ? m[1] : String(s.split('-')[0] || '').toLowerCase();
+    if (tok === 'img' || tok === 'image') return 'image';
+    if (tok === 'audio' || tok === 'voice' || tok === 'music' || tok === 'sfx') return 'audio';
+    if (tok === 'video' || tok === 'footage') return 'video';
     return 'text';
   }
 

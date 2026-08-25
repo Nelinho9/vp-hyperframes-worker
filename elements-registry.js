@@ -46,6 +46,22 @@ const PREFIX_TYPES = [
   [/^(shape)$/, "shape"],
 ];
 
+/**
+ * V5-P3B: forma ESTÁVEL `scene-N-{type}-K[-copy-M]` — o token do tipo é o 3.º
+ * segmento (`scene-1-img-1` → image). A cauda `-copy-M` é a duplicação V5-P1E.
+ * Devolve null quando o id não está na forma (cai à inferência por prefixo).
+ */
+const STABLE_ID_RE = /^scene-\d+-([a-z]+)-\d+(?:-copy-\d+)*$/;
+
+function stableIdType(id) {
+  const m = STABLE_ID_RE.exec(id || "");
+  if (!m) return null;
+  for (const [re, type] of PREFIX_TYPES) {
+    if (re.test(m[1])) return type;
+  }
+  return m[1] === "text" ? "text" : null;
+}
+
 /** Effective element id: authored `id` wins over the runtime's `data-hf-id`. */
 function effectiveId(el) {
   return el.id || el.getAttribute("data-hf-id") || "";
@@ -67,9 +83,12 @@ function hasSvgAncestor(el) {
   return false;
 }
 
-/** Type inference per spec §2.2 (prefixo → tag → svg → background → text). */
+/** Type inference per spec §2.2 (estável → prefixo → tag → svg → background → text). */
 function inferType(el) {
-  const prefix = (effectiveId(el).split("-")[0] || "").toLowerCase();
+  const id = effectiveId(el);
+  const stable = stableIdType(id);
+  if (stable) return stable;
+  const prefix = (id.split("-")[0] || "").toLowerCase();
   for (const [re, type] of PREFIX_TYPES) {
     if (re.test(prefix)) return type;
   }
