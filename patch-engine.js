@@ -37,6 +37,12 @@
 import { parseHTML } from "linkedom";
 import { PROP_MAP, UI_ONLY_PROPS, GEOM_CONSUMPTION, computeGeomDelta } from "./prop-map.js";
 import { collectAnimSpecs, upsertAnimBlock } from "./anim-presets.js";
+import {
+  TRANSITION_TWEENS,
+  parseTransitionAttr,
+  collectTransitionSpecs,
+  upsertTransitionBlock,
+} from "./transition-presets.js";
 
 /** Numeric CSS value (px/deg candidates) — integers, decimals and negatives. */
 const NUMERIC_VALUE_RE = /^-?\d+(\.\d+)?$/;
@@ -265,8 +271,11 @@ export function exactWindowDuration(a, b) {
 }
 
 /**
- * V5-P0C §2.1: quantize top-level clip windows to the frame grid with
- * contiguous boundaries (fronteira N = fim da N−1, sem overlap/gap).
+ * V5-P0C §2.1 (V5-P2C §2.4): quantize top-level clip windows to the frame
+ * grid with contiguous BOUNDARIES. Deliberate transition overlaps declared
+ * via `data-transition-out` on the OUTGOING clip are preserved: the boundary
+ * grid k stays cumulative, but the outgoing window is re-extended by its
+ * declared overlap frames — normalize(restructured) is byte-stable.
  *
  * Only clips OWNED BY THE COMPOSITION ROOT are rewritten; nested composition
  * internals keep their own timeline. Clips without a usable data-duration
@@ -287,17 +296,30 @@ export function normalizeClipWindows(html, fps = 30) {
     return owner === null || owner === rootEl;
   });
 
-  const adjusted = [];
-  let cursorFrames = 0;
+  /** @type {Array<{el, core: number, ovFrames: number}>} */
+  const infos = [];
   for (const el of clips) {
     const rawDuration = parseFloat(el.getAttribute("data-duration"));
     if (!Number.isFinite(rawDuration) || rawDuration <= 0) continue;
     // sec*fps → round → /fps (master plan §5.2.1): the grid is integer frames.
-    const frames = Math.max(1, Math.round(rawDuration * fps));
+    // V5-P2C: the outgoing clip's raw duration INCLUDES its transition
+    // overlap — subtract it to recover the core frames on the grid.
+    const framesRaw = Math.max(1, Math.round(rawDuration * fps));
+    const tr = parseTransitionAttr(el.getAttribute("data-transition-out"));
+    const ovFrames = tr ? Math.round((tr.durationMs / 1000) * fps) : 0;
+    infos.push({ el, core: Math.max(1, framesRaw - ovFrames), ovFrames });
+  }
+
+  const adjusted = [];
+  let cursorFrames = 0;
+  for (const { el, core, ovFrames } of infos) {
     const startSec = cursorFrames / fps;
-    cursorFrames += frames;
+    cursorFrames += core;
     const nextSec = cursorFrames / fps;
-    const durSec = exactWindowDuration(startSec, nextSec);
+    // The outgoing window extends back over the overlap it declares; the
+    // incoming neighbor keeps starting exactly at the boundary.
+    const endSec = nextSec + ovFrames / fps;
+    const durSec = exactWindowDuration(startSec, endSec);
     const from = {
       start: el.getAttribute("data-start") ?? "",
       duration: el.getAttribute("data-duration") ?? "",
@@ -314,14 +336,51 @@ export function normalizeClipWindows(html, fps = 30) {
 }
 
 /**
- * V4-04C §2.3: rewrite the composition timeline from editor scenes.
+ * V5-P2C §2.4: normalize the transitions payload — keyed by the INCOMING
+ * clip id; unknown ids/kinds and non-finite durations are ignored, durations
+ * are clamped to the canonical [200, 800] ms range.
+ *
+ * @param {unknown} transitions Raw payload array.
+ * @returns {Map<string, { kind: string, durationMs: number }>}
+ */
+function normalizeTransitionsPayload(transitions) {
+  /** @type {Map<string, { kind: string, durationMs: number }>} */
+  const map = new Map();
+  if (!Array.isArray(transitions)) return map;
+  for (const t of transitions) {
+    if (!t || typeof t.id !== "string" || !t.id) continue;
+    const kind = typeof t.kind === "string" ? t.kind : "";
+    const ms = Number(t.durationMs);
+    if (!TRANSITION_TWEENS[kind] || !Number.isFinite(ms)) continue;
+    map.set(t.id, {
+      kind,
+      durationMs: Math.min(800, Math.max(200, Math.round(ms))),
+    });
+  }
+  return map;
+}
+
+/**
+ * V4-04C §2.3 (V5-P2C §2.4): rewrite the composition timeline from editor
+ * scenes + boundary transitions.
+ *
+ * Transition semantics: the OUTGOING clip's window is EXTENDED by the overlap
+ * frames past the shared boundary; the INCOMING clip starts intact at k_{i+1}
+ * and the root data-duration stays the cumulative total — every frame tick is
+ * covered by exactly one clip, except exactly two inside a declared overlap.
+ * Both sides get their self-describing attribute (`data-transition-out` on A,
+ * `data-transition-in` on B) and the materialization block is regenerated.
+ * Stale transition attributes are stripped first so removal converges
+ * byte-exactly to the clean apply.
  *
  * @param {string} html Composition HTML.
  * @param {Array<{id: string, durationFrames: number}>} scenes Ordered scenes.
  * @param {number} fps Timeline fps (default 30).
+ * @param {Array<{id: string, kind: string, durationMs: number}>} [transitions]
+ *        Boundary transitions keyed by incoming scene id.
  * @returns {{ html: string, applied: number, removed: string[] }}
  */
-export function applyTimelineRestructure(html, scenes, fps = 30) {
+export function applyTimelineRestructure(html, scenes, fps = 30, transitions = []) {
   if (!Array.isArray(scenes) || scenes.length === 0) {
     throw Object.assign(new Error("scenes must be a non-empty array"), { status: 400 });
   }
@@ -350,7 +409,7 @@ export function applyTimelineRestructure(html, scenes, fps = 30) {
 
   // V5-P0C §2.1: quantize to the frame grid (integer boundaries) and
   // serialize with float-exact contiguity — the runtime must never see
-  // two windows covering the same frame tick (B2.1).
+  // two windows covering the same frame tick outside a declared overlap (B2).
   const entries = [];
   for (const scene of scenes) {
     const el = document.getElementById(String(scene.id));
@@ -362,21 +421,57 @@ export function applyTimelineRestructure(html, scenes, fps = 30) {
     entries.push({ el, frames: Math.round(frames) });
   }
 
+  // V5-P2C: stale attributes first — deterministic convergence when a
+  // transition is later removed (byte-equal to a clean apply).
+  for (const { el } of entries) {
+    el.removeAttribute("data-transition-out");
+    el.removeAttribute("data-transition-in");
+  }
+  const transMap = normalizeTransitionsPayload(transitions);
+
   let cursorFrames = 0;
   let applied = 0;
-  for (const { el, frames } of entries) {
+  for (let i = 0; i < entries.length; i += 1) {
+    const { el, frames } = entries[i];
     const startSec = cursorFrames / fps;
     cursorFrames += frames;
     const nextSec = cursorFrames / fps;
+
+    // Overlap of the boundary AFTER this clip (declared by its incoming
+    // neighbor), clamped to the frames actually available on both sides.
+    let extendFrames = 0;
+    const nextEntry = entries[i + 1];
+    if (nextEntry) {
+      const tr = transMap.get(String(nextEntry.el.id));
+      if (tr) {
+        extendFrames = Math.min(
+          Math.round((tr.durationMs / 1000) * fps),
+          frames,
+          nextEntry.frames,
+        );
+        el.setAttribute("data-transition-out", `${tr.kind}@${tr.durationMs}`);
+        nextEntry.el.setAttribute("data-transition-in", `${tr.kind}@${tr.durationMs}`);
+      }
+    }
+
+    const endSec = (cursorFrames + extendFrames) / fps;
     el.setAttribute("data-start", String(startSec));
-    el.setAttribute("data-duration", String(exactWindowDuration(startSec, nextSec)));
+    el.setAttribute("data-duration", String(exactWindowDuration(startSec, endSec)));
     applied += 1;
   }
+  // The overlap lives INSIDE the total: root duration unchanged.
   const totalSec = cursorFrames / fps;
 
   if (root && entries.length > 0) {
     root.setAttribute("data-duration", String(totalSec));
   }
 
-  return { html: document.toString(), applied, removed };
+  // V5-P2C §2.5: materialize the GSAP crossfade tweens in the persisted HTML
+  // (single static block; zero specs → block stripped).
+  const outHtml = upsertTransitionBlock(
+    document.toString(),
+    collectTransitionSpecs(document),
+  );
+
+  return { html: outHtml, applied, removed };
 }

@@ -113,3 +113,50 @@ describe('lintClipWindows — V5-P0C', () => {
     expect(lintClipWindows(null as unknown as string)).toEqual([]);
   });
 });
+
+describe('lintClipWindows — V5-P2C isenção de transições', () => {
+  const TRANSITION_DOC = (bAttrs: string, aAttrs = ''): string => doc(`
+      <div id="scene-a" class="clip" data-start="0" data-duration="6.4" ${aAttrs}></div>
+      <div id="scene-b" class="clip" data-start="6" data-duration="6" ${bAttrs}></div>
+    `);
+
+  it('overlap ≤ declarado no clip entrante passa limpo', () => {
+    // end_a = 6.4; start_b = 6 → overlap 0.4s; permitido fade@400.
+    expect(lintClipWindows(TRANSITION_DOC('data-transition-in="fade@400"'))).toEqual([]);
+  });
+
+  it('overlap acima do declarado → error com mensagem do esperado vs real', () => {
+    // data-duration 6.55 → overlap 0.55s > 0.4s declarado.
+    const html = doc(`
+      <div id="scene-a" class="clip" data-start="0" data-duration="6.55"></div>
+      <div id="scene-b" class="clip" data-start="6" data-duration="6" data-transition-in="fade@400"></div>
+    `);
+    const findings = lintClipWindows(html);
+    expect(findings).toHaveLength(1);
+    expect(findings[0]).toMatchObject({ code: 'clip_window_overlap', severity: 'error', selector: '#scene-b' });
+    expect(findings[0].message).toContain('0.550');
+    expect(findings[0].message).toContain('0.400');
+  });
+
+  it('atributo -out do saínte também autoriza a isenção', () => {
+    expect(
+      lintClipWindows(TRANSITION_DOC('', 'data-transition-out="slide@600"')),
+    ).toEqual([]);
+  });
+
+  it('sem atributos de transição, o mesmo overlap continua error (regressão P0C)', () => {
+    const findings = lintClipWindows(TRANSITION_DOC(''));
+    expect(findings).toHaveLength(1);
+    expect(findings[0]).toMatchObject({ code: 'clip_window_overlap', severity: 'error' });
+  });
+
+  it('kinds desconhecidos nos atributos não isentam', () => {
+    const html = doc(`
+      <div id="scene-a" class="clip" data-start="0" data-duration="6.4"></div>
+      <div id="scene-b" class="clip" data-start="6" data-duration="6" data-transition-in="starWipe@400"></div>
+    `);
+    const findings = lintClipWindows(html);
+    expect(findings).toHaveLength(1);
+    expect(findings[0]).toMatchObject({ code: 'clip_window_overlap', severity: 'error' });
+  });
+});

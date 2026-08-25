@@ -1,5 +1,6 @@
 /**
- * window-lint — V5-P0C §2.2: worker-side validation of clip timeline windows.
+ * window-lint — V5-P0C §2.2 (V5-P2C §2.6): worker-side validation of clip
+ * timeline windows.
  *
  * The HyperFrames CLI lint runs later in the render pipeline, but the seek
  * determinism invariant needs a gate AT THE PERSISTENCE LAYER (right where
@@ -9,7 +10,10 @@
  * Rules (top-level `.clip`s only — the composition root and any element
  * carrying `data-composition-id` live on their own timeline and are exempt):
  *   - `clip_window_overlap` (error):   start_{i+1} < end_i  → two scenes
- *     visible at once (the B2 flicker signature).
+ *     visible at once (the B2 flicker signature). V5-P2C: a declared
+ *     transition (`data-transition-in` on the incoming clip / `-out` on the
+ *     outgoing one) exempts an overlap UP TO its clamped duration; anything
+ *     beyond stays an error.
  *   - `clip_window_gap`     (warning): start_{i+1} > end_i  → blank flash.
  *
  * Windows are compared as parsed doubles, exactly like the runtime evaluates
@@ -17,6 +21,21 @@
  */
 
 import { parseHTML } from "linkedom";
+import { parseTransitionAttr } from "./transition-presets.js";
+
+/** Tolerance for double round-off when comparing overlap vs allowed (s). */
+const OVERLAP_EPS = 1e-9;
+
+/**
+ * Allowed overlap between two adjacent clips from their transition
+ * attributes, in seconds (null when neither declares a transition).
+ */
+function allowedOverlapSeconds(prevEl, el) {
+  const out = parseTransitionAttr(prevEl?.getAttribute("data-transition-out"));
+  const incoming = parseTransitionAttr(el.getAttribute("data-transition-in"));
+  const ms = Math.max(out?.durationMs ?? 0, incoming?.durationMs ?? 0);
+  return ms > 0 ? ms / 1000 : null;
+}
 
 /**
  * Validate the served composition HTML for overlapping/gapping clip windows.
@@ -46,7 +65,7 @@ export function lintClipWindows(html, opts = {}) {
     return owner === null || owner === rootEl;
   });
 
-  let prev = null; // { end, selector }
+  let prev = null; // { el, end, selector }
   for (const el of clips) {
     const start = parseFloat(el.getAttribute("data-start"));
     const duration = parseFloat(el.getAttribute("data-duration"));
@@ -59,12 +78,19 @@ export function lintClipWindows(html, opts = {}) {
 
     if (prev) {
       if (start < prev.end) {
-        findings.push({
-          code: "clip_window_overlap",
-          severity: "error",
-          selector,
-          message: `clip window starts at ${start}s, before previous clip "${prev.selector}" ends at ${prev.end}s`,
-        });
+        const allowed = allowedOverlapSeconds(prev.el, el);
+        const actual = prev.end - start;
+        if (allowed == null || actual > allowed + OVERLAP_EPS) {
+          findings.push({
+            code: "clip_window_overlap",
+            severity: "error",
+            selector,
+            message:
+              allowed == null
+                ? `clip window starts at ${start}s, before previous clip "${prev.selector}" ends at ${prev.end}s`
+                : `transition overlap ${(actual).toFixed(3)}s exceeds the declared ${allowed.toFixed(3)}s after "${prev.selector}"`,
+          });
+        }
       } else if (start > prev.end) {
         findings.push({
           code: "clip_window_gap",
@@ -74,7 +100,7 @@ export function lintClipWindows(html, opts = {}) {
         });
       }
     }
-    prev = { end, selector };
+    prev = { el, end, selector };
   }
 
   return findings;

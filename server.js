@@ -593,13 +593,32 @@ app.post("/restructure/:id", previewCors, (req, res) => {
   const job = resolveJobById(projectId);
   if (!job) return res.status(404).json({ error: "not found" });
 
-  const { scenes, fps } = req.body ?? {};
+  const { scenes, fps, transitions } = req.body ?? {};
   if (!Array.isArray(scenes) || scenes.length === 0) {
     return res.status(400).json({ error: "scenes must be a non-empty array" });
   }
   for (const s of scenes) {
     if (!s || typeof s.id !== "string" || !Number.isFinite(Number(s.durationFrames))) {
       return res.status(400).json({ error: "each scene must have {id, durationFrames}" });
+    }
+  }
+  // V5-P2C §2.4: optional boundary transitions keyed by incoming scene id.
+  // Shape-validated here; kind/duration normalization happens in the engine.
+  if (transitions !== undefined) {
+    if (!Array.isArray(transitions)) {
+      return res.status(400).json({ error: "transitions must be an array" });
+    }
+    for (const tr of transitions) {
+      if (
+        !tr ||
+        typeof tr.id !== "string" ||
+        typeof tr.kind !== "string" ||
+        !Number.isFinite(Number(tr.durationMs))
+      ) {
+        return res
+          .status(400)
+          .json({ error: "each transition must have {id, kind, durationMs}" });
+      }
     }
   }
 
@@ -609,7 +628,7 @@ app.post("/restructure/:id", previewCors, (req, res) => {
 
   let result;
   try {
-    result = applyTimelineRestructure(html, scenes, fps ?? 30);
+    result = applyTimelineRestructure(html, scenes, fps ?? 30, transitions ?? []);
   } catch (err) {
     const status = err?.status ?? 500;
     return res.status(status).json({ error: err?.message ?? "restructure failed" });
