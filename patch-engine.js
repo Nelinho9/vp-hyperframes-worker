@@ -44,6 +44,42 @@ const NUMERIC_VALUE_RE = /^-?\d+(\.\d+)?$/;
 /** Props de animação (V5-P1D): o lote que as toca regenera o bloco materializado. */
 const ANIM_PROP_RE = /^anim(In|Out|DurMs|DelayMs)$/;
 
+/**
+ * V5-P1E (§6.5): propriedade RESERVADA para operações de nó no canal de
+ * patches — valores 'remove' | 'duplicate'. Caso especial ao nível de
+ * textContent/src (NÃO entra na PROP_MAP); espelhada nos três motores
+ * (app patchHtml.ts, helper do preview, aqui) com paridade por marcadores.
+ */
+export const NODE_OP_PROPERTY = "element";
+
+/** Menor sufixo `-copy-N` livre para o id base (determinístico nos 3 motores). */
+function nextCopyId(doc, baseId) {
+  for (let n = 1; ; n += 1) {
+    const candidate = `${baseId}-copy-${n}`;
+    if (!doc.getElementById(candidate)) return candidate;
+  }
+}
+
+/**
+ * Guarda V5-P1E: apagar/duplicar CENA (clip dono-da-raiz — mesma definição
+ * de ownership do normalizeClipWindows) é operação ESTRUTURAL da timeline
+ * (/restructure), nunca do inspector; permitir quebraria a contiguidade
+ * frame-exata das janelas (B2).
+ */
+function isRootOwnedSceneClip(el, doc) {
+  let hasClipClass = false;
+  try {
+    hasClipClass = Boolean(el.classList && el.classList.contains("clip"));
+  } catch {
+    return false;
+  }
+  if (!hasClipClass) return false;
+  const root = doc.querySelector("[data-composition-id]");
+  if (!root) return false;
+  const owner = typeof el.closest === "function" ? el.closest("[data-composition-id]") : null;
+  return owner === null || owner === root;
+}
+
 /** Extract one authored declaration value from a style attribute string. */
 export function parseInlineDecl(styleAttr, prop) {
   if (!styleAttr) return null;
@@ -107,6 +143,9 @@ export function applyPatchesLinkedom(html, patches) {
   const { document } = parseHTML(html);
   let applied = 0;
   let touchedAnim = false;
+  let touchedNode = false;
+  /** V5-P1E: ids criados por ops `duplicate`, pela ordem de aplicação. */
+  const created = [];
   for (const patch of patches) {
     const id = assertIdSelector(patch.selector);
     const el = document.getElementById(id);
@@ -115,6 +154,28 @@ export function applyPatchesLinkedom(html, patches) {
     const value = String(patch.value ?? "");
     if (property === "textContent" || property === "text") {
       el.textContent = value;
+    } else if (property === NODE_OP_PROPERTY) {
+      // V5-P1E §6.5: operações de nó — remove/duplicate. Cenas recusadas e
+      // valores desconhecidos fazem `continue` (não contam como aplicados).
+      if (isRootOwnedSceneClip(el, document)) continue;
+      if (value === "remove") {
+        if (el.parentNode) el.parentNode.removeChild(el);
+        touchedNode = true;
+      } else if (value === "duplicate") {
+        const newId = nextCopyId(document, id);
+        const clone = el.cloneNode(true);
+        clone.setAttribute("id", newId);
+        try {
+          clone.removeAttribute("data-hf-autostamped");
+        } catch {
+          /* atributo opcional */
+        }
+        if (el.parentNode) el.parentNode.insertBefore(clone, el.nextSibling);
+        created.push(newId);
+        touchedNode = true;
+      } else {
+        continue;
+      }
     } else if (property === "src") {
       el.setAttribute("src", value);
     } else if (property === "background-image") {
@@ -140,13 +201,16 @@ export function applyPatchesLinkedom(html, patches) {
     }
     applied += 1;
   }
-  // V5-P1D §2.3: materialização dos presets de animação — UM bloco
+  // V5-P1D §2.3 + V5-P1E: materialização dos presets de animação — UM bloco
   // `<script id="__vp-anim-materialized__">` regenerado a partir do DOM
   // (determinístico → convergência byte-exata; zero specs remove o bloco).
-  const outHtml = touchedAnim
-    ? upsertAnimBlock(document.toString(), collectAnimSpecs(document))
-    : document.toString();
-  return { html: outHtml, applied };
+  // Lotes com ops de nó TAMBÉM regeneram: specs derivadas do DOM pós-op
+  // (clone de elemento animado ganha spec; specs de nós removidos somem).
+  const outHtml =
+    touchedAnim || touchedNode
+      ? upsertAnimBlock(document.toString(), collectAnimSpecs(document))
+      : document.toString();
+  return { html: outHtml, applied, created };
 }
 
 /** Merge one `prop: value` declaration into an existing style attribute.

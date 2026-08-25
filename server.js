@@ -575,7 +575,13 @@ app.post("/patch/:id", previewCors, (req, res) => {
   // V4-04C §2.1: the PATCHED HTML rides on the response — the caller
   // (Vercel route) persists it to Supabase storage; the worker stays
   // Supabase-free.
-  res.json({ ok: true, applied: result.applied, html: result.html });
+  // V5-P1E: `created` lista ids criados por operações de nó (duplicate).
+  res.json({
+    ok: true,
+    applied: result.applied,
+    created: result.created ?? [],
+    html: result.html,
+  });
 });
 
 app.options("/restructure/:id", previewCors);

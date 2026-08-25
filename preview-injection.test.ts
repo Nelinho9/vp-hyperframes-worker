@@ -267,6 +267,40 @@ function bootHelper(
   };
 }
 
+/** gsap mock mínimo com timeline registável no sandbox do helper
+ *  (usado pelos describes V5-P1D e V5-P1E). */
+function makeSandboxGsap() {
+  const calls: Array<{ m: string; target: unknown; pos: number | undefined; to: Record<string, unknown> }> = [];
+  const children: Array<{ killed: boolean }> = [];
+  const gsap = {
+    timeline(cfg?: { paused?: boolean }) {
+      const childrenTl = children;
+      return {
+        paused: cfg?.paused ?? false,
+        time: () => 0,
+        fromTo(target: unknown, _from: unknown, to: Record<string, unknown>, pos: number) {
+          calls.push({ m: 'fromTo', target, pos, to });
+          const tw = { killed: false };
+          (tw as { kill(): void }).kill = () => { tw.killed = true; };
+          childrenTl.push(tw);
+          return tw;
+        },
+        to(target: unknown, to: Record<string, unknown>, pos: number) {
+          calls.push({ m: 'to', target, pos, to });
+          const tw = { killed: false };
+          (tw as { kill(): void }).kill = () => { tw.killed = true; };
+          childrenTl.push(tw);
+          return tw;
+        },
+        getChildren() {
+          return childrenTl.slice();
+        },
+      };
+    },
+  };
+  return { gsap, calls, children };
+}
+
 describe('PREVIEW_HELPER_SCRIPT — geometria em execução (V5-P0B)', () => {
   it('converte x/y absolutos em deltas vs baseline rect e escreve vars+consumo', () => {
     const h = bootHelper('<div id="el" style="width: 10px;"></div>');
@@ -389,39 +423,7 @@ describe('PREVIEW_HELPER_SCRIPT — modelo expandido em execução (V5-P1A)', ()
   });
 
   // ── V5-P1D: materialização local + replay de cena ──────────────────────
-
-  /** gsap mock mínimo com timeline registável no sandbox do helper. */
-  function makeSandboxGsap() {
-    const calls: Array<{ m: string; target: unknown; pos: number | undefined; to: Record<string, unknown> }> = [];
-    const children: Array<{ killed: boolean }> = [];
-    const gsap = {
-      timeline(cfg?: { paused?: boolean }) {
-        const childrenTl = children;
-        return {
-          paused: cfg?.paused ?? false,
-          time: () => 0,
-          fromTo(target: unknown, _from: unknown, to: Record<string, unknown>, pos: number) {
-            calls.push({ m: 'fromTo', target, pos, to });
-            const tw = { killed: false };
-            (tw as { kill(): void }).kill = () => { tw.killed = true; };
-            childrenTl.push(tw);
-            return tw;
-          },
-          to(target: unknown, to: Record<string, unknown>, pos: number) {
-            calls.push({ m: 'to', target, pos, to });
-            const tw = { killed: false };
-            (tw as { kill(): void }).kill = () => { tw.killed = true; };
-            childrenTl.push(tw);
-            return tw;
-          },
-          getChildren() {
-            return childrenTl.slice();
-          },
-        };
-      },
-    };
-    return { gsap, calls, children };
-  }
+  // (mock partilhado com o describe V5-P1E — hoisted para o módulo)
 
   it('patch animIn aplica atributo E materializa tween local na timeline viva', () => {
     const { gsap, calls } = makeSandboxGsap();
@@ -513,6 +515,96 @@ describe('PREVIEW_HELPER_SCRIPT — modelo expandido em execução (V5-P1A)', ()
       startSeconds: null,
       durationSeconds: null,
     });
+  });
+});
+
+describe('PREVIEW_HELPER_SCRIPT — operações de nó (V5-P1E §6.5)', () => {
+  it('contrato: recetor conhece a prop reservada e o envelope de duplicate', () => {
+    expect(PREVIEW_HELPER_SCRIPT).toContain("p.property === 'element'");
+    expect(PREVIEW_HELPER_SCRIPT).toContain("'element-duplicated'");
+    expect(PREVIEW_HELPER_SCRIPT).toContain('-copy-');
+    // Guarda de cenas partilha a semântica de ownership dos motores.
+    expect(PREVIEW_HELPER_SCRIPT).toContain("closest('[data-composition-id]')");
+  });
+
+  it('remove tira o nó da página viva', () => {
+    const h = bootHelper('<div id="text-a">A</div><div id="img-b">B</div>');
+    h.message({
+      action: 'patch',
+      patches: [{ selector: '#text-a', property: 'element', value: 'remove' }],
+    });
+    expect(h.document.querySelector('#text-a')).toBeNull();
+    expect(h.document.querySelector('#img-b')).toBeTruthy();
+  });
+
+  it('duplicate clona como irmão seguinte com id livre e responde envelope', () => {
+    const h = bootHelper(
+      '<div id="img-hero" src="a.jpg">x</div><div id="img-hero-copy-1">já existe</div>',
+    );
+    h.message({
+      action: 'patch',
+      patches: [{ selector: '#img-hero', property: 'element', value: 'duplicate' }],
+    });
+
+    // Id determinístico desvia da colisão (copy-1 ocupado → copy-2).
+    const clone = h.document.querySelector('#img-hero-copy-2');
+    expect(clone).toBeTruthy();
+    expect(h.document.getElementById('img-hero').nextSibling === clone ||
+      h.document.getElementById('img-hero').nextElementSibling === clone).toBe(true);
+
+    const dup = h.parentMessages.find(
+      (m) => (m as { action?: string }).action === 'element-duplicated',
+    ) as { source: string; fromId: string; newId: string; bbox: { x: number; y: number; w: number; h: number } };
+    expect(dup).toBeTruthy();
+    expect(dup.source).toBe('hf-preview');
+    expect(dup.fromId).toBe('img-hero');
+    expect(dup.newId).toBe('img-hero-copy-2');
+    expect(dup.bbox).toEqual({ x: 0, y: 0, w: 0, h: 0 }); // linkedom sem layout
+  });
+
+  it('cena .clip raiz-dono é recusada (sem clone/remoção, sem envelope)', () => {
+    const h = bootHelper(
+      `<div data-composition-id="main">
+         <div id="scene-1" class="clip" data-start="0" data-duration="6"></div>
+         <div id="inner-comp" data-composition-id="nested">
+           <div id="nested-scene" class="clip" data-start="0" data-duration="3"></div>
+         </div>
+       </div>`,
+    );
+    h.message({
+      action: 'patch',
+      patches: [
+        { selector: '#scene-1', property: 'element', value: 'remove' },
+        { selector: '#scene-1', property: 'element', value: 'duplicate' },
+      ],
+    });
+    // Cena raiz intocada.
+    expect(h.document.querySelector('#scene-1')).toBeTruthy();
+    expect(h.document.querySelector('[id^="scene-1-copy"]')).toBeNull();
+    expect(
+      h.parentMessages.filter((m) => (m as { action?: string }).action === 'element-duplicated'),
+    ).toHaveLength(0);
+  });
+
+  it('lote com op de nó re-materializa a animação (specs derivadas do DOM pós-op)', () => {
+    const { gsap, calls } = makeSandboxGsap();
+    const mainTl = (
+      gsap as unknown as { timeline: (c?: { paused?: boolean }) => Record<string, unknown> }
+    ).timeline({ paused: true });
+    const h = bootHelper(
+      `<div id="text-headline-1" data-anim-in="fade">H</div>`,
+      { gsap, timelines: { main: mainTl } },
+    );
+    calls.length = 0;
+    h.message({
+      action: 'patch',
+      patches: [{ selector: '#text-headline-1', property: 'element', value: 'duplicate' }],
+    });
+    // O clone herda data-anim-in → o applier derivou specs do DOM pós-op e
+    // criou tweens para ORIGINAL + CLONE.
+    const targets = calls.map((c) => (c.target as { id?: string }).id);
+    expect(targets).toContain('text-headline-1');
+    expect(targets).toContain('text-headline-1-copy-1');
   });
 });
 

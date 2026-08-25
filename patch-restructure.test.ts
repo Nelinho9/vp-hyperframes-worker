@@ -475,6 +475,143 @@ describe('POST /patch/:id — materialização de animação V5-P1D (§6.4)', ()
   });
 });
 
+describe('POST /patch/:id — operações de nó V5-P1E (§6.5)', () => {
+  it('remove tira o nó do documento e persiste', async () => {
+    await stage('proj-p1e-1');
+    const res = await post(
+      '/patch/proj-p1e-1',
+      { patches: [{ selector: '#img-hero', property: 'element', value: 'remove' }] },
+      { 'X-Worker-Secret': SECRET },
+    );
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { ok: boolean; applied: number; html: string; created?: string[] };
+    expect(body.ok).toBe(true);
+    expect(body.applied).toBe(1);
+    expect(body.created).toEqual([]);
+    expect(body.html).not.toContain('id="img-hero"');
+    // Persistido: o preview já não serve o elemento.
+    const preview = await fetch(`${base}/preview/proj-p1e-1`);
+    expect(await preview.text()).not.toContain('img-hero');
+  });
+
+  it('duplicate cria irmão seguinte com id determinístico e devolve created', async () => {
+    await stage('proj-p1e-2');
+    const res = await post(
+      '/patch/proj-p1e-2',
+      { patches: [{ selector: '#text-headline-1', property: 'element', value: 'duplicate' }] },
+      { 'X-Worker-Secret': SECRET },
+    );
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { applied: number; html: string; created: string[] };
+    expect(body.applied).toBe(1);
+    expect(body.created).toEqual(['text-headline-1-copy-1']);
+    // Clone existe e é irmão SEGUINTE do original (herda conteúdo).
+    const { document } = parseHTML(body.html);
+    const orig = document.getElementById('text-headline-1')!;
+    const clone = document.getElementById('text-headline-1-copy-1')!;
+    expect(clone).toBeTruthy();
+    expect(orig.nextElementSibling === clone || orig.nextSibling === clone).toBe(true);
+    expect(clone.textContent).toContain('Hello');
+  });
+
+  it('dois duplicates no MESMO lote geram ids sequenciais (copy-1, copy-2)', async () => {
+    await stage('proj-p1e-3');
+    const res = await post(
+      '/patch/proj-p1e-3',
+      {
+        patches: [
+          { selector: '#img-hero', property: 'element', value: 'duplicate' },
+          { selector: '#img-hero', property: 'element', value: 'duplicate' },
+        ],
+      },
+      { 'X-Worker-Secret': SECRET },
+    );
+    const body = (await res.json()) as { applied: number; html: string; created: string[] };
+    expect(body.applied).toBe(2);
+    expect(body.created).toEqual(['img-hero-copy-1', 'img-hero-copy-2']);
+    const { document } = parseHTML(body.html);
+    expect(document.getElementById('img-hero-copy-1')).toBeTruthy();
+    expect(document.getElementById('img-hero-copy-2')).toBeTruthy();
+  });
+
+  it('colisão de id: copy-1 já existente → próximo livre', async () => {
+    await stage('proj-p1e-4');
+    // Primeiro duplicate cria copy-1…
+    await post(
+      '/patch/proj-p1e-4',
+      { patches: [{ selector: '#text-headline-1', property: 'element', value: 'duplicate' }] },
+      { 'X-Worker-Secret': SECRET },
+    );
+    // …o segundo tem de desviar para copy-2.
+    const res = await post(
+      '/patch/proj-p1e-4',
+      { patches: [{ selector: '#text-headline-1', property: 'element', value: 'duplicate' }] },
+      { 'X-Worker-Secret': SECRET },
+    );
+    const body = (await res.json()) as { created: string[] };
+    expect(body.created).toEqual(['text-headline-1-copy-2']);
+  });
+
+  it('guarda de cenas: .clip raiz-dono não é removida nem duplicada', async () => {
+    await stage('proj-p1e-5');
+    const res = await post(
+      '/patch/proj-p1e-5',
+      {
+        patches: [
+          { selector: '#scene-1', property: 'element', value: 'remove' },
+          { selector: '#scene-2', property: 'element', value: 'duplicate' },
+        ],
+      },
+      { 'X-Worker-Secret': SECRET },
+    );
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { applied: number; html: string; created: string[] };
+    // Nenhuma op aplicada — cenas são estruturais (/restructure), nunca do inspector.
+    expect(body.applied).toBe(0);
+    expect(body.created).toEqual([]);
+    expect(body.html).toContain('id="scene-1"');
+    expect(body.html).toContain('id="scene-2"');
+    expect(body.html).not.toContain('scene-2-copy');
+    // Janelas intocadas (invariante B2).
+    expect(body.html).toMatch(/data-start="6"/);
+  });
+
+  it('lote misto conta só os aplicados (prop + op de nó válida + cena recusada)', async () => {
+    await stage('proj-p1e-6');
+    const res = await post(
+      '/patch/proj-p1e-6',
+      {
+        patches: [
+          { selector: '#text-headline-1', property: 'color', value: '#00ff00' },
+          { selector: '#img-hero', property: 'element', value: 'remove' },
+          { selector: '#scene-3', property: 'element', value: 'remove' },
+        ],
+      },
+      { 'X-Worker-Secret': SECRET },
+    );
+    const body = (await res.json()) as { applied: number; html: string };
+    expect(body.applied).toBe(2);
+    expect(body.html).toContain('#00ff00');
+    expect(body.html).not.toContain('id="img-hero"');
+    expect(body.html).toContain('id="scene-3"');
+  });
+
+  it('valor desconhecido na prop reservada não altera nada', async () => {
+    await stage('proj-p1e-7');
+    const before = await fetch(`${base}/preview/proj-p1e-7`);
+    const beforeText = await before.text();
+    const res = await post(
+      '/patch/proj-p1e-7',
+      { patches: [{ selector: '#img-hero', property: 'element', value: 'explode' }] },
+      { 'X-Worker-Secret': SECRET },
+    );
+    const body = (await res.json()) as { applied: number; html: string };
+    expect(body.applied).toBe(0);
+    expect(body.html).toContain('id="img-hero"');
+    void beforeText;
+  });
+});
+
 describe('POST /restructure/:id — V4-04C', () => {
   it('rewrites durations, recomputes cumulative starts and removes vanished clips', async () => {
     await stage('proj-restr-1');

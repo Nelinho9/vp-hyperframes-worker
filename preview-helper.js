@@ -23,9 +23,15 @@
  *     startSeconds, durationSeconds|null }              V5-P1D: resposta ao
  *     pedido de replay — janela timed do elemento (host [data-start] mais
  *     próximo; null = full-length)
+ *   { source:'hf-preview', action:'element-duplicated', fromId, newId, bbox }
+ *     V5-P1E: confirmação da operação `duplicate` — id determinístico
+ *     `${fromId}-copy-N` (menor N livre) e bbox medida pós-inserção
  *
  * parent → iframe (V4-3e hot-swap receiver):
- *   { action: 'patch',     patches: [{selector, property, value}] }
+ *   { action: 'patch',     patches: [{selector, property, value}] }  —
+ *     V5-P1E: a propriedade RESERVADA `element` com valores 'remove' /
+ *     'duplicate' executa OPERAÇÕES DE NÓ na página viva (sem reload);
+ *     cenas (.clip dono-da-raiz) são recusadas — estruturais, via timeline.
  *   { action: 'seek',      frame }        (V4-04A legacy — shimmed)
  *   { action: 'playpause', playing }      (V4-04A legacy — shimmed)
  *   { action: 'element-at-point', x, y }  (V5-P1C — hit-test para o drop;
@@ -60,6 +66,10 @@
  *   converted to a translate DELTA against the element rect captured at the
  *   first geometry edit of the session (WeakMap baseline); accumulated deltas
  *   converge with the worker's authored-left/top recomputation on persist.
+ *   NODE OPS (V5-P1E §6.5): reserved property `element` with values
+ *   'remove' | 'duplicate' mutates the LIVE page (no reload) with the same
+ *   semantics as the persistence engines — deterministic `-copy-N` id,
+ *   clone inserted as the NEXT SIBLING, root-owned scene clips refused.
  */
 
 /** Marker id used to keep injection idempotent. */
@@ -354,12 +364,36 @@ export const PREVIEW_HELPER_SCRIPT = `(function () {
     return false;
   }
 
+  // ── V5-P1E §6.5: operações de nó no recetor patch ─────────────────────
+  // Propriedade RESERVADA 'element' ('remove' | 'duplicate') — mesma
+  // semântica dos motores de persistência (patchHtml.ts / patch-engine.js):
+  // id determinístico base + '-copy-N' com N = menor inteiro livre, clone
+  // inserido como irmão seguinte (mesma janela timed), autostamp limpo e
+  // CENAS (.clip dono-da-raiz) recusadas — estruturais, via /restructure.
+  function nextCopyId(doc, baseId) {
+    for (var n = 1; ; n++) {
+      var candidate = baseId + '-copy-' + n;
+      if (!doc.getElementById(candidate)) return candidate;
+    }
+  }
+
+  function isRootOwnedSceneClip(el, doc) {
+    var isClip = false;
+    try { isClip = Boolean(el.classList && el.classList.contains('clip')); } catch (eC) { return false; }
+    if (!isClip) return false;
+    var rootEl = doc.querySelector('[data-composition-id]');
+    if (!rootEl) return false;
+    var ownerEl = el.closest ? el.closest('[data-composition-id]') : null;
+    return ownerEl === null || ownerEl === rootEl;
+  }
+
   // ── parent → iframe: hot-swap receiver (patch / seek / playpause) ────
   window.addEventListener('message', function (ev) {
     var data = ev.data;
     if (!data || typeof data !== 'object' || typeof data.action !== 'string') return;
 
     if (data.action === 'patch' && Object.prototype.toString.call(data.patches) === '[object Array]') {
+      var nodeOpTouched = false;
       for (var i = 0; i < data.patches.length; i++) {
         var p = data.patches[i];
         if (!p || typeof p.selector !== 'string' || typeof p.property !== 'string') continue;
@@ -377,6 +411,35 @@ export const PREVIEW_HELPER_SCRIPT = `(function () {
             break;
           }
           el.textContent = value;
+        } else if (p.property === 'element') {
+          // V5-P1E §6.5: operações de nó na página viva (hot-swap, sem
+          // reload). Cenas recusadas — a timeline é a dona da estrutura.
+          if (isRootOwnedSceneClip(el, document)) continue;
+          if (value === 'remove') {
+            if (el.parentNode) el.parentNode.removeChild(el);
+            nodeOpTouched = true;
+          } else if (value === 'duplicate') {
+            var dupBase = el.id;
+            if (dupBase) {
+              var newId = nextCopyId(document, dupBase);
+              var clone = el.cloneNode(true);
+              clone.setAttribute('id', newId);
+              try { clone.removeAttribute('data-hf-autostamped'); } catch (eA) {}
+              if (el.parentNode) el.parentNode.insertBefore(clone, el.nextSibling);
+              var r2 = typeof clone.getBoundingClientRect === 'function'
+                ? clone.getBoundingClientRect()
+                : { left: 0, top: 0, width: 0, height: 0 };
+              sendToParent({
+                source: 'hf-preview',
+                action: 'element-duplicated',
+                fromId: dupBase,
+                newId: newId,
+                bbox: { x: Math.round(r2.left), y: Math.round(r2.top), w: Math.round(r2.width), h: Math.round(r2.height) }
+              });
+              nodeOpTouched = true;
+            }
+          }
+          // Valor desconhecido → sem efeito.
         } else if (p.property === 'src') {
           el.setAttribute('src', value);
         } else if (p.property === 'background-image') {
@@ -401,7 +464,9 @@ export const PREVIEW_HELPER_SCRIPT = `(function () {
         }
       }
       // V5-P1D §2.4: lote tocou animação → re-materializar localmente.
-      if (patchTouchesAnim(data.patches)) {
+      // V5-P1E: ops de nó TAMBÉM re-materializam — specs derivadas do DOM
+      // pós-op (clone animado ganha tweens; tweens de nós removidos morrem).
+      if (nodeOpTouched || patchTouchesAnim(data.patches)) {
         try { __vpApplyAnimations(); } catch (eAnim) { /* nunca quebrar o preview */ }
       }
     } else if (data.action === 'seek') {
