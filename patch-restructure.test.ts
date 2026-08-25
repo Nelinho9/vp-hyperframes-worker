@@ -892,3 +892,55 @@ describe('POST /restructure/:id — V5-P0C frame-exact quantization', () => {
     expect(extractWindows(norm.html).map((w) => w.start)).toEqual([0, 3]);
   });
 });
+
+// ── V5-P3A (§8.1): registry de elementos cavalga as respostas ────────────────
+describe('elements registry nas respostas — V5-P3A', () => {
+  type ElementsEnvelope = {
+    version: number;
+    elements: Array<{ id: string; type: string; sceneId: string | null; text?: string; srcAssetUrl?: string }>;
+  };
+
+  it('/patch devolve `elements` coerente com o HTML final patchado', async () => {
+    await stage('proj-elem-patch');
+    const res = await post(
+      '/patch/proj-elem-patch',
+      {
+        patches: [
+          { selector: '#text-headline-1', property: 'textContent', value: 'Registry ok' },
+          { selector: '#img-hero', property: 'src', value: 'assets/swap.jpg' },
+        ],
+      },
+      { 'X-Worker-Secret': SECRET },
+    );
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { ok: boolean; html: string; elements: ElementsEnvelope };
+    expect(body.ok).toBe(true);
+    expect(body.elements.version).toBe(1);
+
+    const byId = new Map(body.elements.elements.map((e) => [e.id, e]));
+    expect(byId.get('text-headline-1')).toMatchObject({
+      type: 'text',
+      sceneId: null, // filho direto da raiz no fixture
+      text: 'Registry ok',
+    });
+    expect(byId.get('img-hero')!.srcAssetUrl).toBe('assets/swap.jpg');
+    // Cenas e raiz ficam fora do inventário.
+    expect(byId.has('scene-1')).toBe(false);
+    expect(byId.has('main')).toBe(false);
+  });
+
+  it('/restructure devolve `elements` sem os descendentes das cenas removidas', async () => {
+    await stage('proj-elem-restr');
+    const res = await post(
+      '/restructure/proj-elem-restr',
+      { scenes: [{ id: 'scene-1', durationFrames: 90 }], fps: 30 },
+      { 'X-Worker-Secret': SECRET },
+    );
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { ok: boolean; removed: string[]; elements: ElementsEnvelope };
+    expect(body.removed).toEqual(['scene-2', 'scene-3']);
+    const ids = body.elements.elements.map((e) => e.id);
+    expect(ids).toContain('text-headline-1');
+    expect(ids).not.toContain('scene-2');
+  });
+});

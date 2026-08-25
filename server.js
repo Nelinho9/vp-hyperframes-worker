@@ -40,6 +40,7 @@ import {
 import { prestageExternalMedia } from "./media-preloader.js";
 import { compositionStoragePath, persistCompositionArtifact } from "./composition-persist.js";
 import { captureThumbnails, computeArtifactHash } from "./thumbnails.js";
+import { deriveElements, persistElementsArtifact } from "./elements-registry.js";
 
 const app = express();
 app.use(express.json({ limit: "200mb" }));
@@ -445,6 +446,14 @@ app.post("/job", async (req, res) => {
     ? persistCompositionArtifact(supabase, project_id, index_html, console.log)
     : null;
 
+  // V5-P3A (AD-5): derivar e publicar o registry de elementos ao lado da
+  // composição — index_html aqui já é o HTML FINAL (pós-sanitize/normalize),
+  // logo o inventário reflete exatamente o que o preview serve. Mesmo
+  // fire-and-forget; o resultado viaja no callback (composition_elements).
+  const elementsUploadPromise = step !== "preview"
+    ? persistElementsArtifact(supabase, project_id, deriveElements(index_html), console.log)
+    : null;
+
   // V4-3g.3 (B6): marcador para reidratação do registry no boot.
   writeJobMarker(jobDir, {
     job_id: jobId,
@@ -480,6 +489,7 @@ app.post("/job", async (req, res) => {
     media_validation: jobMediaValidation,
     window_lint_findings: windowLintFindings,
     compositionUploadPromise,
+    elementsUploadPromise,
   });
   // Track by project_id for preview lookup
   projectJobs.set(project_id, jobId);
@@ -577,11 +587,14 @@ app.post("/patch/:id", previewCors, (req, res) => {
   // (Vercel route) persists it to Supabase storage; the worker stays
   // Supabase-free.
   // V5-P1E: `created` lista ids criados por operações de nó (duplicate).
+  // V5-P3A: `elements` é o registry derivado do HTML FINAL — o caller
+  // publica-o como projects/{id}/compositions/elements.json na mesma escrita.
   res.json({
     ok: true,
     applied: result.applied,
     created: result.created ?? [],
     html: result.html,
+    elements: deriveElements(result.html),
   });
 });
 
@@ -648,7 +661,16 @@ app.post("/restructure/:id", previewCors, (req, res) => {
   console.log(
     `[worker] /restructure ${projectId}: ${result.applied} clip(s) rewritten, ${result.removed.length} removed`
   );
-  res.json({ ok: true, applied: result.applied, removed: result.removed, html: result.html, findings });
+  // V5-P3A: registry coerente com o HTML reescrito (cenas removidas somem do
+  // inventário; sceneId reflete as janelas novas).
+  res.json({
+    ok: true,
+    applied: result.applied,
+    removed: result.removed,
+    html: result.html,
+    findings,
+    elements: deriveElements(result.html),
+  });
 });
 
 // ── Serve preview ───────────────────────────────────────────────────
@@ -1006,6 +1028,11 @@ export async function runRender(jobId, jobDir) {
     // que registra o artifact nos steps do manifesto.
     if (job.compositionUploadPromise) {
       uploaded.composition_html = await job.compositionUploadPromise;
+    }
+    // V5-P3A: registry de elementos publicado no staging — reportar ao
+    // orquestrador para o manifesto provar a existência do artefacto.
+    if (job.elementsUploadPromise) {
+      uploaded.composition_elements = await job.elementsUploadPromise;
     }
 
     // Callback to orchestrator (V4-1 contract)
