@@ -26,6 +26,9 @@
  *   { source:'hf-preview', action:'element-duplicated', fromId, newId, bbox }
  *     V5-P1E: confirmação da operação `duplicate` — id determinístico
  *     `${fromId}-copy-N` (menor N livre) e bbox medida pós-inserção
+ *   { source:'hf-preview', action:'element-bbox', elementId, bbox|null, src? }
+ *     V5-P3C: resposta ao pedido de focus programático — bbox MEDIDA na
+ *     página viva (null = elemento inexistente; o pai degrada sem overlay)
  *
  * parent → iframe (V4-3e hot-swap receiver):
  *   { action: 'patch',     patches: [{selector, property, value}] }  —
@@ -38,6 +41,8 @@
  *     coords NATIVAS: o pai converte clientX/Y via transform inverso do stage)
  *   { action: 'element-scene', elementId } (V5-P1D — janela para o replay de
  *     presets de animação; o pai faz seek+play curto com a resposta)
+ *   { action: 'element-bbox', elementId }  (V5-P3C — focus programático:
+ *     flash+select do tab Assets; o pai seleciona com a bbox real)
  *
  * V4-04A: transport (play/pause/seek) is owned by the runtime's own bridge
  * protocol — the frontend posts `hf-parent/hf-control` envelopes straight to
@@ -532,6 +537,25 @@ export const PREVIEW_HELPER_SCRIPT = `(function () {
         }
         sendToParent({ source: 'hf-preview', action: 'element-scene', elementId: data.elementId, startSeconds: s0, durationSeconds: d0 });
       } catch (eS) { /* never break the preview */ }
+    } else if (data.action === 'element-bbox' && typeof data.elementId === 'string') {
+      // V5-P3C §2.5: bbox MEDIDA na página viva para o focus programático
+      // (flash+select a partir do tab Assets). Responde SEMPRE — bbox null
+      // quando o elemento não existe (o pai degrada sem overlay mentiroso).
+      try {
+        var fbEl = document.getElementById(data.elementId);
+        if (!fbEl) {
+          try { fbEl = document.querySelector('[data-hf-id="' + data.elementId + '"]'); } catch (eQ) { fbEl = null; }
+        }
+        if (!fbEl) {
+          sendToParent({ source: 'hf-preview', action: 'element-bbox', elementId: data.elementId, bbox: null });
+        } else {
+          var fbMsg = elementEnvelope(fbEl, 'element-bbox');
+          fbMsg.source = 'hf-preview';
+          var fbSrc = typeof fbEl.getAttribute === 'function' ? fbEl.getAttribute('src') : null;
+          if (fbSrc) fbMsg.src = fbSrc;
+          sendToParent(fbMsg);
+        }
+      } catch (eB) { /* never break the preview */ }
     }
   });
 })();`;

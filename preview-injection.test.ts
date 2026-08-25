@@ -1026,6 +1026,60 @@ describe('GET /preview/:id/assets/:file — subresources (V4-3f.9 follow-up)', (
   });
 });
 
+describe('PREVIEW_HELPER_SCRIPT — element-bbox (V5-P3C §2.5)', () => {
+  it('contrato: recetor conhece o envelope pedido/resposta', () => {
+    expect(PREVIEW_HELPER_SCRIPT).toContain("data.action === 'element-bbox'");
+    expect(PREVIEW_HELPER_SCRIPT).toContain("action: 'element-bbox'");
+  });
+
+  it('responde bbox medida e src vivo do elemento pedido', () => {
+    const h = bootHelper('<img id="scene-2-img-1" src="assets/vp-media-x.jpg" />');
+    h.message({ action: 'element-bbox', elementId: 'scene-2-img-1' });
+
+    const msg = h.parentMessages.find(
+      (m) => (m as { action?: string }).action === 'element-bbox',
+    ) as {
+      source: string;
+      elementId: string;
+      bbox: { x: number; y: number; w: number; h: number };
+      src?: string;
+    };
+    expect(msg).toBeTruthy();
+    expect(msg.source).toBe('hf-preview');
+    expect(msg.elementId).toBe('scene-2-img-1');
+    // linkedom não tem layout — rects a zero, envelope intacto.
+    expect(msg.bbox).toEqual({ x: 0, y: 0, w: 0, h: 0 });
+    expect(msg.src).toBe('assets/vp-media-x.jpg');
+  });
+
+  it('elemento ausente responde bbox null (pai degrada sem overlay)', () => {
+    const h = bootHelper('<div id="outro"></div>');
+    h.message({ action: 'element-bbox', elementId: 'nao-existe' });
+
+    const msg = h.parentMessages.find(
+      (m) => (m as { action?: string }).action === 'element-bbox',
+    ) as { elementId: string; bbox: unknown };
+    expect(msg).toBeTruthy();
+    expect(msg.elementId).toBe('nao-existe');
+    expect(msg.bbox).toBeNull();
+  });
+
+  it('envelope de resposta reutiliza elementEnvelope (bbox arredondada)', () => {
+    const h = bootHelper('<div id="scene-1-text-1">H</div>');
+    h.message({ action: 'element-bbox', elementId: 'scene-1-text-1' });
+    const msg = h.parentMessages.find(
+      (m) => (m as { action?: string }).action === 'element-bbox',
+    ) as Record<string, unknown>;
+    expect(msg).toMatchObject({
+      source: 'hf-preview',
+      action: 'element-bbox',
+      elementId: 'scene-1-text-1',
+    });
+    // Sem src em elementos de texto o campo é omitido (não lido ≠ neutro).
+    expect('src' in msg).toBe(false);
+  });
+});
+
 describe('GET /preview/:id — enforcement do token HMAC (V4-3g.5, R5)', () => {
   const SECRET = 'test-preview-secret';
   const PROJECT = 'proj-token-guard';
