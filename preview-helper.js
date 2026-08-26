@@ -35,8 +35,6 @@
  *     V5-P1E: a propriedade RESERVADA `element` com valores 'remove' /
  *     'duplicate' executa OPERAÇÕES DE NÓ na página viva (sem reload);
  *     cenas (.clip dono-da-raiz) são recusadas — estruturais, via timeline.
- *   { action: 'seek',      frame }        (V4-04A legacy — shimmed)
- *   { action: 'playpause', playing }      (V4-04A legacy — shimmed)
  *   { action: 'element-at-point', x, y }  (V5-P1C — hit-test para o drop;
  *     coords NATIVAS: o pai converte clientX/Y via transform inverso do stage)
  *   { action: 'element-scene', elementId } (V5-P1D — janela para o replay de
@@ -46,10 +44,11 @@
  *
  * V4-04A: transport (play/pause/seek) is owned by the runtime's own bridge
  * protocol — the frontend posts `hf-parent/hf-control` envelopes straight to
- * the iframe window. The legacy helper actions are mapped to that envelope
- * defensively (compat shim); the dead `window.HyperFrames|HF|__HYPERFRAMES__`
- * runtime lookup is removed (those globals never existed — the real runtime
- * exposes only `window.__hyperframes = {fitTextFontSize, getVariables}`).
+ * the iframe window (V5-P8C: helper shim legacy removido — o pai não emite
+ * mais `{action:'seek'|'playpause'}`). The dead `window.HyperFrames|
+ * HF|__HYPERFRAMES__` runtime lookup is removed (those globals never existed —
+ * the real runtime exposes only `window.__hyperframes = {fitTextFontSize,
+ * getVariables}`).
  *
  * V4-04D §2.4: window errors / unhandled rejections are reported to the
  * parent as `{source:'hf-preview', type:'diagnostic', code:'page.error'}` so
@@ -199,16 +198,6 @@ export const PREVIEW_HELPER_SCRIPT = `(function () {
   window.addEventListener('unhandledrejection', function (ev) {
     reportDiagnostic('page.unhandledrejection', ev && ev.reason ? String(ev.reason) : 'unknown rejection');
   });
-
-  // ── V4-04A: compat shim — legacy helper actions → hf-parent control ──
-  // The vendored runtime listens on the IFRAME window for
-  // {source:'hf-parent', type:'control', action:…} envelopes; re-dispatch
-  // them into the same window so the runtime's own listener handles them.
-  function shimControl(action, params) {
-    try {
-      window.postMessage(Object.assign({ source: 'hf-parent', type: 'control', action: action }, params), '*');
-    } catch (e) { /* best effort */ }
-  }
 
   // ── iframe → parent: click selection ─────────────────────────────────
   document.addEventListener('click', function (ev) {
@@ -554,12 +543,6 @@ export const PREVIEW_HELPER_SCRIPT = `(function () {
         try { applyLiveAudioState(); } catch (eAudio1) { /* nunca quebrar o preview */ }
         try { __vpApplyAudioProps(); } catch (eAudio2) { /* nunca quebrar o preview */ }
       }
-    } else if (data.action === 'seek') {
-      // V4-04A: legacy channel — forward through the runtime bridge envelope.
-      shimControl('seek', { frame: data.frame, fps: data.fps || 30 });
-    } else if (data.action === 'playpause') {
-      // V4-04A: legacy channel — map to the runtime play/pause actions.
-      shimControl(data.playing ? 'play' : 'pause', {});
     } else if (data.action === 'element-at-point' && typeof data.x === 'number' && typeof data.y === 'number') {
       // V5-P1C §2.3: hit-test para o drop de imagem mediado pelo pai.
       // Coordenadas NATIVAS da composição; responde com o elemento sob o

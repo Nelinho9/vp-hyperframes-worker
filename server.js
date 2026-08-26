@@ -1003,21 +1003,55 @@ export async function runRender(jobId, jobDir) {
 
     // Step 4: render
     timings.render_start = Date.now();
-    const outputPath = join(jobDir, "renders", "output.mp4");
+    const _payloadOpts = (job.payload && typeof job.payload.options === 'object' && job.payload.options) ? job.payload.options : {};
+    const _rawFmt = typeof _payloadOpts.format === 'string' ? _payloadOpts.format : 'mp4';
+    const _validFmts = new Set(['mp4', 'webm', 'gif', 'png']);
+    const exportFormat = _validFmts.has(_rawFmt) ? _rawFmt : 'mp4';
+    const outputName = exportFormat === 'png' ? 'frame.png' : `output.${exportFormat}`;
+    const outputPath = join(jobDir, "renders", outputName);
     mkdirSync(join(jobDir, "renders"), { recursive: true });
     // V4-3f.11: spawn (not execSync) so full stdout/stderr survive a
     // non-zero exit, with a timeout above the CLI's own protocolTimeout.
     // R3 (V4_01_INFRA §4 / docker-compose): VPS RAM ≤ 4GB — pin a single
     // capture worker + low-memory profile; "auto" spawns multiple Chrome
     // instances that OOM the box mid-capture.
-    const renderCommand = process.env.HYPERFRAMES_BIN || "npx";
-    const renderArgs = process.env.HYPERFRAMES_BIN
-      ? ["render", "--quality", "high", "--workers", "1", "-o", outputPath, jobDir]
-      : ["hyperframes", "render", "--quality", "high", "--workers", "1", "-o", outputPath, jobDir];
-    const renderResult = await spawnCommand(renderCommand, renderArgs, {
-      timeout: 600000,
-      env: { ...process.env, CHROME_PATH, PRODUCER_LOW_MEMORY_MODE: "true" },
-    });
+    let renderResult;
+    if (exportFormat === 'png') {
+      const pngAt = typeof _payloadOpts.pngAtSeconds === 'number' && Number.isFinite(_payloadOpts.pngAtSeconds) ? _payloadOpts.pngAtSeconds : 1.5;
+      const pngCommand = process.env.HYPERFRAMES_BIN || "npx";
+      const pngArgs = process.env.HYPERFRAMES_BIN
+        ? ["snapshot", "--at", String(pngAt), "--no-end", "-o", outputPath, jobDir]
+        : ["hyperframes", "snapshot", "--at", String(pngAt), "--no-end", "-o", outputPath, jobDir];
+      renderResult = await spawnCommand(pngCommand, pngArgs, {
+        timeout: 600000,
+        env: { ...process.env, CHROME_PATH, PRODUCER_LOW_MEMORY_MODE: "true" },
+      });
+    } else {
+      const renderCommand = process.env.HYPERFRAMES_BIN || "npx";
+      const fmtArgs = exportFormat !== 'mp4' ? ["--format", exportFormat] : [];
+      const renderArgs = process.env.HYPERFRAMES_BIN
+        ? ["render", "--quality", "high", "--workers", "1", ...fmtArgs, "-o", outputPath, jobDir]
+        : ["hyperframes", "render", "--quality", "high", "--workers", "1", ...fmtArgs, "-o", outputPath, jobDir];
+      renderResult = await spawnCommand(renderCommand, renderArgs, {
+        timeout: 600000,
+        env: { ...process.env, CHROME_PATH, PRODUCER_LOW_MEMORY_MODE: "true" },
+      });
+      if (exportFormat === 'gif' && renderResult.code === 0) {
+        try {
+          const gifSeconds = typeof _payloadOpts.gifSeconds === 'number' && Number.isFinite(_payloadOpts.gifSeconds) ? _payloadOpts.gifSeconds : 8;
+          const { spawn } = await import('node:child_process');
+          const gifTrim = await new Promise((resolve) => {
+            const ff = spawn('ffmpeg', ['-y', '-t', String(gifSeconds), '-i', outputPath, '-c', 'copy', outputPath + '.tmp'], { stdio: 'pipe' });
+            let resolved = false;
+            ff.on('close', (c) => { if (!resolved) { resolved = true; resolve(c); } });
+            ff.on('error', () => { if (!resolved) { resolved = true; resolve(1); } });
+          });
+          if (gifTrim === 0) {
+            try { const { renameSync } = await import('node:fs'); renameSync(outputPath + '.tmp', outputPath); } catch {}
+          }
+        } catch {}
+      }
+    }
     // Persist the full CLI output on the (now persistent) volume for
     // post-mortem; keep only the tail in the in-memory job error.
     try {
@@ -1029,8 +1063,9 @@ export async function runRender(jobId, jobDir) {
       console.warn(`[worker] failed to persist render.log: ${logErr.message}`);
     }
     if (renderResult.timedOut || renderResult.code !== 0) {
+      const actionName = exportFormat === 'png' ? 'snapshot' : 'render';
       const error = new Error(
-        `Command failed: npx hyperframes render (exit ${renderResult.code}${renderResult.timedOut ? ", worker timeout 600s" : ""})`
+        `Command failed: npx hyperframes ${actionName} (exit ${renderResult.code}${renderResult.timedOut ? ", worker timeout 600s" : ""})`
       );
       error.stdout = renderResult.stdout;
       error.stderr = renderResult.stderr;
@@ -1039,7 +1074,7 @@ export async function runRender(jobId, jobDir) {
     timings.render_ms = Date.now() - timings.render_start;
 
     // Collect results
-    const snapshots = readdirSync(join(jobDir, "snapshots")).filter((f) => f.endsWith(".png"));
+    const snapshots = existsSync(join(jobDir, "snapshots")) ? readdirSync(join(jobDir, "snapshots")).filter((f) => f.endsWith(".png")) : [];
     const mp4Size = existsSync(outputPath) ? readFileSync(outputPath).length : 0;
 
     job.status = "done";
@@ -1059,21 +1094,24 @@ export async function runRender(jobId, jobDir) {
     const signedMp4Url = typeof job.outputs?.mp4_upload_url === "string"
       ? job.outputs.mp4_upload_url
       : "";
+    const contentTypeMap: Record<string, string> = { mp4: "video/mp4", webm: "video/webm", gif: "image/gif", png: "image/png" };
+    const uploadContentType = contentTypeMap[exportFormat] ?? "video/mp4";
+    const uploadStorageKey = `projects/${job.project_id}/renders/${outputName}`;
     if (signedMp4Url) {
-      await uploadToSignedUrl(signedMp4Url, readFileSync(outputPath), "video/mp4");
-      job.output.mp4_url = `projects/${job.project_id}/renders/output.mp4`;
+      await uploadToSignedUrl(signedMp4Url, readFileSync(outputPath), uploadContentType);
+      job.output.mp4_url = uploadStorageKey;
       uploaded.mp4 = true;
     } else if (supabase) {
       const mp4Buf = readFileSync(outputPath);
       const { error } = await supabase.storage
         .from("video-artifacts")
-        .upload(`projects/${job.project_id}/renders/output.mp4`, mp4Buf, {
-          contentType: "video/mp4",
+        .upload(uploadStorageKey, mp4Buf, {
+          contentType: uploadContentType,
           upsert: true,
         });
       if (error) job.upload_error = error.message;
       else {
-        job.output.mp4_url = `projects/${job.project_id}/renders/output.mp4`;
+        job.output.mp4_url = uploadStorageKey;
         uploaded.mp4 = true;
       }
     } else {
