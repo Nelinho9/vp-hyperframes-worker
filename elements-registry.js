@@ -209,6 +209,17 @@ export function deriveElements(html) {
     if (animIn && animIn.toLowerCase() !== "none") entry.animIn = animIn;
     if (animOut && animOut.toLowerCase() !== "none") entry.animOut = animOut;
 
+    // V5-P8B §2.2: keyframes (opcional, só quando há data-kf válido).
+    try {
+      const rawKf = el.getAttribute("data-kf");
+      if (rawKf) {
+        const arr = JSON.parse(rawKf);
+        if (Array.isArray(arr) && arr.length > 0) entry.keyframes = arr;
+      }
+    } catch {
+      /* data-kf malformado → ignorar, o applier deriva limpo */
+    }
+
     const bbox = bboxAtSceneStart(styleAttr);
     if (bbox) entry.bboxAtSceneStart = bbox;
 

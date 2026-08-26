@@ -48,6 +48,7 @@ export const PROP_MAP = {
   muted: { output: "data-muted", kind: "attr", unit: "" },
   fadeIn: { output: "data-fade-in", kind: "attr", unit: "" },
   fadeOut: { output: "data-fade-out", kind: "attr", unit: "" },
+  keyframes: { output: "data-kf", kind: "attr", unit: "" },
 };
 
 /** Serialização canónica — espelhada num teste do frontend (paridade CI). */

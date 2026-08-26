@@ -124,6 +124,7 @@ export function injectPreviewRuntime(html, src) {
 import { PROP_MAP, GEOM_CONSUMPTION, UI_ONLY_PROPS } from "./prop-map.js";
 import { AUDIO_APPLY_SOURCE } from "./audio-presets.js";
 import { ANIM_APPLY_SOURCE } from "./anim-presets.js";
+import { KEYFRAME_APPLY_SOURCE } from "./keyframes-presets.js";
 
 /**
  * The inline helper script body (browser-only, ES5-compatible, no imports).
@@ -229,6 +230,9 @@ export const PREVIEW_HELPER_SCRIPT = `(function () {
       // inspector; o pai guarda-o FORA das props editáveis (nunca persistido).
       var liveSrc = typeof el.getAttribute === 'function' ? el.getAttribute('src') : null;
       if (liveSrc) msg.src = liveSrc;
+      // V5-P8B §2.1: keyframes vivas — inspector/preview mostram o estado real.
+      var kfRaw = typeof el.getAttribute === 'function' ? el.getAttribute('data-kf') : null;
+      if (kfRaw) msg.keyframes = kfRaw;
       // V5-P5C §10.3: props de áudio VIVAS — inspector mostra o estado real.
       if (el.tagName === 'AUDIO') {
         msg.audio = parseAudioAttrs(el);
@@ -373,6 +377,8 @@ export const PREVIEW_HELPER_SCRIPT = `(function () {
   // (children adicionados depois do bind continuam a ser conduzidos pelo
   // runtime) — sem reload do iframe.
   ${ANIM_APPLY_SOURCE}
+  // ── V5-P8B §2.2: keyframes leves — mesma via S09/S23 ─────────────────
+  ${KEYFRAME_APPLY_SOURCE}
   // ── V5-P5C/P5B §10.3: materialização local de volume/fades de áudio ──
   // Fonte partilhada com o bloco persistido (audio-presets.js) — mesma
   // estratégia da S09: hot-swap re-corre o applier na timeline já bindada,
@@ -391,6 +397,15 @@ export const PREVIEW_HELPER_SCRIPT = `(function () {
     for (var i = 0; i < patches.length; i++) {
       var pr = patches[i] && patches[i].property;
       if (pr === 'volume' || pr === 'muted' || pr === 'fadeIn' || pr === 'fadeOut') return true;
+    }
+    return false;
+  }
+
+  // V5-P8B §2.2: lote tocou `keyframes`?
+  function patchTouchesKeyframes(patches) {
+    for (var i = 0; i < patches.length; i++) {
+      var pr2 = patches[i] && patches[i].property;
+      if (pr2 === 'keyframes') return true;
     }
     return false;
   }
@@ -510,7 +525,9 @@ export const PREVIEW_HELPER_SCRIPT = `(function () {
           var entry = PROP_MAP[p.property];
           if (entry && entry.kind === 'attr') {
             // V5-P1A §2.2: animação via atributos data-anim-* (nunca style).
-            el.setAttribute(entry.output, value);
+            // V5-P8B §2.1: keyframes '' apaga o atributo (zero keys → bloco some).
+            if (value === '' && entry.output === 'data-kf') el.removeAttribute(entry.output);
+            else el.setAttribute(entry.output, value);
           } else if (entry && entry.kind === 'decl') {
             var out = (entry.unit && NUMERIC_VALUE_RE.test(value)) ? value + entry.unit : value;
             el.style.setProperty(entry.output, out);
@@ -526,6 +543,10 @@ export const PREVIEW_HELPER_SCRIPT = `(function () {
       // pós-op (clone animado ganha tweens; tweens de nós removidos morrem).
       if (nodeOpTouched || patchTouchesAnim(data.patches)) {
         try { __vpApplyAnimations(); } catch (eAnim) { /* nunca quebrar o preview */ }
+      }
+      // V5-P8B §2.2: lote tocou keyframes (ou node-op) → re-materializar.
+      if (nodeOpTouched || patchTouchesKeyframes(data.patches)) {
+        try { __vpApplyKeyframes(); } catch (eKf) { /* nunca quebrar o preview */ }
       }
       // V5-P5C §10.3: lote tocou áudio → estado vivo imediato + fades.
       var audioTouched = patchTouchesAudio(data.patches);

@@ -37,6 +37,7 @@
 import { parseHTML } from "linkedom";
 import { PROP_MAP, UI_ONLY_PROPS, GEOM_CONSUMPTION, computeGeomDelta } from "./prop-map.js";
 import { collectAnimSpecs, upsertAnimBlock } from "./anim-presets.js";
+import { collectKeyframeSpecs, upsertKeyframeBlock, touchesKeyframeProps } from "./keyframes-presets.js";
 import { touchesAudioProps, upsertAudioBlock } from "./audio-presets.js";
 import {
   TRANSITION_TWEENS,
@@ -195,7 +196,10 @@ export function applyPatchesLinkedom(html, patches) {
       applyGeometryPatch(el, property, value);
     } else if (PROP_MAP[property]?.kind === "attr") {
       // V5-P1A §2.2: transporte de animação como atributo `data-anim-*`.
-      el.setAttribute(PROP_MAP[property].output, value);
+      // V5-P8B §2.1: `keyframes` removido ('' = sem keys) apaga o atributo.
+      const attrOut = PROP_MAP[property].output;
+      if (value === "" && attrOut === "data-kf") el.removeAttribute(attrOut);
+      else el.setAttribute(attrOut, value);
       // V5-P1D §2.3: o lote que toca animação regenera o bloco materializado.
       touchedAnim = true;
     } else if (PROP_MAP[property]?.kind === "decl") {
@@ -219,6 +223,11 @@ export function applyPatchesLinkedom(html, patches) {
     touchedAnim || touchedNode
       ? upsertAnimBlock(document.toString(), collectAnimSpecs(document))
       : document.toString();
+  let touchedKf = false;
+  try {
+    touchedKf = touchesKeyframeProps(patches);
+  } catch {}
+  if (touchedKf || touchedNode) outHtml = upsertKeyframeBlock(outHtml, collectKeyframeSpecs(document));
   if (touchesAudioProps(patches)) outHtml = upsertAudioBlock(outHtml);
   return { html: outHtml, applied, created };
 }
