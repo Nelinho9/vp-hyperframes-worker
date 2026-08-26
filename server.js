@@ -1094,7 +1094,7 @@ export async function runRender(jobId, jobDir) {
     const signedMp4Url = typeof job.outputs?.mp4_upload_url === "string"
       ? job.outputs.mp4_upload_url
       : "";
-    const contentTypeMap: Record<string, string> = { mp4: "video/mp4", webm: "video/webm", gif: "image/gif", png: "image/png" };
+    const contentTypeMap = { mp4: "video/mp4", webm: "video/webm", gif: "image/gif", png: "image/png" };
     const uploadContentType = contentTypeMap[exportFormat] ?? "video/mp4";
     const uploadStorageKey = `projects/${job.project_id}/renders/${outputName}`;
     if (signedMp4Url) {

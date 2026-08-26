@@ -102,10 +102,12 @@ describe('PREVIEW_HELPER_SCRIPT — contrato do protocolo', () => {
     expect(PREVIEW_HELPER_SCRIPT).toContain('bbox');
   });
 
-  it('implementa o recetor hot-swap patch/seek/playpause', () => {
+  it('implementa o recetor hot-swap patch; shim seek/playpause permanece removido (V5-P8C)', () => {
     expect(PREVIEW_HELPER_SCRIPT).toContain("data.action === 'patch'");
-    expect(PREVIEW_HELPER_SCRIPT).toContain("data.action === 'seek'");
-    expect(PREVIEW_HELPER_SCRIPT).toContain("data.action === 'playpause'");
+    // V5-P8C (B11.3): o transporte é exclusivo do runtime nativo desde o P0D;
+    // estas asserções negativas impedem o regresso do shim legacy.
+    expect(PREVIEW_HELPER_SCRIPT).not.toContain("data.action === 'seek'");
+    expect(PREVIEW_HELPER_SCRIPT).not.toContain("data.action === 'playpause'");
     // Patch semantics mirror prop-map.js / patchHtml.ts (V5-P0B).
     expect(PREVIEW_HELPER_SCRIPT).toContain('textContent');
     expect(PREVIEW_HELPER_SCRIPT).toContain("setAttribute('src'");

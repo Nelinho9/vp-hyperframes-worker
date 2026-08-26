@@ -390,7 +390,7 @@ export const PREVIEW_HELPER_SCRIPT = `(function () {
     return false;
   }
 
-  // V5-P8B §2.2: lote tocou `keyframes`?
+  // V5-P8B §2.2: lote tocou keyframes?
   function patchTouchesKeyframes(patches) {
     for (var i = 0; i < patches.length; i++) {
       var pr2 = patches[i] && patches[i].property;
