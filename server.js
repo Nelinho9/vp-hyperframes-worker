@@ -607,7 +607,7 @@ app.post("/restructure/:id", previewCors, (req, res) => {
   const job = resolveJobById(projectId);
   if (!job) return res.status(404).json({ error: "not found" });
 
-  const { scenes, fps, transitions } = req.body ?? {};
+  const { scenes, fps, transitions, replace_scene_html } = req.body ?? {};
   if (!Array.isArray(scenes) || scenes.length === 0) {
     return res.status(400).json({ error: "scenes must be a non-empty array" });
   }
@@ -636,13 +636,30 @@ app.post("/restructure/:id", previewCors, (req, res) => {
     }
   }
 
+  // V5-P4B (S19 §2.1): optional scene content replacement — shape validated
+  // here; structural semantics (no scripts/.clip/roots, target must exist)
+  // live in the engine.
+  if (replace_scene_html !== undefined) {
+    if (
+      !replace_scene_html ||
+      typeof replace_scene_html !== "object" ||
+      Array.isArray(replace_scene_html) ||
+      typeof replace_scene_html.id !== "string" ||
+      typeof replace_scene_html.html !== "string"
+    ) {
+      return res
+        .status(400)
+        .json({ error: "replace_scene_html must be {id, html}" });
+    }
+  }
+
   const indexPath = join(job.job_dir, "index.html");
   if (!existsSync(indexPath)) return res.status(404).json({ error: "index.html not found" });
   const html = readFileSync(indexPath, "utf-8");
 
   let result;
   try {
-    result = applyTimelineRestructure(html, scenes, fps ?? 30, transitions ?? []);
+    result = applyTimelineRestructure(html, scenes, fps ?? 30, transitions ?? [], replace_scene_html ?? null);
   } catch (err) {
     const status = err?.status ?? 500;
     return res.status(status).json({ error: err?.message ?? "restructure failed" });
@@ -667,6 +684,7 @@ app.post("/restructure/:id", previewCors, (req, res) => {
     ok: true,
     applied: result.applied,
     removed: result.removed,
+    replaced: result.replaced ?? null,
     html: result.html,
     findings,
     elements: deriveElements(result.html),

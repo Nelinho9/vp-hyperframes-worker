@@ -380,12 +380,30 @@ function normalizeTransitionsPayload(transitions) {
  *        Boundary transitions keyed by incoming scene id.
  * @returns {{ html: string, applied: number, removed: string[] }}
  */
-export function applyTimelineRestructure(html, scenes, fps = 30, transitions = []) {
+export function applyTimelineRestructure(html, scenes, fps = 30, transitions = [], replaceScene = null) {
   if (!Array.isArray(scenes) || scenes.length === 0) {
     throw Object.assign(new Error("scenes must be a non-empty array"), { status: 400 });
   }
   if (!Number.isFinite(fps) || fps <= 0) {
     throw Object.assign(new Error("fps must be a positive number"), { status: 400 });
+  }
+
+  // V5-P4B (S19 §2.1): optional scene content replacement. The fragment is
+  // probed for structural violations BEFORE any mutation — scenes are owned
+  // by the timeline (B2 invariant) and scripts never enter through this
+  // channel (animations ride the data-anim-* attribute channel instead).
+  let replacedId = null;
+  if (replaceScene !== null && replaceScene !== undefined) {
+    if (
+      !replaceScene ||
+      typeof replaceScene !== "object" ||
+      typeof replaceScene.id !== "string" ||
+      replaceScene.id.length === 0
+    ) {
+      throw Object.assign(new Error("replace_scene_html must be {id, html}"), { status: 400 });
+    }
+    assertReplaceableFragment(replaceScene.html);
+    replacedId = replaceScene.id;
   }
 
   const { document } = parseHTML(html);
@@ -419,6 +437,17 @@ export function applyTimelineRestructure(html, scenes, fps = 30, transitions = [
       throw Object.assign(new Error(`scene ${scene.id} has invalid durationFrames`), { status: 400 });
     }
     entries.push({ el, frames: Math.round(frames) });
+  }
+
+  // V5-P4B (S19 §2.1): swap the target scene's CONTENT — the clip element
+  // itself (id, window attrs, track index, transition attrs) stays untouched,
+  // so timing survives by construction, not by LLM discipline.
+  if (replacedId !== null) {
+    const entry = entries.find((e) => String(e.el.id) === replacedId);
+    if (!entry) {
+      throw Object.assign(new Error(`scene ${replacedId} not found`), { status: 404 });
+    }
+    entry.el.innerHTML = replaceScene.html;
   }
 
   // V5-P2C: stale attributes first — deterministic convergence when a
@@ -468,10 +497,49 @@ export function applyTimelineRestructure(html, scenes, fps = 30, transitions = [
 
   // V5-P2C §2.5: materialize the GSAP crossfade tweens in the persisted HTML
   // (single static block; zero specs → block stripped).
-  const outHtml = upsertTransitionBlock(
+  let outHtml = upsertTransitionBlock(
     document.toString(),
     collectTransitionSpecs(document),
   );
 
-  return { html: outHtml, applied, removed };
+  // V5-P4B (S19 §2.1): after a content swap, refresh the animation block so
+  // the fragment's data-anim-* specs ride the same materialized channel as
+  // inspector presets (V5-P1D). Without a swap the output is byte-identical
+  // to the pre-P4B endpoint.
+  if (replacedId !== null) {
+    outHtml = upsertAnimBlock(outHtml, collectAnimSpecs(document));
+  }
+
+  return { html: outHtml, applied, removed, replaced: replacedId };
+}
+
+/** Cap for a replace_scene_html fragment (defense in depth against abuse). */
+export const SCENE_FRAGMENT_MAX_CHARS = 200_000;
+
+/**
+ * V5-P4B (S19 §2.1): structural probe of a scene-content fragment BEFORE any
+ * mutation. Forbidden: <script> of any kind, .clip elements (scene structure
+ * belongs to the timeline payload — B2 invariant) and nested composition
+ * roots. Empty/oversized fragments are rejected as well.
+ */
+function assertReplaceableFragment(fragment) {
+  if (typeof fragment !== "string" || fragment.trim().length === 0) {
+    throw Object.assign(new Error("replace_scene_html.html must be a non-empty string"), { status: 400 });
+  }
+  if (fragment.length > SCENE_FRAGMENT_MAX_CHARS) {
+    throw Object.assign(
+      new Error(`replace_scene_html.html exceeds ${SCENE_FRAGMENT_MAX_CHARS} chars`),
+      { status: 400 },
+    );
+  }
+  const { document } = parseHTML(`<body>${fragment}</body>`);
+  if (document.querySelector("script")) {
+    throw Object.assign(new Error("scene fragment must not contain script elements"), { status: 400 });
+  }
+  if (document.querySelector(".clip")) {
+    throw Object.assign(new Error("scene fragment must not contain clip elements"), { status: 400 });
+  }
+  if (document.querySelector("[data-composition-id]")) {
+    throw Object.assign(new Error("scene fragment must not contain a composition root"), { status: 400 });
+  }
 }
