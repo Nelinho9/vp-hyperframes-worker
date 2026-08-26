@@ -23,7 +23,7 @@ import { createClient } from "@supabase/supabase-js";
 import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync } from "fs";
 import { join, basename, dirname } from "path";
 import { randomUUID } from "crypto";
-import { pathToFileURL } from "url";
+import { pathToFileURL, fileURLToPath } from "url";
 import { injectPreviewHelper, injectPreviewRuntime } from "./preview-helper.js";
 import { verifyPreviewToken } from "./preview-token.js";
 import { applyPatchesLinkedom, applyTimelineRestructure, normalizeClipWindows } from "./patch-engine.js";
@@ -263,6 +263,44 @@ app.get("/runtime/hyperframes.min.js", runtimeCors, (_req, res) => {
 app.get("/runtime/gsap.min.js", runtimeCors, (_req, res) => {
   if (!runtimeBundles.gsap) return res.status(404).json({ error: "gsap runtime unavailable" });
   res.type("application/javascript").send(runtimeBundles.gsap);
+});
+
+// V5-P5B §2.1: biblioteca BGM curated vendida no container (assets públicos
+// de biblioteca — mesmo regime CORS das rotas /runtime). catalog.json é a
+// mesma tabela partilhada com o passo de áudio (fonte única: o gerador).
+const ROOT_DIR = dirname(fileURLToPath(import.meta.url));
+const BGM_DIR = join(ROOT_DIR, "bgm");
+const bgmCache = new Map();
+function loadBgmAsset(name) {
+  if (bgmCache.has(name)) return { ok: true, data: bgmCache.get(name) };
+  const path = join(BGM_DIR, name);
+  try {
+    const data = readFileSync(path);
+    bgmCache.set(name, data);
+    return { ok: true, data };
+  } catch {
+    return { ok: false };
+  }
+}
+app.options("/bgm/catalog.json", runtimeCors);
+app.options("/bgm/:file", runtimeCors);
+app.get("/bgm/catalog.json", runtimeCors, (_req, res) => {
+  const asset = loadBgmAsset("catalog.json");
+  if (!asset.ok) return res.status(404).json({ error: "bgm catalog unavailable" });
+  res.type("application/json").set("Cache-Control", "public, max-age=300").send(asset.data);
+});
+app.get("/bgm/:file", runtimeCors, (req, res) => {
+  const file = String(req.params.file ?? "");
+  // basename-guard + whitelist de extensão (biblioteca é só mp3).
+  if (!file || file !== basename(file) || !/\.mp3$/i.test(file)) {
+    return res.status(404).json({ error: "invalid bgm file" });
+  }
+  const asset = loadBgmAsset(file);
+  if (!asset.ok) return res.status(404).json({ error: "bgm file not found" });
+  res
+    .type("audio/mpeg")
+    .set("Cache-Control", "public, max-age=86400")
+    .send(asset.data);
 });
 
 // ── Submit job ──────────────────────────────────────────────────────

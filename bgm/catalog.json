@@ -1,0 +1,126 @@
+{
+  "version": 1,
+  "generatedAt": "2026-08-26T08:05:29.547Z",
+  "tracks": [
+    {
+      "id": "sunrise-warmth",
+      "file": "sunrise-warmth.mp3",
+      "title": "Sunrise Warmth",
+      "mood": "warm uplifting hopeful bright",
+      "bpm": 70,
+      "durationSec": 62,
+      "sizeBytes": 744847,
+      "license": "CC0 (generated in-house, no third-party content)"
+    },
+    {
+      "id": "clean-focus",
+      "file": "clean-focus.mp3",
+      "title": "Clean Focus",
+      "mood": "corporate calm focused minimal clean",
+      "bpm": 90,
+      "durationSec": 60,
+      "sizeBytes": 720710,
+      "license": "CC0 (generated in-house, no third-party content)"
+    },
+    {
+      "id": "gentle-momentum",
+      "file": "gentle-momentum.mp3",
+      "title": "Gentle Momentum",
+      "mood": "upbeat light playful friendly",
+      "bpm": 105,
+      "durationSec": 58,
+      "sizeBytes": 696886,
+      "license": "CC0 (generated in-house, no third-party content)"
+    },
+    {
+      "id": "deep-confidence",
+      "file": "deep-confidence.mp3",
+      "title": "Deep Confidence",
+      "mood": "bold powerful deep serious premium",
+      "bpm": 80,
+      "durationSec": 64,
+      "sizeBytes": 768670,
+      "license": "CC0 (generated in-house, no third-party content)"
+    },
+    {
+      "id": "night-drive",
+      "file": "night-drive.mp3",
+      "title": "Night Drive",
+      "mood": "dark mysterious cinematic tense",
+      "bpm": 85,
+      "durationSec": 66,
+      "sizeBytes": 792808,
+      "license": "CC0 (generated in-house, no third-party content)"
+    },
+    {
+      "id": "morning-clarity",
+      "file": "morning-clarity.mp3",
+      "title": "Morning Clarity",
+      "mood": "fresh bright clean airy optimistic",
+      "bpm": 100,
+      "durationSec": 56,
+      "sizeBytes": 672749,
+      "license": "CC0 (generated in-house, no third-party content)"
+    },
+    {
+      "id": "soft-arrival",
+      "file": "soft-arrival.mp3",
+      "title": "Soft Arrival",
+      "mood": "emotional elegant tender romantic soft",
+      "bpm": 65,
+      "durationSec": 68,
+      "sizeBytes": 816945,
+      "license": "CC0 (generated in-house, no third-party content)"
+    },
+    {
+      "id": "steady-build",
+      "file": "steady-build.mp3",
+      "title": "Steady Build",
+      "mood": "energetic driving modern motivational growing",
+      "bpm": 120,
+      "durationSec": 62,
+      "sizeBytes": 744847,
+      "license": "CC0 (generated in-house, no third-party content)"
+    },
+    {
+      "id": "quiet-trust",
+      "file": "quiet-trust.mp3",
+      "title": "Quiet Trust",
+      "mood": "minimal quiet subtle sincere calm",
+      "bpm": 60,
+      "durationSec": 70,
+      "sizeBytes": 840768,
+      "license": "CC0 (generated in-house, no third-party content)"
+    },
+    {
+      "id": "open-horizon",
+      "file": "open-horizon.mp3",
+      "title": "Open Horizon",
+      "mood": "inspiring wide epic adventurous free",
+      "bpm": 75,
+      "durationSec": 72,
+      "sizeBytes": 864906,
+      "license": "CC0 (generated in-house, no third-party content)"
+    },
+    {
+      "id": "city-pulse",
+      "file": "city-pulse.mp3",
+      "title": "City Pulse",
+      "mood": "urban rhythmic modern confident busy",
+      "bpm": 100,
+      "durationSec": 58,
+      "sizeBytes": 696886,
+      "license": "CC0 (generated in-house, no third-party content)"
+    },
+    {
+      "id": "sunset-glow",
+      "file": "sunset-glow.mp3",
+      "title": "Sunset Glow",
+      "mood": "nostalgic warm mellow reflective mellow",
+      "bpm": 68,
+      "durationSec": 64,
+      "sizeBytes": 768670,
+      "license": "CC0 (generated in-house, no third-party content)"
+    }
+  ]
+}

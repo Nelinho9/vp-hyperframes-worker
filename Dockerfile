@@ -59,6 +59,7 @@ COPY --from=deps /app/node_modules ./node_modules
 # com ERR_MODULE_NOT_FOUND e rollback do Coolify). Testes são *.ts, ficam fora.
 COPY package.json *.js ./
 COPY fixtures ./fixtures
+COPY bgm ./bgm
 
 # Guard de build: falha cedo (com mensagem clara) se algum import local do
 # grafo server.js não existir na imagem — antes disto, o crash só aparecia no
