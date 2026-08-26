@@ -357,15 +357,128 @@ function runFfprobe(ffprobePath, filePath, spawnImpl = defaultSpawn) {
       }
       const format = parsed?.format ?? {};
       const videoStream = (parsed?.streams ?? []).find((s) => s.codec_type === "video");
+      const audioStream = (parsed?.streams ?? []).find((s) => s.codec_type === "audio");
       resolve({
         ok: true,
         duration: format.duration ? Number(format.duration) : undefined,
         width: videoStream?.width,
         height: videoStream?.height,
         codec: videoStream?.codec_name,
+        // V5-P5A: audio-stream exposure for the <audio> pre-stage branch.
+        hasAudioStream: Boolean(audioStream),
+        audioCodec: audioStream?.codec_name,
       });
     });
   });
+}
+
+/**
+ * V5-P5A: sniff the audio container from magic bytes (content-type headers
+ * from TTS providers are not always canonical).
+ *
+ * @param {Buffer} buffer
+ * @returns {'mp3' | 'wav' | 'm4a' | null}
+ */
+export function sniffAudioKind(buffer) {
+  if (!Buffer.isBuffer(buffer) || buffer.length < 2) return null;
+  if (buffer.length >= 3 && buffer[0] === 0x49 && buffer[1] === 0x44 && buffer[2] === 0x33) return "mp3"; // "ID3"
+  // MPEG frame sync: first 11 bits set (0xFF Ex/Fx).
+  if (buffer[0] === 0xff && (buffer[1] & 0xe0) === 0xe0) return "mp3";
+  if (
+    buffer.length >= 12 &&
+    buffer.slice(0, 4).toString("ascii") === "RIFF" &&
+    buffer.slice(8, 12).toString("ascii") === "WAVE"
+  ) {
+    return "wav";
+  }
+  // MP4/M4A family: uint32 size + "ftyp" at offset 4. Whether it is really
+  // AUDIO-only is decided by ffprobe (codec_type), not here.
+  if (
+    buffer.length >= 8 &&
+    buffer.slice(4, 8).toString("ascii") === "ftyp"
+  ) {
+    return "m4a";
+  }
+  return null;
+}
+
+/**
+ * V5-P5A: download an external <audio> source and make it render-safe.
+ *
+ * The payload must be a recognized audio container (magic bytes) AND ffprobe
+ * must report an audio stream — anything else (HTML player pages, video-only
+ * payloads, garbage) is rejected early with `not_audio`. Saved with the
+ * CORRECT extension (end of the hardcoded `.mp4` era for voice files).
+ *
+ * @param {string} url
+ * @param {string} assetsDir
+ * @param {string} hash
+ * @param {object} [options]
+ * @param {typeof fetch} [options.fetchImpl]
+ * @param {string} [options.ffprobePath]
+ * @param {number} [options.timeoutMs]
+ * @param {number} [options.maxBytes]
+ * @param {(msg: string) => void} [options.log]
+ * @param {(command: string, args: string[]) => import('child_process').ChildProcess} [options.spawnImpl]
+ * @returns {Promise<{ ok: true, path: string, assetName?: string, kind?: string, duration?: number } | { ok: false, reason: string, detail: string }>}
+ */
+export async function downloadAndValidateAudio(url, assetsDir, hash, {
+  fetchImpl = globalThis.fetch,
+  ffprobePath = "ffprobe",
+  timeoutMs = DEFAULT_MEDIA_TIMEOUT_MS,
+  maxBytes = DEFAULT_MAX_BYTES,
+  log = () => {},
+  spawnImpl = defaultSpawn,
+} = {}) {
+  log(`[media-preloader] downloading audio ${url.slice(0, 120)}...`);
+  const fetched = await fetchMediaBuffer(url, { fetchImpl, timeoutMs, maxBytes });
+  if (!fetched.ok) return fetched;
+  const buffer = fetched.buffer;
+
+  const kind = sniffAudioKind(buffer);
+  if (!kind) {
+    const textHead = buffer.slice(0, 64).toString("utf8").replace(/\s+/g, " ").slice(0, 80);
+    return {
+      ok: false,
+      reason: "not_audio",
+      detail: `response is not a recognized audio container (head: "${textHead}")`,
+    };
+  }
+
+  const extByKind = { mp3: ".mp3", wav: ".wav", m4a: ".m4a" };
+  const assetName = `vp-media-${hash}${extByKind[kind]}`;
+  const destPath = join(assetsDir, assetName);
+
+  const tempPath = `${destPath}.tmp-${randomBytes(4).toString("hex")}`;
+  try {
+    mkdirSync(assetsDir, { recursive: true });
+    writeFileSync(tempPath, buffer);
+
+    // ffprobe validation — MUST contain an audio stream.
+    const probe = await runFfprobe(ffprobePath, tempPath, spawnImpl);
+    if (!probe.ok) {
+      return { ok: false, reason: "ffprobe_failed", detail: probe.error };
+    }
+    if (!probe.hasAudioStream) {
+      return {
+        ok: false,
+        reason: "not_audio",
+        detail: `container ${kind} carries no audio stream${probe.codec ? ` (found: ${probe.codec})` : ""}`,
+      };
+    }
+
+    renameSync(tempPath, destPath);
+    log(`[media-preloader] staged audio ${assetName} (${probe.duration?.toFixed(2) ?? "?"}s)`);
+    return { ok: true, path: destPath, assetName, kind, duration: probe.duration };
+  } catch (err) {
+    return { ok: false, reason: "download_failed", detail: err?.message ?? String(err) };
+  } finally {
+    try {
+      if (existsSync(tempPath)) unlinkSync(tempPath);
+    } catch {
+      // ignore cleanup errors
+    }
+  }
 }
 
 /**
@@ -432,6 +545,21 @@ export async function prestageExternalMedia(html, jobDir, options = {}) {
       const result = await downloadAndValidateImage(originalSrc, assetsDir, hash, options);
       if (result.ok) {
         mapping[originalSrc] = result.dataUri ?? `assets/${result.assetName}`;
+        downloaded.push(originalSrc);
+      } else {
+        failures.push({ url: originalSrc, reason: result.reason, detail: result.detail });
+      }
+      continue;
+    }
+
+    // V5-P5A: <audio> (real TTS voice / BGM) gets container sniffing + an
+    // ffprobe audio-stream requirement and is saved with the CORRECT
+    // extension — the old hardcoded `.mp4` path rejected every mp3/wav with
+    // `not_mp4`, killing the whole job at staging.
+    if (tag === "audio") {
+      const result = await downloadAndValidateAudio(originalSrc, assetsDir, hash, options);
+      if (result.ok) {
+        mapping[originalSrc] = `assets/${result.assetName}`;
         downloaded.push(originalSrc);
       } else {
         failures.push({ url: originalSrc, reason: result.reason, detail: result.detail });

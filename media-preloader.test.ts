@@ -18,8 +18,10 @@ import {
   rewriteHtmlMediaUrls,
   downloadAndValidateMedia,
   downloadAndValidateImage,
-  sniffImageKind,
+  downloadAndValidateAudio,
   prestageExternalMedia,
+  sniffAudioKind,
+  sniffImageKind,
 } from './media-preloader.js';
 
 const VALID_MP4_PREFIX = Buffer.concat([
@@ -447,5 +449,153 @@ describe('prestageExternalMedia', () => {
     if (result.ok) return;
     expect(result.reason).toBe('MEDIA_VALIDATION_FAILED');
     expect(result.failures[0].reason).toBe('not_image');
+  });
+});
+
+// ─── V5-P5A: ramo AUDIO (voz TTS real nas tracks <audio>) ──────────────────
+
+function minimalMp3Buffer() {
+  return Buffer.concat([Buffer.from('ID3', 'ascii'), Buffer.alloc(48, 0x00)]);
+}
+
+function minimalWavBuffer() {
+  return Buffer.concat([
+    Buffer.from('RIFF', 'ascii'),
+    Buffer.alloc(4, 0x00),
+    Buffer.from('WAVEfmt ', 'ascii'),
+    Buffer.alloc(32, 0x00),
+  ]);
+}
+
+function fakeFfprobeAudioStdout(duration = 3.5, codec = 'mp3') {
+  return JSON.stringify({
+    format: { duration: String(duration) },
+    streams: [{ codec_type: 'audio', codec_name: codec }],
+  });
+}
+
+describe('sniffAudioKind', () => {
+  it('reconhece mp3 (ID3 e sync), wav e m4a; desconhecido → null', () => {
+    expect(sniffAudioKind(minimalMp3Buffer())).toBe('mp3');
+    expect(sniffAudioKind(Buffer.from([0xff, 0xfb, 0x90, 0x00]))).toBe('mp3');
+    expect(sniffAudioKind(minimalWavBuffer())).toBe('wav');
+    expect(sniffAudioKind(Buffer.concat([VALID_MP4_PREFIX, Buffer.alloc(16)]))).toBe('m4a');
+    expect(sniffAudioKind(Buffer.from('<!doctype html><html>x</html>'))).toBeNull();
+  });
+});
+
+describe('downloadAndValidateAudio (V5-P5A)', () => {
+  it('mp3 feliz: grava assets/vp-media-{hash}.mp3 e devolve duração probeada', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'vp-audio-'));
+    const fetchImpl = makeFetchImpl(minimalMp3Buffer(), { contentType: 'audio/mpeg' });
+    const spawnImpl = makeSpawnImpl({ stdout: fakeFfprobeAudioStdout(2.75, 'mp3') });
+
+    const result = await downloadAndValidateAudio('https://x.supabase.co/sign/vo-1.mp3?token=t', dir, 'hashvo1', {
+      fetchImpl,
+      spawnImpl,
+      timeoutMs: 5000,
+    });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.kind).toBe('mp3');
+    expect(result.assetName).toBe('vp-media-hashvo1.mp3');
+    expect(result.duration).toBeCloseTo(2.75);
+    expect(readFileSync(join(dir, 'vp-media-hashvo1.mp3')).length).toBeGreaterThan(0);
+  });
+
+  it('wav → extensão .wav; m4a (ftyp com stream só de áudio) → .m4a', async () => {
+    const dirWav = mkdtempSync(join(tmpdir(), 'vp-audio-'));
+    const rWav = await downloadAndValidateAudio('https://x/a', dirWav, 'hashwav', {
+      fetchImpl: makeFetchImpl(minimalWavBuffer(), { contentType: 'audio/wav' }),
+      spawnImpl: makeSpawnImpl({ stdout: fakeFfprobeAudioStdout(1, 'pcm_s16le') }),
+      timeoutMs: 5000,
+    });
+    expect(rWav.ok && rWav.assetName.endsWith('.wav')).toBe(true);
+
+    const dirM4a = mkdtempSync(join(tmpdir(), 'vp-audio-'));
+    const rM4a = await downloadAndValidateAudio('https://x/b', dirM4a, 'hashm4a', {
+      fetchImpl: makeFetchImpl(Buffer.concat([VALID_MP4_PREFIX, Buffer.alloc(16)]), { contentType: 'audio/mp4' }),
+      spawnImpl: makeSpawnImpl({ stdout: fakeFfprobeAudioStdout(1.5, 'aac') }),
+      timeoutMs: 5000,
+    });
+    expect(rM4a.ok && rM4a.assetName.endsWith('.m4a')).toBe(true);
+  });
+
+  it('payload HTML → not_audio sem gravar ficheiro', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'vp-audio-'));
+    const result = await downloadAndValidateAudio('https://x/player', dir, 'hashhtml', {
+      fetchImpl: makeFetchImpl(Buffer.from('<!doctype html><html>player</html>'), { contentType: 'text/html' }),
+      spawnImpl: makeSpawnImpl({ stdout: fakeFfprobeAudioStdout() }),
+      timeoutMs: 5000,
+    });
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.reason).toBe('not_audio');
+  });
+
+  it('ffprobe SEM stream de áudio (vídeo puro numa tag audio) → not_audio', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'vp-audio-'));
+    const result = await downloadAndValidateAudio('https://x/video-named-mp3', dir, 'hashv', {
+      fetchImpl: makeFetchImpl(minimalMp3Buffer(), { contentType: 'audio/mpeg' }),
+      spawnImpl: makeSpawnImpl({ stdout: fakeFfprobeStdout() }), // streams só video
+      timeoutMs: 5000,
+    });
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.reason).toBe('not_audio');
+  });
+});
+
+describe('prestageExternalMedia × <audio> (V5-P5A)', () => {
+  it('pré-estageia a voz assinada e reescreve o src para o asset local', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'vp-media-'));
+    const url = 'https://qwerty.supabase.co/storage/v1/object/sign/video-artifacts/p/audio/vo-1.mp3?token=abc';
+    const fetchImpl = vi.fn().mockResolvedValue(makeResponse(minimalMp3Buffer(), { contentType: 'audio/mpeg' }));
+    const spawnImpl = makeSpawnImpl({ stdout: fakeFfprobeAudioStdout() });
+
+    const html = `<div data-composition-id="main"><audio id="scene-1-voice-1" src="${url}" data-track="vo" data-track-index="8" data-start="0" data-duration="3" preload="auto"></audio></div>`;
+    const result = await prestageExternalMedia(html, dir, { fetchImpl, spawnImpl });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.downloaded).toEqual([url]);
+    expect(result.html).toContain('src="assets/vp-media-');
+    expect(result.html).toMatch(/vp-media-[0-9a-f]+\.mp3/);
+    expect(result.html).not.toContain(url);
+    expect(result.html).toContain('data-track="vo"');
+  });
+
+  it('payload não-áudio numa tag <audio> falha o staging com not_audio', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'vp-media-'));
+    const fetchImpl = vi.fn().mockResolvedValue(
+      makeResponse(Buffer.from('<!doctype html><html>player</html>'), { status: 200, contentType: 'text/html' })
+    );
+
+    const result = await prestageExternalMedia(
+      '<audio id="scene-1-voice-1" src="https://cdn.example.com/vo-1.mp3"></audio>',
+      dir,
+      { fetchImpl }
+    );
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.reason).toBe('MEDIA_VALIDATION_FAILED');
+    expect(result.failures[0].reason).toBe('not_audio');
+  });
+
+  it('regressão: <video> continua a exigir MP4 (ramo áudio não vaza para vídeo)', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'vp-media-'));
+    // mp3 servido numa tag video → magic check do ramo mp4 reprova.
+    const fetchImpl = vi.fn().mockResolvedValue(makeResponse(minimalMp3Buffer(), { contentType: 'audio/mpeg' }));
+
+    const result = await prestageExternalMedia(
+      '<video id="v1" src="https://cdn.example.com/intro.mp4"></video>',
+      dir,
+      { fetchImpl }
+    );
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.failures[0].reason).toBe('not_mp4');
   });
 });
