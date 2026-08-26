@@ -41,6 +41,7 @@ import { prestageExternalMedia } from "./media-preloader.js";
 import { compositionStoragePath, persistCompositionArtifact } from "./composition-persist.js";
 import { captureThumbnails, computeArtifactHash } from "./thumbnails.js";
 import { deriveElements, persistElementsArtifact } from "./elements-registry.js";
+import { persistRenderSnapshots } from "./snapshots-upload.js";
 
 const app = express();
 app.use(express.json({ limit: "200mb" }));
@@ -1089,6 +1090,19 @@ export async function runRender(jobId, jobDir) {
     // orquestrador para o manifesto provar a existência do artefacto.
     if (job.elementsUploadPromise) {
       uploaded.composition_elements = await job.elementsUploadPromise;
+    }
+
+    // V5-P6A: snapshots do render final publicados para o quality gate
+    // (projects/{id}/snapshots/frame-N.png, upsert). Nunca fatal — falha
+    // apenas deixa o gate responder NO_SNAPSHOTS (retryable).
+    if (supabase) {
+      try {
+        const published = await persistRenderSnapshots(supabase, job.project_id, jobDir, console.log);
+        uploaded.snapshots = published > 0;
+      } catch (snapErr) {
+        console.warn(`[worker] snapshot upload failed for ${job.project_id}: ${snapErr?.message ?? snapErr}`);
+        uploaded.snapshots = false;
+      }
     }
 
     // Callback to orchestrator (V4-1 contract)
