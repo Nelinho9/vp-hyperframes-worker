@@ -23,7 +23,7 @@ import {
 
 /** String-canónica do contrato — IDÊNTICA à copia no frontend. */
 const CANONICAL_JSON =
-  '{"font":{"output":"font-family","kind":"decl","unit":""},"size":{"output":"font-size","kind":"decl","unit":"px"},"weight":{"output":"font-weight","kind":"decl","unit":""},"color":{"output":"color","kind":"decl","unit":""},"opacity":{"output":"opacity","kind":"decl","unit":""},"x":{"output":"--el-x","kind":"geom","unit":"px"},"y":{"output":"--el-y","kind":"geom","unit":"px"},"width":{"output":"--el-w","kind":"geom","unit":"px"},"height":{"output":"--el-h","kind":"geom","unit":"px"},"rotation":{"output":"--el-rotate","kind":"geom","unit":"deg"},"align":{"output":"text-align","kind":"decl","unit":""},"letterSpacing":{"output":"letter-spacing","kind":"decl","unit":"px"},"lineHeight":{"output":"line-height","kind":"decl","unit":""},"z":{"output":"z-index","kind":"decl","unit":""},"fit":{"output":"object-fit","kind":"decl","unit":""},"radius":{"output":"border-radius","kind":"decl","unit":"px"},"borderWidth":{"output":"border-width","kind":"decl","unit":"px"},"borderColor":{"output":"border-color","kind":"decl","unit":""},"animIn":{"output":"data-anim-in","kind":"attr","unit":""},"animOut":{"output":"data-anim-out","kind":"attr","unit":""},"animDurMs":{"output":"data-anim-dur-ms","kind":"attr","unit":""},"animDelayMs":{"output":"data-anim-delay-ms","kind":"attr","unit":""}}';
+  '{"font":{"output":"font-family","kind":"decl","unit":""},"size":{"output":"font-size","kind":"decl","unit":"px"},"weight":{"output":"font-weight","kind":"decl","unit":""},"color":{"output":"color","kind":"decl","unit":""},"opacity":{"output":"opacity","kind":"decl","unit":""},"x":{"output":"--el-x","kind":"geom","unit":"px"},"y":{"output":"--el-y","kind":"geom","unit":"px"},"width":{"output":"--el-w","kind":"geom","unit":"px"},"height":{"output":"--el-h","kind":"geom","unit":"px"},"rotation":{"output":"--el-rotate","kind":"geom","unit":"deg"},"align":{"output":"text-align","kind":"decl","unit":""},"letterSpacing":{"output":"letter-spacing","kind":"decl","unit":"px"},"lineHeight":{"output":"line-height","kind":"decl","unit":""},"z":{"output":"z-index","kind":"decl","unit":""},"fit":{"output":"object-fit","kind":"decl","unit":""},"radius":{"output":"border-radius","kind":"decl","unit":"px"},"borderWidth":{"output":"border-width","kind":"decl","unit":"px"},"borderColor":{"output":"border-color","kind":"decl","unit":""},"animIn":{"output":"data-anim-in","kind":"attr","unit":""},"animOut":{"output":"data-anim-out","kind":"attr","unit":""},"animDurMs":{"output":"data-anim-dur-ms","kind":"attr","unit":""},"animDelayMs":{"output":"data-anim-delay-ms","kind":"attr","unit":""},"volume":{"output":"data-volume","kind":"attr","unit":""},"muted":{"output":"data-muted","kind":"attr","unit":""},"fadeIn":{"output":"data-fade-in","kind":"attr","unit":""},"fadeOut":{"output":"data-fade-out","kind":"attr","unit":""}}';
 
 describe('PROP_MAP — contrato partilhado V5-P0B (espelho do worker)', () => {
   it('coincide byte-a-byte com o contrato cross-repo', () => {
@@ -84,13 +84,24 @@ describe('PROP_MAP — extensão V5-P1A (espelho do worker)', () => {
   });
 
   it('UI_ONLY_PROPS lista as flags sem efeito render (aceitação P1 #4)', () => {
-    for (const prop of [
-      'autoAspect', 'volume', 'muted', 'fadeIn', 'fadeOut',
-      'ducking', 'trimStart', 'trimEnd', 'speed',
-    ]) {
+    for (const prop of ['autoAspect', 'ducking', 'trimStart', 'trimEnd', 'speed']) {
       expect(UI_ONLY_PROPS.has(prop)).toBe(true);
       expect(PROP_MAP[prop]).toBeUndefined();
     }
     expect(UI_ONLY_PROPS.has('opacity')).toBe(false);
+  });
+
+  it('V5-P5C §10.3: volume/muted/fades são canal attr REAL (saíram de UI_ONLY)', () => {
+    const expected: Array<[string, string]> = [
+      ['volume', 'data-volume'],
+      ['muted', 'data-muted'],
+      ['fadeIn', 'data-fade-in'],
+      ['fadeOut', 'data-fade-out'],
+    ];
+    for (const [key, output] of expected) {
+      expect(PROP_MAP[key]).toEqual({ output, kind: 'attr', unit: '' });
+      expect(UI_ONLY_PROPS.has(key)).toBe(false);
+    }
+    expect(UI_ONLY_PROPS.has('ducking')).toBe(true);
   });
 });

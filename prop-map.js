@@ -42,23 +42,25 @@ export const PROP_MAP = {
   animOut: { output: "data-anim-out", kind: "attr", unit: "" },
   animDurMs: { output: "data-anim-dur-ms", kind: "attr", unit: "" },
   animDelayMs: { output: "data-anim-delay-ms", kind: "attr", unit: "" },
+  // V5-P5C (§10.3): áudio funcional — materialização em tweens é o bloco
+  // __vp-audio-materialized__ (P5B/S23).
+  volume: { output: "data-volume", kind: "attr", unit: "" },
+  muted: { output: "data-muted", kind: "attr", unit: "" },
+  fadeIn: { output: "data-fade-in", kind: "attr", unit: "" },
+  fadeOut: { output: "data-fade-out", kind: "attr", unit: "" },
 };
 
 /** Serialização canónica — espelhada num teste do frontend (paridade CI). */
 export const PROP_MAP_CANONICAL_JSON = JSON.stringify(PROP_MAP);
 
 /**
- * V5-P1A (aceitação P1 #4): props do modelo SEM efeito render (flags de UI e
- * propriedades áudio/vídeo desabilitadas até P5). Os motores reconhecem-nas e
- * saltam-nas — nunca viram CSS.
+ * V5-P1A (aceitação P1 #4) / V5-P5C: flags sem efeito render que os motores
+ * FILTRAM. Áudio (volume/muted/fades) saiu daqui na P5C (canal attr real);
+ * `ducking` fino permanece UI-only até P8.
  * @type {ReadonlySet<string>}
  */
 export const UI_ONLY_PROPS = new Set([
   "autoAspect",
-  "volume",
-  "muted",
-  "fadeIn",
-  "fadeOut",
   "ducking",
   "trimStart",
   "trimEnd",

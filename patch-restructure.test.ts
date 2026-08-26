@@ -330,8 +330,11 @@ describe('POST /patch/:id — modelo expandido V5-P1A (§6.1)', () => {
       '/patch/proj-p1a-3',
       {
         patches: [
+          // V5-P5C: volume/muted/fades saíram de UI_ONLY (canal attr real,
+          // coberto por audio-presets.test.ts) — o lote UI-only fica com as
+          // flags restantes.
           { selector: '#img-hero', property: 'autoAspect', value: 'true' },
-          { selector: '#scene-1', property: 'volume', value: '0.8' },
+          { selector: '#scene-1', property: 'ducking', value: 'true' },
           { selector: '#scene-1', property: 'trimStart', value: '10' },
           { selector: '#scene-2', property: 'speed', value: '1.5' },
         ],

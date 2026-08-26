@@ -122,6 +122,7 @@ export function injectPreviewRuntime(html, src) {
  * the cross-repo parity contract). V5-P1A adds UI_ONLY_PROPS (filtered).
  */
 import { PROP_MAP, GEOM_CONSUMPTION, UI_ONLY_PROPS } from "./prop-map.js";
+import { AUDIO_APPLY_SOURCE } from "./audio-presets.js";
 import { ANIM_APPLY_SOURCE } from "./anim-presets.js";
 
 /**
@@ -228,6 +229,10 @@ export const PREVIEW_HELPER_SCRIPT = `(function () {
       // inspector; o pai guarda-o FORA das props editáveis (nunca persistido).
       var liveSrc = typeof el.getAttribute === 'function' ? el.getAttribute('src') : null;
       if (liveSrc) msg.src = liveSrc;
+      // V5-P5C §10.3: props de áudio VIVAS — inspector mostra o estado real.
+      if (el.tagName === 'AUDIO') {
+        msg.audio = parseAudioAttrs(el);
+      }
       parent.postMessage(msg, '*');
     } catch (e) { /* never break the preview */ }
   }, true);
@@ -252,7 +257,7 @@ export const PREVIEW_HELPER_SCRIPT = `(function () {
     var m = s.match(/^scene-\\d+-([a-z]+)-\\d+(?:-copy-\\d+)*$/);
     var tok = m ? m[1] : String(s.split('-')[0] || '').toLowerCase();
     if (tok === 'img' || tok === 'image') return 'image';
-    if (tok === 'audio' || tok === 'voice' || tok === 'music' || tok === 'sfx') return 'audio';
+    if (tok === 'audio' || tok === 'voice' || tok === 'music' || tok === 'sfx' || tok === 'bgm') return 'audio';
     if (tok === 'video' || tok === 'footage') return 'video';
     return 'text';
   }
@@ -368,12 +373,53 @@ export const PREVIEW_HELPER_SCRIPT = `(function () {
   // (children adicionados depois do bind continuam a ser conduzidos pelo
   // runtime) — sem reload do iframe.
   ${ANIM_APPLY_SOURCE}
+  // ── V5-P5C/P5B §10.3: materialização local de volume/fades de áudio ──
+  // Fonte partilhada com o bloco persistido (audio-presets.js) — mesma
+  // estratégia da S09: hot-swap re-corre o applier na timeline já bindada,
+  // sem reload do iframe.
+  ${AUDIO_APPLY_SOURCE}
   function patchTouchesAnim(patches) {
     for (var i = 0; i < patches.length; i++) {
       var p = patches[i];
       if (p && /^(animIn|animOut|animDurMs|animDelayMs)$/.test(String(p.property))) return true;
     }
     return false;
+  }
+
+  // V5-P5C §10.3: lote tocou props de áudio (volume/muted/fadeIn/fadeOut)?
+  function patchTouchesAudio(patches) {
+    for (var i = 0; i < patches.length; i++) {
+      var pr = patches[i] && patches[i].property;
+      if (pr === 'volume' || pr === 'muted' || pr === 'fadeIn' || pr === 'fadeOut') return true;
+    }
+    return false;
+  }
+
+  // V5-P5C: estado vivo IMEDIATO (volume/mute audíveis sem esperar seek;
+  // os fades ficam a cargo do applier acima).
+  function applyLiveAudioState() {
+    try {
+      var nodes = document.querySelectorAll('audio[data-volume],audio[data-muted]');
+      Array.prototype.forEach.call(nodes, function (el) {
+        var v = parseFloat(el.getAttribute('data-volume'));
+        if (isFinite(v)) el.volume = Math.max(0, Math.min(1, v));
+        el.muted = el.getAttribute('data-muted') === 'true';
+      });
+    } catch (e) { /* never break the preview */ }
+  }
+
+  // V5-P5C: props de áudio VIVAS para o envelope select (o inspector mostra
+  // o estado real das tracks injetadas, não defaults).
+  function parseAudioAttrs(el) {
+    var out = {};
+    var v = parseFloat(el.getAttribute('data-volume'));
+    if (isFinite(v)) out.volume = v;
+    out.muted = el.getAttribute('data-muted') === 'true';
+    var fi = parseFloat(el.getAttribute('data-fade-in'));
+    if (isFinite(fi)) out.fadeIn = fi;
+    var fo = parseFloat(el.getAttribute('data-fade-out'));
+    if (isFinite(fo)) out.fadeOut = fo;
+    return out;
   }
 
   // ── V5-P1E §6.5: operações de nó no recetor patch ─────────────────────
@@ -480,6 +526,12 @@ export const PREVIEW_HELPER_SCRIPT = `(function () {
       // pós-op (clone animado ganha tweens; tweens de nós removidos morrem).
       if (nodeOpTouched || patchTouchesAnim(data.patches)) {
         try { __vpApplyAnimations(); } catch (eAnim) { /* nunca quebrar o preview */ }
+      }
+      // V5-P5C §10.3: lote tocou áudio → estado vivo imediato + fades.
+      var audioTouched = patchTouchesAudio(data.patches);
+      if (audioTouched) {
+        try { applyLiveAudioState(); } catch (eAudio1) { /* nunca quebrar o preview */ }
+        try { __vpApplyAudioProps(); } catch (eAudio2) { /* nunca quebrar o preview */ }
       }
     } else if (data.action === 'seek') {
       // V4-04A: legacy channel — forward through the runtime bridge envelope.

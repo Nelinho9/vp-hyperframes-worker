@@ -37,6 +37,7 @@
 import { parseHTML } from "linkedom";
 import { PROP_MAP, UI_ONLY_PROPS, GEOM_CONSUMPTION, computeGeomDelta } from "./prop-map.js";
 import { collectAnimSpecs, upsertAnimBlock } from "./anim-presets.js";
+import { touchesAudioProps, upsertAudioBlock } from "./audio-presets.js";
 import {
   TRANSITION_TWEENS,
   parseTransitionAttr,
@@ -212,10 +213,13 @@ export function applyPatchesLinkedom(html, patches) {
   // (determinístico → convergência byte-exata; zero specs remove o bloco).
   // Lotes com ops de nó TAMBÉM regeneram: specs derivadas do DOM pós-op
   // (clone de elemento animado ganha spec; specs de nós removidos somem).
-  const outHtml =
+  // V5-P5C §10.3: lotes que tocam props de áudio (volume/muted/fades) também
+  // regeneram o bloco `__vp-audio-materialized__` (tweens de volume/fades).
+  let outHtml =
     touchedAnim || touchedNode
       ? upsertAnimBlock(document.toString(), collectAnimSpecs(document))
       : document.toString();
+  if (touchesAudioProps(patches)) outHtml = upsertAudioBlock(outHtml);
   return { html: outHtml, applied, created };
 }
 
