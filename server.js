@@ -50,7 +50,7 @@ app.use(express.json({ limit: "200mb" }));
 const PORT = process.env.PORT || 8787;
 const WORK_DIR = process.env.WORK_DIR || "/tmp/hyperframes-worker";
 const SUPABASE_URL = process.env.SUPABASE_URL || "";
-const SUPABASE_KEY = process.env.SUPABASE_KEY || "";
+const SUPABASE_KEY = process.env.SUPABASE_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_ANON_KEY || "";
 const CHROME_PATH = process.env.CHROME_PATH || "/usr/bin/chromium";
 // V4-3g.5 (R5): quando definido, GET /preview/:id exige ?token= HMAC válido
 // (mesmo segredo que VIDEO_V4_PREVIEW_SECRET no orchestrator edge).
@@ -995,10 +995,18 @@ export async function runRender(jobId, jobDir) {
 
     // Step 3: snapshot
     timings.snapshot_start = Date.now();
-    execSync(
-      `npx hyperframes snapshot --frames 5 "${jobDir}"`,
-      { encoding: "utf-8", timeout: 60000, env: { ...process.env, CHROME_PATH } }
-    );
+    try {
+      const snapCmd = process.env.HYPERFRAMES_BIN || "npx";
+      const snapArgs = process.env.HYPERFRAMES_BIN
+        ? ["snapshot", "--frames", "5", jobDir]
+        : ["hyperframes", "snapshot", "--frames", "5", jobDir];
+      await spawnCommand(snapCmd, snapArgs, {
+        timeout: 60000,
+        env: { ...process.env, CHROME_PATH, PRODUCER_LOW_MEMORY_MODE: "true" },
+      });
+    } catch (snapErr) {
+      console.warn(`[worker] snapshot generation warning: ${snapErr?.message ?? snapErr}`);
+    }
     timings.snapshot_ms = Date.now() - timings.snapshot_start;
 
     // Step 4: render
