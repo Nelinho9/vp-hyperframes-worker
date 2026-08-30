@@ -182,6 +182,31 @@ export function extractGoogleFontSpecs(html) {
   return specs;
 }
 
+const GENERIC_FONTS = new Set([
+  'serif', 'sans-serif', 'monospace', 'cursive', 'fantasy', 'system-ui',
+  'ui-sans-serif', 'ui-serif', 'ui-monospace', 'ui-rounded', 'emoji', 'math',
+  'fangsong', 'inherit', 'initial', 'unset', 'revert',
+  'arial', 'helvetica', 'times new roman', 'georgia', 'courier new',
+  'verdana', 'trebuchet ms', 'tahoma', 'impact', 'roboto',
+  '-apple-system', 'segoe ui', 'blinkmacsystemfont',
+]);
+
+/** Extract all non-generic font families referenced directly in CSS or style attributes. */
+export function extractCssFontFamilies(html) {
+  if (typeof html !== "string") return [];
+  const families = new Set();
+  const declRe = /font-family\s*:\s*([^;"}<]+)/gi;
+  for (const match of html.matchAll(declRe)) {
+    for (const part of match[1].split(',')) {
+      const name = part.trim().replace(/^["']+|["']+$/g, '');
+      if (name && !GENERIC_FONTS.has(name.toLowerCase())) {
+        families.add(name);
+      }
+    }
+  }
+  return [...families];
+}
+
 /** Lint-satisfying fallback: @font-face with local() sources only. */
 export function localFontFaceStyle(families) {
   const list = Array.isArray(families) ? families.filter(Boolean) : [];
@@ -261,10 +286,15 @@ export async function prepareOfflineFonts(html, {
   timeoutMs = 8000,
   log = () => {},
 } = {}) {
-  const families = extractGoogleFontFamilies(html);
-  if (families.length === 0) return { style: "", families };
+  const googleFamilies = extractGoogleFontFamilies(html);
+  const cssFamilies = extractCssFontFamilies(html);
+  const families = [...new Set([...googleFamilies, ...cssFamilies])];
+  if (families.length === 0) return { style: "", families: [] };
 
   const specs = extractGoogleFontSpecs(html);
+  if (specs.length === 0) {
+    return { style: localFontFaceStyle(families), families };
+  }
   const ua = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36";
   const faces = [];
   const assetsDir = join(jobDir, "assets");
