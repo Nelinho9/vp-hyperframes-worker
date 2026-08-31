@@ -15,6 +15,9 @@
  *   POST /restructure/:id         — rewrite the timeline from editor scenes
  *                                   (durations/starts/removals, V4-04C)
  *   GET  /preview/:id             — serve hyperframes preview for a project
+ *   POST /supervise               — regista um projeto no supervisor durável da
+ *                                   pipeline V4 (V5.14 F7; auth worker-secret)
+ *   GET  /supervision             — projetos supervisionados (diagnóstico de deploy)
  */
 
 import express from "express";
@@ -42,6 +45,12 @@ import { compositionStoragePath, persistCompositionArtifact } from "./compositio
 import { captureThumbnails, computeArtifactHash } from "./thumbnails.js";
 import { deriveElements, persistElementsArtifact } from "./elements-registry.js";
 import { persistRenderSnapshots } from "./snapshots-upload.js";
+import {
+  createSupervisionRegistry,
+  normalizeDriver,
+  startSupervision,
+  supervisorEnabled,
+} from "./pipeline-runner.js";
 
 const app = express();
 app.use(express.json({ limit: "200mb" }));
@@ -65,6 +74,44 @@ const runtimeBundles = loadVendoredRuntimeBundles();
 const supabase = SUPABASE_URL && SUPABASE_KEY
   ? createClient(SUPABASE_URL, SUPABASE_KEY)
   : null;
+
+// ── V5.14 F7: supervisor durável da pipeline V4 ─────────────────────
+// As edge functions têm teto de wall-clock; este contentor não. Ao ser
+// registado pelo orquestrador (`POST /supervise`), o projeto passa a ser
+// "pressionado" a cada 15-60s até o orquestrador dizer que não há nada a fazer
+// — o worker NÃO interpreta o manifesto, só obedece ao `action` do /status
+// (invariante P13). Falhar isto nunca custa a pipeline: o self-chain edge e o
+// watchdog pg_cron (1min) continuam a fazer o seu trabalho.
+export const supervision = createSupervisionRegistry();
+
+// Ritmo de polling (teste/ajuste operacional; default = plano §3 F7).
+const SUPERVISOR_TICK_MS = Number(process.env.PIPELINE_SUPERVISOR_TICK_MS) || 15_000;
+
+/**
+ * Regista um projeto para supervisão.
+ *
+ * @param {string} projectId
+ * @param {{ driver?: object } | null} body corpo do /supervise (contrato do
+ *   orquestrador); `null` ⇒ deriva de SUPABASE_URL + WORKER_SECRET (boot).
+ * @returns {{ supervised: boolean, reason?: string, status?: number }}
+ */
+export function superviseProject(projectId, body) {
+  if (!supervisorEnabled(process.env)) return { supervised: false, reason: "disabled" };
+  const resolved = normalizeDriver(body, process.env, projectId);
+  if (!resolved.ok) return { supervised: false, reason: resolved.error, status: 400 };
+  const started = startSupervision(
+    supervision,
+    {
+      fetchImpl: (url, init) => fetch(url, init),
+      sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+      log: (msg) => console.log(msg),
+    },
+    projectId,
+    resolved.driver,
+    { tickMs: SUPERVISOR_TICK_MS },
+  );
+  return started.started ? { supervised: true } : { supervised: false, reason: started.reason };
+}
 
 // ─ In-memory job store (prototype; use DB in production) ───────────
 const jobs = new Map();
@@ -121,6 +168,21 @@ export function rehydrateJobs() {
     projectJobs.set(marker.project_id, marker.job_id);
   }
   if (found.length) console.log(`[worker] rehydrated ${found.length} job(s) from ${WORK_DIR}`);
+
+  // V5.14 F7: um contentor que reinicia a meio de um render perde o callback — o
+  // projeto ficaria pendurado até ao watchdog. Re-registrar a supervisão dos
+  // renders recentes fecha esse buraco. Só markers dentro do teto de vida do
+  // job (25min): um render mais velho já foi tratado pela retoma do orquestrador,
+  // e um projeto já terminado sai logo no primeiro tick (`action: idle`).
+  const SUPERVISE_REHYDRATE_MAX_AGE_MS = 25 * 60 * 1000;
+  for (const [projectId, jobId] of projectJobs) {
+    const job = jobs.get(jobId);
+    if (!job || job.step === "preview") continue;
+    const created = Date.parse(job.created_at ?? "");
+    if (Number.isNaN(created) || Date.now() - created > SUPERVISE_REHYDRATE_MAX_AGE_MS) continue;
+    const out = superviseProject(projectId, null);
+    if (out.supervised) console.log(`[worker] supervisão re-registrada no boot para ${projectId}`);
+  }
 }
 
 rehydrateJobs();
@@ -556,6 +618,35 @@ app.get("/job/:id/status", (req, res) => {
   const job = jobs.get(req.params.id);
   if (!job) return res.status(404).json({ error: "not found" });
   res.json(job);
+});
+
+// ── V5.14 F7: supervisão da pipeline ──────────────────────────────
+// Auth: mesmo padrão das rotas de escrita server-to-server (WORKER_SECRET, que
+// é o VIDEO_V4_CALLBACK_SECRET do orquestrador). O /supervise não tem segredos
+// próprios: o contrato (rotas da edge + secret) chega no corpo, porque o worker
+// é burro também na configuração.
+function authorizedWorkerService(req) {
+  if (!WORKER_SECRET) return { ok: false, status: 503, error: "auth_not_configured" };
+  if ((req.get("x-worker-secret") || "") !== WORKER_SECRET) return { ok: false, status: 401, error: "invalid_secret" };
+  return { ok: true };
+}
+
+app.post("/supervise", (req, res) => {
+  const auth = authorizedWorkerService(req);
+  if (!auth.ok) return res.status(auth.status).json({ error: auth.error });
+  const projectId = req.body?.project_id;
+  if (!projectId) return res.status(400).json({ error: "project_id required" });
+  const out = superviseProject(projectId, req.body);
+  // 400 só por contrato inválido: um corpo sem URLs/secret não pode arrancar
+  // um loop cego (e o orquestrador fica com a pista no log do pedido).
+  if (out.status) return res.status(out.status).json({ error: out.reason });
+  res.status(202).json(out);
+});
+
+app.get("/supervision", (req, res) => {
+  const auth = authorizedWorkerService(req);
+  if (!auth.ok) return res.status(auth.status).json({ error: auth.error });
+  res.json({ projects: supervision.list(), tick_ms: SUPERVISOR_TICK_MS, enabled: supervisorEnabled(process.env) });
 });
 
 // ── V4-04C: project-scoped write endpoints (patch / restructure) ────
