@@ -57,8 +57,16 @@ describe('persistCompositionArtifact', () => {
 
   it('erro do storage devolve false sem lançar (fire-and-forget)', async () => {
     const calls: Array<Record<string, unknown>> = [];
+    const failures: string[] = [];
     await expect(
-      persistCompositionArtifact(makeClient({ message: 'Object not found' }, calls), UUID, HTML),
+      persistCompositionArtifact(
+        makeClient({ message: 'new row violates row-level security policy' }, calls),
+        UUID,
+        HTML,
+        () => {},
+        (message) => failures.push(message),
+      ),
     ).resolves.toBe(false);
+    expect(failures).toEqual(['new row violates row-level security policy']);
   });
 });

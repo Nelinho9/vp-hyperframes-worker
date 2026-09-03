@@ -841,7 +841,7 @@ describe('POST /restructure/:id — V5-P0C frame-exact quantization', () => {
     expect(b).toBe(a);
   });
 
-  it('normalization at staging repairs authored overlaps/gaps onto the grid', async () => {
+  it('normalization preserves every authored window when it detects a declared gap', async () => {
     const BAD_HTML = `<!doctype html>
 <html><head><title>t</title></head>
 <body>
@@ -860,20 +860,57 @@ describe('POST /restructure/:id — V5-P0C frame-exact quantization', () => {
 
     const preview = await fetch(`${base}/preview/proj-p0c-stage`);
     const html = await preview.text();
-    // Contiguous integer-second grid: overlap/gap eliminated.
+    // A real declared gap switches the whole root composition to preservation
+    // mode; even the earlier overlap remains authored rather than being
+    // silently collapsed.
     const wins = extractWindows(html);
-    expect(wins.map((w) => w.start)).toEqual([0, 6, 12]);
-    expect(lintClipWindows(html)).toEqual([]);
+    expect(wins.map((w) => w.start)).toEqual([0, 5.9, 13.5]);
+    expect(lintClipWindows(html).some((finding) => finding.code === 'clip_window_gap')).toBe(true);
+    const status = await fetch(`${base}/job/job-p0c-stage/status`);
+    const statusBody = (await status.json()) as { window_normalization_warning: { code: string; next_id: string } };
+    expect(statusBody.window_normalization_warning).toMatchObject({
+      code: 'CLIP_WINDOWS_NON_CONTIGUOUS',
+      next_id: 'scene-3',
+    });
 
-    // Unit-level: the normalizer reports what it changed.
+    // Unit-level: no window is rewritten and the first gap is actionable.
     const norm = normalizeClipWindows(BAD_HTML, 30);
-    expect(norm.adjusted.map((a) => a.id)).toEqual(['scene-2', 'scene-3']);
-    expect(norm.adjusted[0].from.start).toBe('5.9');
-    expect(norm.adjusted[0].to.start).toBe('6');
-    // Idempotent on clean input.
-    const twice = normalizeClipWindows(norm.html, 30);
-    expect(twice.adjusted).toEqual([]);
-    expect(twice.html).toBe(norm.html);
+    expect(norm.adjusted).toEqual([]);
+    expect(norm.warning).toMatchObject({
+      code: 'CLIP_WINDOWS_NON_CONTIGUOUS',
+      previous_id: 'scene-2',
+      next_id: 'scene-3',
+      declared_start: 13.5,
+      expected_start: 12,
+    });
+  });
+
+  it('normalization tolerates a gap of at most one frame as rounding drift', () => {
+    const HTML = `<!doctype html><html><body>
+<div class="composition" data-composition-id="main" data-duration="6.04">
+  <div id="scene-1" class="clip" data-start="0" data-duration="3.0001"></div>
+  <div id="scene-2" class="clip" data-start="3.033333333333333" data-duration="3.0001"></div>
+</div>
+</body></html>`;
+    const norm = normalizeClipWindows(HTML, 30);
+    expect(norm.warning).toBeNull();
+    expect(norm.adjusted.map((a) => a.id)).toEqual(['scene-1', 'scene-2']);
+    expect(extractWindows(norm.html).map((w) => w.start)).toEqual([0, 3]);
+  });
+
+  it('normalization tolerates exactly one frame at later fractional boundaries', () => {
+    const expectedStart = 61 / 30;
+    const declaredStart = 62 / 30;
+    const HTML = `<!doctype html><html><body>
+<div class="composition" data-composition-id="main" data-duration="4">
+  <div id="scene-1" class="clip" data-start="0" data-duration="${expectedStart}"></div>
+  <div id="scene-2" class="clip" data-start="${declaredStart}" data-duration="2"></div>
+</div>
+</body></html>`;
+    const norm = normalizeClipWindows(HTML, 30);
+    expect(norm.warning).toBeNull();
+    expect(norm.adjusted.map((a) => a.id)).toEqual(['scene-2']);
+    expect(extractWindows(norm.html).map((w) => w.start)).toEqual([0, expectedStart]);
   });
 
   it('normalization skips clips without usable durations and nested timelines', () => {
@@ -884,12 +921,13 @@ describe('POST /restructure/:id — V5-P0C frame-exact quantization', () => {
     <div id="inner" class="clip" data-start="77" data-duration="3"></div>
   </div>
   <div id="scene-a" class="clip" data-start="0" data-duration="2.9999"></div>
-  <div id="scene-b" class="clip" data-start="3.5" data-duration="3"></div>
+  <div id="scene-b" class="clip" data-start="3.02" data-duration="3"></div>
 </div>
 </body></html>`;
     const norm = normalizeClipWindows(HTML, 30);
+    expect(norm.warning).toBeNull();
     expect(norm.adjusted.map((a) => a.id)).toEqual(['scene-a', 'scene-b']);
-    expect(norm.adjusted[1].from.start).toBe('3.5');
+    expect(norm.adjusted[1].from.start).toBe('3.02');
     expect(norm.adjusted[1].to.start).toBe('3');
     expect(norm.html).toMatch(/id="inner"[^>]*data-start="77"/s); // untouched
     expect(extractWindows(norm.html).map((w) => w.start)).toEqual([0, 3]);

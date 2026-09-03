@@ -77,17 +77,36 @@ describe("persistRenderSnapshots — V5-P6A", () => {
     await expect(persistRenderSnapshots(null, UUID, "/tmp/x", log)).resolves.toBe(0);
     const { supabase } = makeFakeSupabase();
     await expect(persistRenderSnapshots(supabase as never, "preview-proj", "/tmp/x", log)).resolves.toBe(0);
-    await expect(persistRenderSnapshots(supabase as never, UUID, join(tmpdir(), "nao-existe"), log)).resolves.toBe(0);
+    const failures: string[] = [];
+    await expect(
+      persistRenderSnapshots(
+        supabase as never,
+        UUID,
+        join(tmpdir(), "nao-existe"),
+        log,
+        (message) => failures.push(message),
+      ),
+    ).resolves.toBe(0);
+    expect(failures).toHaveLength(1);
+    expect(failures[0]).toBeTruthy();
   });
 
   it("falha num upload não é fatal: publica o resto (parcial)", async () => {
     const jobDir = makeJobDir(["a.png", "b.png", "c.png"]);
     const { supabase, uploads } = makeFakeSupabase(1); // 2.ª tentativa falha (uma vez)
-    const published = await persistRenderSnapshots(supabase as never, UUID, jobDir, log);
+    const failures: string[] = [];
+    const published = await persistRenderSnapshots(
+      supabase as never,
+      UUID,
+      jobDir,
+      log,
+      (message) => failures.push(message),
+    );
     expect(published).toBe(2);
     // O que falhou era frame-2; o 3.º ficheiro ocupa o próximo slot livre.
     expect(uploads.map((u) => u.path)).toEqual([snapshotStoragePath(UUID, 1), snapshotStoragePath(UUID, 2)]);
     expect(logs.some((l) => l.includes("upload failed"))).toBe(true);
+    expect(failures).toEqual(["bucket unavailable"]);
     rmSync(jobDir, { recursive: true, force: true });
   });
 

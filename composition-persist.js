@@ -32,9 +32,10 @@ export function compositionStoragePath(projectId) {
  * @param {string} projectId
  * @param {string} html
  * @param {(msg: string) => void} [log]
+ * @param {(message: string) => void} [onFailure]
  * @returns {Promise<boolean>} true quando o upload foi confirmado.
  */
-export async function persistCompositionArtifact(supabase, projectId, html, log = () => {}) {
+export async function persistCompositionArtifact(supabase, projectId, html, log = () => {}, onFailure = () => {}) {
   if (!supabase) return false;
   if (!projectId || !UUID_RE.test(projectId)) {
     log(`[composition-persist] skip non-orchestrator project id (${projectId})`);
@@ -53,12 +54,15 @@ export async function persistCompositionArtifact(supabase, projectId, html, log 
       });
     if (error) {
       log(`[composition-persist] upload failed for ${projectId}: ${error.message}`);
+      onFailure(error.message);
       return false;
     }
     log(`[composition-persist] persisted compositions/index.html for ${projectId}`);
     return true;
   } catch (err) {
-    log(`[composition-persist] unexpected failure for ${projectId}: ${err?.message ?? err}`);
+    const message = err?.message ?? String(err);
+    log(`[composition-persist] unexpected failure for ${projectId}: ${message}`);
+    onFailure(message);
     return false;
   }
 }

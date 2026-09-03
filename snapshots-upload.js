@@ -32,9 +32,10 @@ export function snapshotStoragePath(projectId, n) {
  * @param {string} projectId
  * @param {string} jobDir diretório do job (contém snapshots/*.png)
  * @param {(msg: string) => void} [log]
+ * @param {(message: string) => void} [onFailure]
  * @returns {Promise<number>} número de snapshots efetivamente publicados.
  */
-export async function persistRenderSnapshots(supabase, projectId, jobDir, log = () => {}) {
+export async function persistRenderSnapshots(supabase, projectId, jobDir, log = () => {}, onFailure = () => {}) {
   if (!supabase) return 0;
   if (!projectId || !UUID_RE.test(projectId)) {
     log(`[snapshots-upload] skip non-orchestrator project id (${projectId})`);
@@ -48,7 +49,9 @@ export async function persistRenderSnapshots(supabase, projectId, jobDir, log = 
       // ordenação numérica estável (frame_at_10 depois do 2, não lexical)
       .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
   } catch (err) {
-    log(`[snapshots-upload] snapshots dir unavailable for ${projectId}: ${err?.message ?? err}`);
+    const message = err?.message ?? String(err);
+    log(`[snapshots-upload] snapshots dir unavailable for ${projectId}: ${message}`);
+    onFailure(message);
     return 0;
   }
   if (files.length === 0) {
@@ -68,11 +71,14 @@ export async function persistRenderSnapshots(supabase, projectId, jobDir, log = 
         });
       if (error) {
         log(`[snapshots-upload] upload failed for ${projectId} (${files[i]}): ${error.message}`);
+        onFailure(error.message);
         continue;
       }
       published++;
     } catch (err) {
-      log(`[snapshots-upload] unexpected failure for ${projectId}: ${err?.message ?? err}`);
+      const message = err?.message ?? String(err);
+      log(`[snapshots-upload] unexpected failure for ${projectId}: ${message}`);
+      onFailure(message);
     }
   }
   if (published > 0) {

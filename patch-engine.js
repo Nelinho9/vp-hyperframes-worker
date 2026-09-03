@@ -30,8 +30,10 @@
  * V5-P0C (seek determinism): every window written here (and by
  * `normalizeClipWindows` at job staging) is quantized to the fps frame grid
  * with FLOAT-EXACT contiguous boundaries — for each integer frame tick,
- * exactly one clip window contains it (B2 fix). `window-lint.js` validates
- * the invariant after every write.
+ * exactly one clip window contains it (B2 fix). Builder-declared gaps are an
+ * exception: staging preserves every authored window and emits a high-signal
+ * warning rather than silently changing timeline intent. `window-lint.js`
+ * validates the invariant after every write.
  */
 
 import { parseHTML } from "linkedom";
@@ -284,11 +286,14 @@ export function exactWindowDuration(a, b) {
 }
 
 /**
- * V5-P0C §2.1 (V5-P2C §2.4): quantize top-level clip windows to the frame
- * grid with contiguous BOUNDARIES. Deliberate transition overlaps declared
- * via `data-transition-out` on the OUTGOING clip are preserved: the boundary
- * grid k stays cumulative, but the outgoing window is re-extended by its
- * declared overlap frames — normalize(restructured) is byte-stable.
+ * V5-P0C §2.1 (V5-P2C §2.4, V5_16.2 Fase B): quantize top-level clip windows
+ * to the frame grid with contiguous BOUNDARIES. Deliberate transition
+ * overlaps declared via `data-transition-out` on the OUTGOING clip are
+ * preserved: the boundary grid k stays cumulative, but the outgoing window
+ * is re-extended by its declared overlap frames — normalize(restructured) is
+ * byte-stable. A declared gap greater than one frame is builder intent, not
+ * rounding drift: no window in that composition is rewritten and the first
+ * gap is returned as CLIP_WINDOWS_NON_CONTIGUOUS.
  *
  * Only clips OWNED BY THE COMPOSITION ROOT are rewritten; nested composition
  * internals keep their own timeline. Clips without a usable data-duration
@@ -296,7 +301,7 @@ export function exactWindowDuration(a, b) {
  *
  * @param {string} html Composition HTML.
  * @param {number} fps Frame grid (default 30).
- * @returns {{ html: string, adjusted: Array<{id: string|null, from: {start: string, duration: string}, to: {start: string, duration: string}}> }}
+ * @returns {{ html: string, adjusted: Array<{id: string|null, from: {start: string, duration: string}, to: {start: string, duration: string}}>, warning: null|{code: string, previous_id: string|null, next_id: string|null, declared_start: number, expected_start: number, tolerance_seconds: number} }}
  */
 export function normalizeClipWindows(html, fps = 30) {
   if (!Number.isFinite(fps) || fps <= 0) {
@@ -309,7 +314,7 @@ export function normalizeClipWindows(html, fps = 30) {
     return owner === null || owner === rootEl;
   });
 
-  /** @type {Array<{el, core: number, ovFrames: number}>} */
+  /** @type {Array<{el, core: number, ovFrames: number, declaredStart: number}>} */
   const infos = [];
   for (const el of clips) {
     const rawDuration = parseFloat(el.getAttribute("data-duration"));
@@ -320,7 +325,41 @@ export function normalizeClipWindows(html, fps = 30) {
     const framesRaw = Math.max(1, Math.round(rawDuration * fps));
     const tr = parseTransitionAttr(el.getAttribute("data-transition-out"));
     const ovFrames = tr ? Math.round((tr.durationMs / 1000) * fps) : 0;
-    infos.push({ el, core: Math.max(1, framesRaw - ovFrames), ovFrames });
+    const declaredStart = parseFloat(el.getAttribute("data-start"));
+    infos.push({ el, core: Math.max(1, framesRaw - ovFrames), ovFrames, declaredStart });
+  }
+
+  const toleranceSeconds = 1 / fps;
+  let expectedFrames = 0;
+  for (let i = 0; i < infos.length; i++) {
+    const info = infos[i];
+    const expectedStart = expectedFrames / fps;
+    const declaredStartFrames = info.declaredStart * fps;
+    const frameComparisonEpsilon = Number.EPSILON * Math.max(
+      1,
+      Math.abs(declaredStartFrames),
+      Math.abs(expectedFrames),
+    ) * 8;
+    if (
+      i > 0 &&
+      Number.isFinite(info.declaredStart) &&
+      declaredStartFrames - expectedFrames > 1 + frameComparisonEpsilon
+    ) {
+      const previous = infos[i - 1].el;
+      return {
+        html,
+        adjusted: [],
+        warning: {
+          code: "CLIP_WINDOWS_NON_CONTIGUOUS",
+          previous_id: previous.id || previous.getAttribute("data-hf-id") || null,
+          next_id: info.el.id || info.el.getAttribute("data-hf-id") || null,
+          declared_start: info.declaredStart,
+          expected_start: expectedStart,
+          tolerance_seconds: toleranceSeconds,
+        },
+      };
+    }
+    expectedFrames += info.core;
   }
 
   const adjusted = [];
@@ -345,7 +384,7 @@ export function normalizeClipWindows(html, fps = 30) {
     }
   }
 
-  return { html: document.toString(), adjusted };
+  return { html: document.toString(), adjusted, warning: null };
 }
 
 /**
@@ -491,8 +530,9 @@ export function applyTimelineRestructure(html, scenes, fps = 30, transitions = [
           frames,
           nextEntry.frames,
         );
-        el.setAttribute("data-transition-out", `${tr.kind}@${tr.durationMs}`);
-        nextEntry.el.setAttribute("data-transition-in", `${tr.kind}@${tr.durationMs}`);
+        const effectiveDurationMs = (extendFrames / fps) * 1000;
+        el.setAttribute("data-transition-out", `${tr.kind}@${effectiveDurationMs}`);
+        nextEntry.el.setAttribute("data-transition-in", `${tr.kind}@${effectiveDurationMs}`);
       }
     }
 

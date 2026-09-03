@@ -252,8 +252,16 @@ describe('persistElementsArtifact', () => {
 
   it('erro do storage devolve false sem lançar (fire-and-forget)', async () => {
     const calls: Array<Record<string, unknown>> = [];
+    const failures: string[] = [];
     await expect(
-      persistElementsArtifact(makeClient({ message: 'Object not found' }, calls), UUID, REGISTRY),
+      persistElementsArtifact(
+        makeClient({ message: 'JWT expired' }, calls),
+        UUID,
+        REGISTRY,
+        () => {},
+        (message) => failures.push(message),
+      ),
     ).resolves.toBe(false);
+    expect(failures).toEqual(['JWT expired']);
   });
 });

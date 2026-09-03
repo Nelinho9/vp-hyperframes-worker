@@ -60,6 +60,7 @@ const PORT = process.env.PORT || 8787;
 const WORK_DIR = process.env.WORK_DIR || "/tmp/hyperframes-worker";
 const SUPABASE_URL = process.env.SUPABASE_URL || "";
 const SUPABASE_KEY = process.env.SUPABASE_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_ANON_KEY || "";
+const ORCHESTRATOR_PROJECT_ID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const CHROME_PATH = process.env.CHROME_PATH || "/usr/bin/chromium";
 // V4-3g.5 (R5): quando definido, GET /preview/:id exige ?token= HMAC válido
 // (mesmo segredo que VIDEO_V4_PREVIEW_SECRET no orchestrator edge).
@@ -71,9 +72,58 @@ const PREVIEW_SECRET = process.env.PREVIEW_SECRET || "";
 const WORKER_SECRET = process.env.WORKER_SECRET || "";
 const runtimeBundles = loadVendoredRuntimeBundles();
 
-const supabase = SUPABASE_URL && SUPABASE_KEY
-  ? createClient(SUPABASE_URL, SUPABASE_KEY)
-  : null;
+export function createSupabaseStorageClient(url, key, factory = createClient, warn = console.warn) {
+  if (!url || !key) {
+    const missing = [!url ? "SUPABASE_URL" : null, !key ? "SUPABASE_KEY" : null].filter(Boolean).join(", ");
+    const error = `missing ${missing}`;
+    warn(`SUPABASE_CLIENT_UNAVAILABLE: ${error}`);
+    return { client: null, error };
+  }
+  try {
+    return { client: factory(url, key), error: null };
+  } catch (err) {
+    const error = err?.message ?? String(err);
+    warn(`SUPABASE_CLIENT_UNAVAILABLE: ${error}`);
+    return { client: null, error };
+  }
+}
+
+const supabaseConfig = createSupabaseStorageClient(SUPABASE_URL, SUPABASE_KEY);
+const supabase = supabaseConfig.client;
+
+export function recordUploadFailure(uploadErrors, channel, error, warn = console.warn) {
+  const message = error?.message ?? String(error);
+  if (!(channel in uploadErrors)) uploadErrors[channel] = message;
+  warn(`SUPABASE_UPLOAD_FAILED ${channel}: ${message}`);
+}
+
+export function buildDoneCallbackPayload(job, timings, uploaded, uploadErrors) {
+  const payload = {
+    job_id: job.id,
+    project_id: job.project_id,
+    step: job.step,
+    status: "done",
+    timings,
+    uploaded,
+    total_ms: job.total_ms,
+  };
+  if (Object.keys(uploadErrors).length > 0) payload.upload_errors = uploadErrors;
+  if (job.window_normalization_warning) {
+    payload.window_normalization_warning = job.window_normalization_warning;
+  }
+  return payload;
+}
+
+export async function awaitStagedUploads(job, uploaded = job.uploaded || {}) {
+  if (job.compositionUploadPromise) {
+    uploaded.composition_html = await job.compositionUploadPromise;
+  }
+  if (job.elementsUploadPromise) {
+    uploaded.composition_elements = await job.elementsUploadPromise;
+  }
+  job.uploaded = uploaded;
+  return uploaded;
+}
 
 // ── V5.14 F7: supervisor durável da pipeline V4 ─────────────────────
 // As edge functions têm teto de wall-clock; este contentor não. Ao ser
@@ -512,15 +562,21 @@ app.post("/job", async (req, res) => {
   // Write the composition HTML
   writeFileSync(join(jobDir, "index.html"), index_html);
 
-  // V5-P0C §2.1: quantize top-level clip windows onto the fps frame grid with
-  // float-exact contiguous boundaries BEFORE anything consumes the file —
-  // authored drift (ms rounding, gaps) must never reach preview/render.
+  // V5-P0C §2.1 + V5_16.2 B1: quantize rounding drift onto the fps grid before
+  // consumers run, but preserve a builder-declared gap across the whole root
+  // composition. Timeline intent is never silently collapsed.
   let windowLintFindings = [];
+  let windowNormalizationWarning = null;
   if (typeof index_html === "string") {
     try {
       const stagingFps = Number.isFinite(Number(body.fps)) && Number(body.fps) > 0 ? Number(body.fps) : 30;
       const norm = normalizeClipWindows(index_html, stagingFps);
-      if (norm.adjusted.length > 0) {
+      if (norm.warning) {
+        windowNormalizationWarning = norm.warning;
+        console.warn(
+          `CLIP_WINDOWS_NON_CONTIGUOUS previous=${norm.warning.previous_id ?? "?"} next=${norm.warning.next_id ?? "?"} declared_start=${norm.warning.declared_start} expected_start=${norm.warning.expected_start}`
+        );
+      } else if (norm.adjusted.length > 0) {
         console.log(
           `[worker] window normalization: ${norm.adjusted.length} clip window(s) quantized to the ${stagingFps}fps grid`
         );
@@ -538,13 +594,27 @@ app.post("/job", async (req, res) => {
     }
   }
 
+  const uploadErrors = {};
+  const directUploadFailure = (channel) => (message) =>
+    recordUploadFailure(uploadErrors, channel, message);
+  if (step !== "preview" && ORCHESTRATOR_PROJECT_ID_RE.test(project_id) && !supabase) {
+    recordUploadFailure(uploadErrors, "composition_html", supabaseConfig.error);
+    recordUploadFailure(uploadErrors, "composition_elements", supabaseConfig.error);
+  }
+
   // V4_04 fix: persistir a composição staged no storage — o editor usa
   // `projects/{id}/compositions/index.html` como fonte primária pós-build
   // (reconciliação de durações) e como alvo das edições. Fire-and-forget no
   // staging; a promessa fica no job para o callback reportar o resultado.
   // step:'preview' é o placeholder inicial — não pode competir com o HTML real.
   const compositionUploadPromise = step !== "preview"
-    ? persistCompositionArtifact(supabase, project_id, index_html, console.log)
+    ? persistCompositionArtifact(
+      supabase,
+      project_id,
+      index_html,
+      console.log,
+      directUploadFailure("composition_html"),
+    )
     : null;
 
   // V5-P3A (AD-5): derivar e publicar o registry de elementos ao lado da
@@ -552,7 +622,13 @@ app.post("/job", async (req, res) => {
   // logo o inventário reflete exatamente o que o preview serve. Mesmo
   // fire-and-forget; o resultado viaja no callback (composition_elements).
   const elementsUploadPromise = step !== "preview"
-    ? persistElementsArtifact(supabase, project_id, deriveElements(index_html), console.log)
+    ? persistElementsArtifact(
+      supabase,
+      project_id,
+      deriveElements(index_html),
+      console.log,
+      directUploadFailure("composition_elements"),
+    )
     : null;
 
   // V4-3g.3 (B6): marcador para reidratação do registry no boot.
@@ -589,6 +665,8 @@ app.post("/job", async (req, res) => {
     artifact_paths,
     media_validation: jobMediaValidation,
     window_lint_findings: windowLintFindings,
+    window_normalization_warning: windowNormalizationWarning,
+    upload_errors: uploadErrors,
     compositionUploadPromise,
     elementsUploadPromise,
   });
@@ -1176,9 +1254,6 @@ export async function runRender(jobId, jobDir) {
     const snapshots = existsSync(join(jobDir, "snapshots")) ? readdirSync(join(jobDir, "snapshots")).filter((f) => f.endsWith(".png")) : [];
     const mp4Size = existsSync(outputPath) ? readFileSync(outputPath).length : 0;
 
-    job.status = "done";
-    job.completed_at = new Date().toISOString();
-    job.total_ms = Date.now() - startTime;
     job.timings = timings;
     job.output = {
       mp4_path: outputPath,
@@ -1190,6 +1265,7 @@ export async function runRender(jobId, jobDir) {
     // worker independent of Supabase credentials; the direct client remains
     // a backwards-compatible fallback for older deployments.
     const uploaded = {};
+    const uploadErrors = job.upload_errors || {};
     const signedMp4Url = typeof job.outputs?.mp4_upload_url === "string"
       ? job.outputs.mp4_upload_url
       : "";
@@ -1220,27 +1296,34 @@ export async function runRender(jobId, jobDir) {
     // V4_04 fix: o staging fez upsert da composição no storage — esperar pela
     // promessa (resolvida em ms face ao render) para reportar ao orquestrador,
     // que registra o artifact nos steps do manifesto.
-    if (job.compositionUploadPromise) {
-      uploaded.composition_html = await job.compositionUploadPromise;
-    }
-    // V5-P3A: registry de elementos publicado no staging — reportar ao
-    // orquestrador para o manifesto provar a existência do artefacto.
-    if (job.elementsUploadPromise) {
-      uploaded.composition_elements = await job.elementsUploadPromise;
-    }
+    await awaitStagedUploads(job, uploaded);
 
     // V5-P6A: snapshots do render final publicados para o quality gate
     // (projects/{id}/snapshots/frame-N.png, upsert). Nunca fatal — falha
     // apenas deixa o gate responder NO_SNAPSHOTS (retryable).
     if (supabase) {
       try {
-        const published = await persistRenderSnapshots(supabase, job.project_id, jobDir, console.log);
+        const published = await persistRenderSnapshots(
+          supabase,
+          job.project_id,
+          jobDir,
+          console.log,
+          (message) => recordUploadFailure(uploadErrors, "snapshots", message),
+        );
         uploaded.snapshots = published > 0;
       } catch (snapErr) {
-        console.warn(`[worker] snapshot upload failed for ${job.project_id}: ${snapErr?.message ?? snapErr}`);
+        recordUploadFailure(uploadErrors, "snapshots", snapErr);
         uploaded.snapshots = false;
       }
+    } else {
+      uploaded.snapshots = false;
+      recordUploadFailure(uploadErrors, "snapshots", supabaseConfig.error);
     }
+    job.uploaded = uploaded;
+    job.upload_errors = uploadErrors;
+    job.status = "done";
+    job.completed_at = new Date().toISOString();
+    job.total_ms = Date.now() - startTime;
 
     // Callback to orchestrator (V4-1 contract)
     if (job.callback?.url) {
@@ -1251,15 +1334,7 @@ export async function runRender(jobId, jobDir) {
             "Content-Type": "application/json",
             "X-Worker-Secret": job.callback.secret || "",
           },
-          body: JSON.stringify({
-            job_id: job.id,
-            project_id: job.project_id,
-            step: job.step,
-            status: "done",
-            timings,
-            uploaded,
-            total_ms: job.total_ms,
-          }),
+          body: JSON.stringify(buildDoneCallbackPayload(job, timings, uploaded, uploadErrors)),
         });
         console.log(`[callback] sent done for job ${job.id}`);
       } catch (cbErr) {
@@ -1267,6 +1342,10 @@ export async function runRender(jobId, jobDir) {
       }
     }
   } catch (err) {
+    // Composition/elements start during staging. Wait for both before the
+    // terminal status/callback so their failures cannot arrive too late for
+    // observability on a render that failed early.
+    await awaitStagedUploads(job);
     job.status = "failed";
     job.error = formatExecError(err);
     job.total_ms = Date.now() - startTime;
@@ -1294,6 +1373,12 @@ export async function runRender(jobId, jobDir) {
             // failure was a lint error) so the orchestrator/UI can surface
             // actionable detail instead of a truncated message.
             lint_findings: job.lint_findings || null,
+            ...(Object.keys(job.upload_errors || {}).length > 0
+              ? { upload_errors: job.upload_errors }
+              : {}),
+            ...(job.window_normalization_warning
+              ? { window_normalization_warning: job.window_normalization_warning }
+              : {}),
           }),
         });
         console.log(`[callback] sent failed for job ${job.id}`);

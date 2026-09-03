@@ -6,7 +6,13 @@
  * included in the job error sent to the orchestrator callback.
  */
 import { describe, it, expect } from "vitest";
-import { formatExecError } from "./server.js";
+import {
+  buildDoneCallbackPayload,
+  createSupabaseStorageClient,
+  formatExecError,
+  recordUploadFailure,
+  awaitStagedUploads,
+} from "./server.js";
 import { classifyCheckEnvelope, extractCheckJson } from "./runtime-vendor.js";
 
 describe("formatExecError", () => {
@@ -74,5 +80,83 @@ describe("formatExecError", () => {
   it("does not downgrade a page error to a warning", () => {
     const envelope = extractCheckJson('{"ok":false,"lint":{"ok":true},"layout":{"ok":true},"runtime":{"ok":false,"findings":[{"code":"page_error","severity":"error","message":"ReferenceError"}]}}');
     expect(classifyCheckEnvelope(envelope).ok).toBe(false);
+  });
+});
+
+describe("upload observability — V5_16.2 Fase B", () => {
+  it("records verbatim errors per channel and emits the required high-signal log", () => {
+    const uploadErrors: Record<string, string> = {};
+    const warnings: string[] = [];
+    recordUploadFailure(
+      uploadErrors,
+      "composition_html",
+      new Error("new row violates row-level security policy"),
+      (line) => warnings.push(line),
+    );
+
+    expect(uploadErrors).toEqual({
+      composition_html: "new row violates row-level security policy",
+    });
+    expect(warnings).toEqual([
+      "SUPABASE_UPLOAD_FAILED composition_html: new row violates row-level security policy",
+    ]);
+  });
+
+  it("echoes upload_errors in done callbacks only when at least one channel failed", () => {
+    const base = buildDoneCallbackPayload(
+      { id: "j1", project_id: "p1", step: "build", total_ms: 10 },
+      { render_ms: 5 },
+      { mp4: true },
+      {},
+    );
+    expect(base).not.toHaveProperty("upload_errors");
+
+    const failed = buildDoneCallbackPayload(
+      { id: "j1", project_id: "p1", step: "build", total_ms: 10 },
+      { render_ms: 5 },
+      { mp4: true, snapshots: false },
+      { snapshots: "bucket unavailable" },
+    );
+    expect(failed.upload_errors).toEqual({ snapshots: "bucket unavailable" });
+  });
+
+  it("logs SUPABASE_CLIENT_UNAVAILABLE for missing config and constructor failures", () => {
+    const warnings: string[] = [];
+    const missing = createSupabaseStorageClient("", "", () => {
+      throw new Error("must not run");
+    }, (line) => warnings.push(line));
+    expect(missing.client).toBeNull();
+    expect(missing.error).toContain("SUPABASE_URL");
+
+    const broken = createSupabaseStorageClient(
+      "https://example.supabase.co",
+      "service-role",
+      () => { throw new Error("invalid client config"); },
+      (line) => warnings.push(line),
+    );
+    expect(broken.client).toBeNull();
+    expect(broken.error).toBe("invalid client config");
+    expect(warnings).toEqual([
+      expect.stringContaining("SUPABASE_CLIENT_UNAVAILABLE"),
+      "SUPABASE_CLIENT_UNAVAILABLE: invalid client config",
+    ]);
+  });
+
+  it("waits for staged uploads before publishing their results on the job", async () => {
+    let releaseComposition!: (value: boolean) => void;
+    let releaseElements!: (value: boolean) => void;
+    const job: Record<string, unknown> = {
+      compositionUploadPromise: new Promise<boolean>((resolve) => { releaseComposition = resolve; }),
+      elementsUploadPromise: new Promise<boolean>((resolve) => { releaseElements = resolve; }),
+    };
+    let settled = false;
+    const waiting = awaitStagedUploads(job).then(() => { settled = true; });
+
+    await Promise.resolve();
+    expect(settled).toBe(false);
+    releaseComposition(false);
+    releaseElements(true);
+    await waiting;
+    expect(job.uploaded).toEqual({ composition_html: false, composition_elements: true });
   });
 });

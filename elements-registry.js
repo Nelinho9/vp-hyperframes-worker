@@ -236,9 +236,10 @@ export function deriveElements(html) {
  * @param {string} projectId
  * @param {{ version: number, elements: unknown[] }} registry
  * @param {(msg: string) => void} [log]
+ * @param {(message: string) => void} [onFailure]
  * @returns {Promise<boolean>} true quando o upload foi confirmado.
  */
-export async function persistElementsArtifact(supabase, projectId, registry, log = () => {}) {
+export async function persistElementsArtifact(supabase, projectId, registry, log = () => {}, onFailure = () => {}) {
   if (!supabase) return false;
   if (!projectId || !UUID_RE.test(projectId)) {
     log(`[elements-registry] skip non-orchestrator project id (${projectId})`);
@@ -257,12 +258,15 @@ export async function persistElementsArtifact(supabase, projectId, registry, log
       });
     if (error) {
       log(`[elements-registry] upload failed for ${projectId}: ${error.message}`);
+      onFailure(error.message);
       return false;
     }
     log(`[elements-registry] persisted compositions/elements.json (${registry.elements.length} element(s)) for ${projectId}`);
     return true;
   } catch (err) {
-    log(`[elements-registry] unexpected failure for ${projectId}: ${err?.message ?? err}`);
+    const message = err?.message ?? String(err);
+    log(`[elements-registry] unexpected failure for ${projectId}: ${message}`);
+    onFailure(message);
     return false;
   }
 }
