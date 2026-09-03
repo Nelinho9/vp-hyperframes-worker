@@ -41,9 +41,6 @@ RUN npm install -g hyperframes@0.7.109 && npm cache clean --force
 # chromium de sistema; precisa de unzip para extrair o download).
 RUN hyperframes browser ensure || echo "browser ensure falhou — será retomado no boot"
 
-# HyperFrames skills registry (public repo — cloned at build time).
-RUN git clone --depth=1 https://github.com/heygen-com/hyperframes /opt/hf-skills
-
 ENV NODE_ENV=production \
     PORT=8787 \
     WORK_DIR=/tmp/hyperframes-worker \

@@ -25,7 +25,7 @@ uploads outputs via signed PUT URLs, and calls back the orchestrator.
 Deployed via **Coolify** from this public GitHub repo:
 - Build pack: Dockerfile
 - Health check: `GET /health` → 200
-- Skills are cloned from the public HyperFrames repo at Docker build time
+- Runtime and CLI are provided by the pinned `hyperframes@0.7.109` npm package
 
 ## Endpoints
 
