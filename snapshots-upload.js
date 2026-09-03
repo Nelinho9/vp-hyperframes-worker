@@ -55,7 +55,9 @@ export async function persistRenderSnapshots(supabase, projectId, jobDir, log = 
     return 0;
   }
   if (files.length === 0) {
-    log(`[snapshots-upload] no snapshot pngs found for ${projectId}`);
+    const message = "no snapshot pngs found";
+    log(`[snapshots-upload] ${message} for ${projectId}`);
+    onFailure(message);
     return 0;
   }
 

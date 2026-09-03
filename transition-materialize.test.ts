@@ -524,7 +524,14 @@ describe('POST /restructure/:id — V5-P2C materialização de transições', ()
     // o = min(24, 15, 15) = 15 → end de scene-1 = (15+15)/30 = 1.0.
     expect(wins[0].end).toBeCloseTo(1, 12);
     expect(wins[1].start).toBe(0.5);
+    expect(wins[0].attrs.out).toBe('fade@500');
+    expect(wins[1].attrs.in).toBe('fade@500');
     expect(lintClipWindows(body.html)).toEqual([]);
+
+    const norm = normalizeClipWindows(body.html, 30);
+    expect(norm.warning).toBeNull();
+    expect(norm.adjusted).toEqual([]);
+    expect(norm.html).toBe(body.html);
   });
 
   it('idempotência: mesma carga → HTML byte-idêntico', async () => {

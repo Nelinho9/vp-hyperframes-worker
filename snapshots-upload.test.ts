@@ -113,9 +113,17 @@ describe("persistRenderSnapshots — V5-P6A", () => {
   it("dir vazio → 0 com log", async () => {
     const jobDir = makeJobDir([]);
     const { supabase } = makeFakeSupabase();
-    const published = await persistRenderSnapshots(supabase as never, UUID, jobDir, log);
+    const failures: string[] = [];
+    const published = await persistRenderSnapshots(
+      supabase as never,
+      UUID,
+      jobDir,
+      log,
+      (message) => failures.push(message),
+    );
     expect(published).toBe(0);
     expect(logs.some((l) => l.includes("no snapshot pngs"))).toBe(true);
+    expect(failures).toEqual(["no snapshot pngs found"]);
     rmSync(jobDir, { recursive: true, force: true });
   });
 });
