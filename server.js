@@ -31,7 +31,7 @@ import { injectPreviewHelper, injectPreviewRuntime } from "./preview-helper.js";
 import { verifyPreviewToken } from "./preview-token.js";
 import { applyPatchesLinkedom, applyTimelineRestructure, normalizeClipWindows } from "./patch-engine.js";
 import { sanitizeCompositionTweens, extractLintFindings } from "./composition-sanitizer.js";
-import { lintClipWindows } from "./window-lint.js";
+import { lintClipWindows, lintGsapTargets } from "./window-lint.js";
 import {
   classifyCheckEnvelope,
   extractCheckJson,
@@ -589,6 +589,18 @@ app.post("/job", async (req, res) => {
           `[worker] clip window lint: ${windowLintFindings.map((f) => `[${f.code}] ${f.selector ?? ""}`).join(", ")}`
         );
       }
+      // V5.21 Fase H: orphan-tween scan — report-only (warn log, never fails
+      // staging; the edge-side mirror in edgeLint.ts surfaces it to the LLM).
+      try {
+        const gsapTargetFindings = lintGsapTargets(index_html);
+        if (gsapTargetFindings.length > 0) {
+          console.warn(
+            `[worker] gsap target lint: ${gsapTargetFindings.map((f) => `[${f.code}] ${f.selector ?? ""}`).join(", ")}`
+          );
+        }
+      } catch (err) {
+        console.warn(`[worker] gsap target lint skipped: ${err?.message ?? err}`);
+      }
     } catch (err) {
       console.warn(`[worker] window normalization skipped: ${err?.message ?? err}`);
     }
@@ -880,6 +892,18 @@ app.post("/restructure/:id", previewCors, (req, res) => {
     console.warn(
       `[worker] /restructure ${projectId}: clip window findings: ${findings.map((f) => `[${f.code}] ${f.selector ?? ""}`).join(", ")}`
     );
+  }
+  // V5.21 Fase H: orphan-tween scan — report-only (warn log; the response
+  // `findings` contract stays clip-windows-only).
+  try {
+    const gsapTargets = lintGsapTargets(result.html);
+    if (gsapTargets.length > 0) {
+      console.warn(
+        `[worker] /restructure ${projectId}: gsap target findings: ${gsapTargets.map((f) => `[${f.code}] ${f.selector ?? ""}`).join(", ")}`
+      );
+    }
+  } catch (err) {
+    console.warn(`[worker] /restructure ${projectId}: gsap target lint skipped: ${err?.message ?? err}`);
   }
 
   writeFileSync(indexPath, result.html);

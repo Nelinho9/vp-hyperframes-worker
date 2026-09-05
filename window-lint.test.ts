@@ -12,7 +12,7 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import { lintClipWindows } from './window-lint.js';
+import { lintClipWindows, lintGsapTargets } from './window-lint.js';
 
 function doc(clips: string): string {
   return `<!doctype html>
@@ -158,5 +158,82 @@ describe('lintClipWindows — V5-P2C isenção de transições', () => {
     const findings = lintClipWindows(html);
     expect(findings).toHaveLength(1);
     expect(findings[0]).toMatchObject({ code: 'clip_window_overlap', severity: 'error' });
+  });
+});
+
+describe('lintGsapTargets — V5.21 Fase H (gsap_target_missing, warn)', () => {
+  const withScript = (body: string, script: string): string => `<!doctype html>
+<html><head><title>t</title></head>
+<body>
+<div class="composition" data-composition-id="main" data-start="0" data-duration="12">
+${body}
+</div>
+<script>${script}</script>
+</body>
+</html>`;
+
+  it('flags the incident signature: tween on a missing #scene-5-tick path', () => {
+    const html = withScript(
+      '<div id="scene-5" class="clip" data-start="0" data-duration="6"></div>',
+      'var tl = gsap.timeline({ paused: true });\n' +
+        'tl.fromTo("#scene-5-tick path", { opacity: 0 }, { opacity: 1, duration: 0.6 }, 0);',
+    );
+    const findings = lintGsapTargets(html);
+    expect(findings).toHaveLength(1);
+    expect(findings[0]).toMatchObject({
+      code: 'gsap_target_missing',
+      severity: 'warning',
+      selector: '#scene-5-tick path',
+    });
+    expect(findings[0].message).toContain('#scene-5-tick path');
+  });
+
+  it('passes when every tween target exists (id + class)', () => {
+    const html = withScript(
+      '<div id="scene-1-text-1" data-anim-in="riseIn">Hi</div><div class="headline">Ho</div>',
+      'tl.fromTo("#scene-1-text-1", { opacity: 0 }, { opacity: 1, duration: 0.5 }, 0);\n' +
+        'tl.to(".headline", { opacity: 0, duration: 0.4 }, 1);',
+    );
+    expect(lintGsapTargets(html)).toEqual([]);
+  });
+
+  it('ignores element-ref calls from the materialized blocks (no string target)', () => {
+    const html = withScript(
+      '<div id="scene-1-text-1" data-anim-in="riseIn">Hi</div>',
+      'var twIn = tl.fromTo(el, { opacity: 0 }, { opacity: 1, duration: 0.6 }, posIn);',
+    );
+    expect(lintGsapTargets(html)).toEqual([]);
+  });
+
+  it('ignores non-tween .set( calls such as Map.set (no tween vars)', () => {
+    const html = withScript(
+      '<div id="a">x</div>',
+      'const m = new Map();\nm.set("missing-key", 1);',
+    );
+    expect(lintGsapTargets(html)).toEqual([]);
+  });
+
+  it('skips selectors the DOM engine cannot parse instead of flagging', () => {
+    const html = withScript(
+      '<div id="a">x</div>',
+      'tl.to("[[[", { opacity: 0, duration: 0.5 }, 0);',
+    );
+    expect(lintGsapTargets(html)).toEqual([]);
+  });
+
+  it('dedupes repeated selectors and caps findings', () => {
+    const tweens = Array.from({ length: 8 })
+      .map((_, i) => `tl.to("#gone-${i}", { opacity: 0, duration: 0.5 }, ${i});`)
+      .join('\n');
+    const html = withScript('<div id="a">x</div>', `${tweens}\ntl.to("#gone-0", { opacity: 0, duration: 0.5 }, 9);`);
+    const findings = lintGsapTargets(html);
+    expect(findings).toHaveLength(5);
+    expect(findings.every((f) => f.code === 'gsap_target_missing' && f.severity === 'warning')).toBe(true);
+  });
+
+  it('returns [] for empty, non-string or scriptless input', () => {
+    expect(lintGsapTargets('')).toEqual([]);
+    expect(lintGsapTargets(null as unknown as string)).toEqual([]);
+    expect(lintGsapTargets(doc('<div id="a"></div>'))).toEqual([]);
   });
 });
