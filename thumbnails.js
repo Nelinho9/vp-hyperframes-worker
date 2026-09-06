@@ -28,6 +28,10 @@ export function computeArtifactHash(html) {
  * Midpoint seconds of every clip owned by the composition root — the SAME
  * ownership rule as patch-engine normalizeClipWindows (nested composition
  * internals keep their own timeline and are ignored).
+ *
+ * NOTE (V5.22 Fase H3): thumbnails keep the MIDPOINT on purpose (scene
+ * overview). The quality-gate snapshots use parseScenePostEntranceTimes
+ * below (post-entrance presence) — intentional divergence, see E5/H3.
  */
 export function parseSceneMidpoints(html, fps = 30) {
   void fps;
@@ -48,6 +52,101 @@ export function parseSceneMidpoints(html, fps = 30) {
   }
   times.sort((a, b) => a - b);
   return times;
+}
+
+/**
+ * V5.22 Fase H3: per-scene POST-ENTRANCE times for the quality-gate render
+ * snapshots — the client-side contract of `scenePostEntranceFrame`
+ * (timelineV4Model.ts): `min(start + 1.5s, midpoint, end - margin)`.
+ *
+ * Why: `snapshot --frames 5` samples uniformly INCLUDING t=0, where
+ * spring-pop/fromTo entrances (~1s) have not run yet — a sampler-vs-entrance
+ * mismatch (E5/H0), not a composition defect. Post-entrance sampling keeps
+ * 1 frame/scene (max 5, temporal order) so the VLM sees what the user sees.
+ * Thumbnails (overview) intentionally keep midpoints — see parseSceneMidpoints.
+ *
+ * Short scenes degrade honestly: when start+offset exceeds the midpoint the
+ * min() picks the midpoint; the end-margin guard keeps every time strictly
+ * inside [start, end). No scenes / unreadable HTML → [] (caller falls back
+ * to the legacy `--frames 5`).
+ */
+export const RENDER_SNAPSHOT_POST_ENTRANCE_OFFSET_S = 1.5;
+export const RENDER_SNAPSHOT_END_MARGIN_S = 0.05;
+export const MAX_RENDER_SNAPSHOTS = 5;
+
+export function parseSceneWindows(html) {
+  const { document } = parseHTML(html);
+  const rootEl = document.querySelector("[data-composition-id]");
+  const clips = Array.from(document.querySelectorAll(".clip")).filter((el) => {
+    const owner = el.closest ? el.closest("[data-composition-id]") : null;
+    return owner === null || owner === rootEl;
+  });
+  const windows = [];
+  for (const el of clips) {
+    const start = parseFloat(el.getAttribute("data-start"));
+    const duration = parseFloat(el.getAttribute("data-duration"));
+    if (!Number.isFinite(start) || !Number.isFinite(duration) || duration <= 0) continue;
+    windows.push({ start, end: start + duration });
+  }
+  windows.sort((a, b) => a.start - b.start);
+  return windows;
+}
+
+export function parseScenePostEntranceTimes(
+  html,
+  { offsetS = RENDER_SNAPSHOT_POST_ENTRANCE_OFFSET_S, maxScenes = MAX_RENDER_SNAPSHOTS, endMarginS = RENDER_SNAPSHOT_END_MARGIN_S } = {},
+) {
+  let windows = [];
+  try {
+    windows = parseSceneWindows(html);
+  } catch {
+    return [];
+  }
+  const times = [];
+  for (const { start, end } of windows) {
+    const midpoint = start + (end - start) / 2;
+    const candidates = [start + offsetS, midpoint];
+    const cap = end - endMarginS;
+    if (cap > start) candidates.push(cap);
+    let t = Math.min(...candidates);
+    if (!(t >= start)) t = start;
+    if (!(t < end)) t = Math.min(midpoint, cap > start ? cap : start);
+    times.push(Math.round(t * 1000) / 1000);
+  }
+  times.sort((a, b) => a - b);
+  return times.slice(0, maxScenes);
+}
+
+/**
+ * Canonical CLI invocation for the quality-gate render snapshots:
+ * `snapshot --at t1,t2 --no-end --describe false <jobDir>` (default output
+ * `<jobDir>/snapshots/`). `--no-end` is REQUIRED: without it the CLI
+ * appends a tail frame (6th frame, breaks MAX 5). `--describe false`
+ * guarantees zero Gemini side effects/cost. Empty times → caller falls back
+ * to the legacy `snapshot --frames 5`.
+ */
+export function buildRenderSnapshotArgs(times, projectDir) {
+  const command = process.env.HYPERFRAMES_BIN || "npx";
+  const args = process.env.HYPERFRAMES_BIN
+    ? ["snapshot"]
+    : ["hyperframes", "snapshot"];
+  args.push(
+    "--at", times.map((t) => String(Math.round(t * 1000) / 1000)).join(","),
+    "--no-end",
+    "--describe", "false",
+    projectDir,
+  );
+  return { command, args };
+}
+
+/**
+ * Rollback switch without a code redeploy: `RENDER_SNAPSHOTS_LEGACY_FRAMES=1`
+ * restores the pre-H3 `snapshot --frames 5` (t≈0 sampling).
+ */
+export function renderSnapshotsLegacyFrames(env = process.env) {
+  const raw = env.RENDER_SNAPSHOTS_LEGACY_FRAMES;
+  if (raw === undefined || raw === null || raw === "") return false;
+  return !/^(0|false|off|no)$/i.test(String(raw).trim());
 }
 
 /**

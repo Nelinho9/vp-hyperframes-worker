@@ -42,7 +42,7 @@ import {
 } from "./runtime-vendor.js";
 import { prestageExternalMedia } from "./media-preloader.js";
 import { compositionStoragePath, persistCompositionArtifact } from "./composition-persist.js";
-import { captureThumbnails, computeArtifactHash } from "./thumbnails.js";
+import { captureThumbnails, computeArtifactHash, parseScenePostEntranceTimes, buildRenderSnapshotArgs, renderSnapshotsLegacyFrames } from "./thumbnails.js";
 import { deriveElements, persistElementsArtifact } from "./elements-registry.js";
 import { persistRenderSnapshots } from "./snapshots-upload.js";
 import {
@@ -1186,13 +1186,33 @@ export async function runRender(jobId, jobDir) {
     await runCheck(jobDir);
     timings.check_ms = Date.now() - timings.check_start;
 
-    // Step 3: snapshot
+    // Step 3: snapshot — V5.22 Fase H3: per-scene POST-ENTRANCE sampling.
+    // `snapshot --frames 5` sampled uniformly INCLUDING t=0, where entrances
+    // (spring-pop ~1s, fromTo opacity ~0.6s + delay) had not run yet — a
+    // sampler-vs-entrance mismatch (E5/H0), not a composition defect. Now:
+    // min(start + 1.5s, midpoint, end - margin) per root scene (contract of
+    // scenePostEntranceFrame in timelineV4Model.ts), 1 frame/scene, max 5.
+    // Fallbacks (legacy --frames 5): no scenes/unreadable HTML/read error, or
+    // RENDER_SNAPSHOTS_LEGACY_FRAMES=1 (rollback without redeploy). Warn-only,
+    // never fatal for the render; --describe false = zero Gemini cost.
     timings.snapshot_start = Date.now();
     try {
-      const snapCmd = process.env.HYPERFRAMES_BIN || "npx";
-      const snapArgs = process.env.HYPERFRAMES_BIN
+      let snapCmd = process.env.HYPERFRAMES_BIN || "npx";
+      let snapArgs = process.env.HYPERFRAMES_BIN
         ? ["snapshot", "--frames", "5", jobDir]
         : ["hyperframes", "snapshot", "--frames", "5", jobDir];
+      try {
+        const snapIndexPath = join(jobDir, "index.html");
+        if (!renderSnapshotsLegacyFrames() && existsSync(snapIndexPath)) {
+          const snapHtml = readFileSync(snapIndexPath, "utf-8");
+          const times = parseScenePostEntranceTimes(snapHtml);
+          if (times.length > 0) {
+            ({ command: snapCmd, args: snapArgs } = buildRenderSnapshotArgs(times, jobDir));
+          }
+        }
+      } catch (snapPrepErr) {
+        console.warn(`[worker] post-entrance snapshot prep failed, using legacy --frames 5: ${snapPrepErr?.message ?? snapPrepErr}`);
+      }
       await spawnCommand(snapCmd, snapArgs, {
         timeout: 60000,
         env: { ...process.env, CHROME_PATH, PRODUCER_LOW_MEMORY_MODE: "true" },
