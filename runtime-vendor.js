@@ -207,14 +207,19 @@ export function extractCssFontFamilies(html) {
   return [...families];
 }
 
-/** Lint-satisfying fallback: @font-face with local() sources only. */
-export function localFontFaceStyle(families) {
+/** Inner @font-face rules with local() sources only (no <style> wrapper). */
+function localFontFaceRules(families) {
   const list = Array.isArray(families) ? families.filter(Boolean) : [];
-  if (list.length === 0) return "";
-  const blocks = list.map((family) => {
+  return list.map((family) => {
     const safe = String(family).replace(/[\\"]/g, "");
     return `@font-face{font-family:'${safe}';font-style:normal;font-weight:100 900;src:local('${safe}');font-display:swap;}`;
   });
+}
+
+/** Lint-satisfying fallback: @font-face with local() sources only. */
+export function localFontFaceStyle(families) {
+  const blocks = localFontFaceRules(families);
+  if (blocks.length === 0) return "";
   return `<style data-vp-fonts="local">${blocks.join("")}</style>`;
 }
 
@@ -276,6 +281,14 @@ function parseCss2LatinFaces(css) {
  * `jobDir/assets/` (served by the preview asset route), or local()-only
  * fallback declarations when resolution fails. Never throws.
  *
+ * V5.23 invariant: EVERY family in the returned `families` union leaves
+ * here with >= 1 @font-face in `style`. Downloaded faces keep their exact
+ * css2 names; any family without a face (CSS-only families absent from the
+ * <link>, failed specs, empty latin subsets) gets a local() declaration,
+ * which the lint fixHint explicitly accepts. Partial coverage without the
+ * local() complement was the HYPERFRAMES_LINT_FAILED
+ * [font_family_without_font_face] class (Plus Jakarta Sans / Jakarta).
+ *
  * @param {string} html
  * @param {PrepareOfflineFontsOptions} [options]
  */
@@ -297,35 +310,41 @@ export async function prepareOfflineFonts(html, {
   }
   const ua = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36";
   const faces = [];
-  const assetsDir = join(jobDir, "assets");
-  mkdirSync(assetsDir, { recursive: true });
-
   try {
+    const assetsDir = join(jobDir, "assets");
+    mkdirSync(assetsDir, { recursive: true });
+
+    // V5.23: resolve each spec in isolation — one failing family falls back
+    // to local() below instead of discarding the faces already resolved.
     for (const spec of specs) {
-      const cssUrl = `https://fonts.googleapis.com/css2?family=${spec}&display=swap`;
-      const cssRes = await fetchWithTimeout(fetchImpl, cssUrl, { timeoutMs, headers: { "user-agent": ua } });
-      if (!cssRes.ok) throw new Error(`css2 ${cssRes.status}`);
-      const latin = parseCss2LatinFaces(await cssRes.text());
-      for (const face of latin) {
-        const hash = sha1(face.url);
-        const assetName = `vp-font-${hash}.woff2`;
-        const assetPath = join(assetsDir, assetName);
-        if (!existsSync(assetPath)) {
-          const cachePath = cacheDir ? join(cacheDir, assetName) : null;
-          if (cachePath && existsSync(cachePath)) {
-            copyFileSync(cachePath, assetPath);
-          } else {
-            const fontRes = await fetchWithTimeout(fetchImpl, face.url, { timeoutMs, headers: { "user-agent": ua } });
-            if (!fontRes.ok) throw new Error(`woff2 ${fontRes.status}`);
-            const buf = Buffer.from(await fontRes.arrayBuffer());
-            if (cachePath) {
-              mkdirSync(cacheDir, { recursive: true });
-              writeFileSync(cachePath, buf);
+      try {
+        const cssUrl = `https://fonts.googleapis.com/css2?family=${spec}&display=swap`;
+        const cssRes = await fetchWithTimeout(fetchImpl, cssUrl, { timeoutMs, headers: { "user-agent": ua } });
+        if (!cssRes.ok) throw new Error(`css2 ${cssRes.status}`);
+        const latin = parseCss2LatinFaces(await cssRes.text());
+        for (const face of latin) {
+          const hash = sha1(face.url);
+          const assetName = `vp-font-${hash}.woff2`;
+          const assetPath = join(assetsDir, assetName);
+          if (!existsSync(assetPath)) {
+            const cachePath = cacheDir ? join(cacheDir, assetName) : null;
+            if (cachePath && existsSync(cachePath)) {
+              copyFileSync(cachePath, assetPath);
+            } else {
+              const fontRes = await fetchWithTimeout(fetchImpl, face.url, { timeoutMs, headers: { "user-agent": ua } });
+              if (!fontRes.ok) throw new Error(`woff2 ${fontRes.status}`);
+              const buf = Buffer.from(await fontRes.arrayBuffer());
+              if (cachePath) {
+                mkdirSync(cacheDir, { recursive: true });
+                writeFileSync(cachePath, buf);
+              }
+              writeFileSync(assetPath, buf);
             }
-            writeFileSync(assetPath, buf);
           }
+          faces.push({ ...face, src: `assets/${assetName}` });
         }
-        faces.push({ ...face, src: `assets/${assetName}` });
+      } catch (err) {
+        log(`[worker] offline font resolution failed for spec (${err?.message ?? err}) — using local() fallback for its families`);
       }
     }
   } catch (err) {
@@ -340,9 +359,18 @@ export async function prepareOfflineFonts(html, {
   const named = faces.map((face) => {
     const family = (face.family && normalizeFontFamily(face.family)) || families[0];
     const safe = String(family).replace(/[\\"]/g, "");
-    return `@font-face{font-family:'${safe}';font-display:swap;font-style:${face.style};font-weight:${face.weight};src:url('${face.src}') format('woff2');}`;
+    return {
+      family,
+      rule: `@font-face{font-family:'${safe}';font-display:swap;font-style:${face.style};font-weight:${face.weight};src:url('${face.src}') format('woff2');}`,
+    };
   });
-  return { style: `<style data-vp-fonts="resolved">${named.join("")}</style>`, families };
+  // V5.23: complement — families used in CSS but absent from the <link>
+  // (or whose spec failed) still need a declaration after the sanitizer
+  // strips the Google references, or lint hard-fails the build.
+  const covered = new Set(named.map((n) => String(n.family).toLowerCase()));
+  const uncovered = families.filter((family) => !covered.has(String(family).toLowerCase()));
+  const rules = [...named.map((n) => n.rule), ...localFontFaceRules(uncovered)];
+  return { style: `<style data-vp-fonts="resolved">${rules.join("")}</style>`, families };
 }
 
 function findingList(section) {

@@ -204,4 +204,77 @@ describe("offline font resolution (V4-3f.10)", () => {
     expect(result.style).toBe("");
     expect(result.families).toEqual([]);
   });
+
+  // V5.23 (regressão HYPERFRAMES_LINT_FAILED [font_family_without_font_face]):
+  // um <link> de uma família + CSS com outras famílias (Plus Jakarta Sans /
+  // Jakarta, não auto-resolvidas) deixava as famílias só-CSS sem @font-face
+  // após o sanitizer remover o link — o CLI falhava com exatamente
+  // "plus jakarta sans, jakarta".
+  it("cobre famílias CSS ausentes do link com local() (regressão V5.23)", async () => {
+    const jobDir = mkdtempSync(join(tmpdir(), "vp-font-job-"));
+    const html = `<!doctype html><html><head>
+      <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;700&display=swap">
+      <style>.h{font-family:'Plus Jakarta Sans',sans-serif} .s{font-family:Jakarta,sans-serif}</style>
+    </head><body></body></html>`;
+    const WOFF2 = Buffer.from("wOF2fakefontbytes");
+    const css = "/* latin */\n@font-face { font-family: 'Inter'; font-style: normal; font-weight: 400; src: url(https://fonts.gstatic.com/s/inter/latin400.woff2); }";
+    const fetchImpl = async (url: string) => {
+      if (String(url).includes("css2")) {
+        return { ok: true, status: 200, text: async () => css } as unknown as Response;
+      }
+      if (String(url).includes("fonts.gstatic.com")) {
+        return { ok: true, status: 200, arrayBuffer: async () => WOFF2.buffer.slice(WOFF2.byteOffset, WOFF2.byteOffset + WOFF2.length) } as unknown as Response;
+      }
+      throw new Error(`unexpected url ${url}`);
+    };
+
+    const result = await prepareOfflineFonts(html, { jobDir, fetchImpl });
+    expect(result.families).toEqual(["Inter", "Plus Jakarta Sans", "Jakarta"]);
+    // Inter resolvida via woff2; as famílias só-CSS ganham fallback local().
+    expect(result.style).toContain('data-vp-fonts="resolved"');
+    expect(result.style).toContain("font-family:'Inter'");
+    expect(result.style).toContain("format('woff2')");
+    expect(result.style).toContain("font-family:'Plus Jakarta Sans'");
+    expect(result.style).toContain("local('Plus Jakarta Sans')");
+    expect(result.style).toContain("font-family:'Jakarta'");
+    expect(result.style).toContain("local('Jakarta')");
+
+    // Pipeline integral: link removido, declarações presentes no HTML final.
+    const sanitized = sanitizeCompositionForOffline(html, { fontFaceStyle: result.style });
+    expect(sanitized).not.toContain("fonts.googleapis");
+    expect(sanitized).toContain("font-family:'Plus Jakarta Sans'");
+    expect(sanitized).toContain("font-family:'Jakarta'");
+  });
+
+  // V5.23: um spec individual com falha (404) cai para local() sem descartar
+  // as famílias já resolvidas dos outros specs (antes, o catch global
+  // deitava tudo fora ou — pior — emitia cobertura parcial sem complemento).
+  it("spec individual com falha cai para local() sem descartar as resolvidas", async () => {
+    const jobDir = mkdtempSync(join(tmpdir(), "vp-font-job-"));
+    const html = `<!doctype html><html><head>
+      <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400&family=Missing+Family:wght@400&display=swap">
+      <style>.a{font-family:'Inter',sans-serif} .b{font-family:'Missing Family',sans-serif}</style>
+    </head><body></body></html>`;
+    const WOFF2 = Buffer.from("wOF2fakefontbytes");
+    const fetchImpl = async (url: string) => {
+      const u = String(url);
+      if (u.includes("css2")) {
+        if (u.includes("Missing")) {
+          return { ok: false, status: 404, text: async () => "", arrayBuffer: async () => new ArrayBuffer(0) } as unknown as Response;
+        }
+        return { ok: true, status: 200, text: async () => "/* latin */\n@font-face { font-family: 'Inter'; font-style: normal; font-weight: 400; src: url(https://fonts.gstatic.com/s/inter/latin400.woff2); }" } as unknown as Response;
+      }
+      if (u.includes("fonts.gstatic.com")) {
+        return { ok: true, status: 200, arrayBuffer: async () => WOFF2.buffer.slice(WOFF2.byteOffset, WOFF2.byteOffset + WOFF2.length) } as unknown as Response;
+      }
+      throw new Error(`unexpected url ${url}`);
+    };
+
+    const result = await prepareOfflineFonts(html, { jobDir, fetchImpl });
+    expect(result.families).toEqual(["Inter", "Missing Family"]);
+    expect(result.style).toContain("font-family:'Inter'");
+    expect(result.style).toContain("format('woff2')");
+    expect(result.style).toContain("font-family:'Missing Family'");
+    expect(result.style).toContain("local('Missing Family')");
+  });
 });
