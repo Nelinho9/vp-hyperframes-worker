@@ -23,7 +23,7 @@
 import express from "express";
 import { execSync, spawn } from "child_process";
 import { createClient } from "@supabase/supabase-js";
-import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync } from "fs";
+import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync, copyFileSync } from "fs";
 import { join, basename, dirname } from "path";
 import { randomUUID } from "crypto";
 import { pathToFileURL, fileURLToPath } from "url";
@@ -436,12 +436,19 @@ app.post("/job", async (req, res) => {
   // job, so recover the latest staged build HTML from the project mapping.
   // This also works after a worker restart because rehydrateJobs restores the
   // project → job index from the persistent volume.
+  // V5.24: track the previous job dir — when the reused HTML already carries
+  // worker-local `assets/vp-media-*` references (post-prestage), the new
+  // jobDir starts empty and prestage skips (it only downloads https://).
+  // Copying the previous job's assets/ heals the reuse instead of failing
+  // lint with audio_src_not_found / missing_local_asset.
+  let reusedPreviousJobDir = "";
   if (!index_html && step === "finalize") {
     const previousJobId = projectJobs.get(project_id);
     const previousJob = previousJobId ? jobs.get(previousJobId) : null;
     const previousHtml = previousJob?.job_dir ? join(previousJob.job_dir, "index.html") : "";
     if (previousHtml && existsSync(previousHtml)) {
       index_html = readFileSync(previousHtml, "utf-8");
+      reusedPreviousJobDir = previousJob.job_dir;
       console.log(`[worker] finalize reused staged build composition for project ${project_id}`);
     }
   }
@@ -466,6 +473,45 @@ app.post("/job", async (req, res) => {
   const jobId = body.job_id || randomUUID();
   const jobDir = join(WORK_DIR, jobId);
   mkdirSync(join(jobDir, "assets"), { recursive: true });
+
+  // V5.24: heal worker-local asset reuse. `assets/vp-media-*` paths are only
+  // valid inside the jobDir that prestaged them (sha1(url) → local file).
+  // When the incoming HTML already carries such references — finalize reuse
+  // above, or a re-dispatch of previously staged HTML persisted to storage —
+  // prestage skips (it only downloads https://) and lint would fail with
+  // audio_src_not_found / missing_local_asset. Copy the previous job's
+  // assets/ for the same project so the new jobDir resolves them.
+  try {
+    let donorDir = reusedPreviousJobDir;
+    if (!donorDir && typeof index_html === "string" && /src\s*=\s*["']assets\/vp-media-/i.test(index_html)) {
+      const prevId = projectJobs.get(project_id);
+      const prevJob = prevId ? jobs.get(prevId) : null;
+      if (prevJob?.job_dir && prevJob.job_dir !== jobDir) donorDir = prevJob.job_dir;
+    }
+    if (donorDir) {
+      const srcAssets = join(donorDir, "assets");
+      const dstAssets = join(jobDir, "assets");
+      if (existsSync(srcAssets)) {
+        let copied = 0;
+        for (const name of readdirSync(srcAssets)) {
+          if (name === "__vp_gsap.min.js") continue;
+          const src = join(srcAssets, name);
+          const dst = join(dstAssets, name);
+          if (!existsSync(dst)) {
+            try {
+              copyFileSync(src, dst);
+              copied += 1;
+            } catch {
+              // best-effort — a missing file surfaces as lint error below
+            }
+          }
+        }
+        if (copied > 0) console.log(`[worker] copied ${copied} staged asset(s) from previous job for project ${project_id}`);
+      }
+    }
+  } catch {
+    // best-effort healing — never blocks staging
+  }
 
   // Post-process generated HTML before it enters the offline render pipeline.
   // The CLI launches Chromium inside this container, so public CDN references
@@ -503,6 +549,16 @@ app.post("/job", async (req, res) => {
   }
 
   let jobMediaValidation = null;
+
+  // V5.24: canonical HTML for storage/registry. prestage rewrites https://
+  // srcs to job-local `assets/vp-media-*` paths (sha1(url) → jobDir/assets).
+  // Persisting the rewritten HTML poisoned `compositions/index.html`: the
+  // next job starts with an empty jobDir, prestage skips (only https:// is
+  // downloaded) and lint fails with audio_src_not_found / missing_local_asset
+  // for exactly those vp-media-* files. The canonical (pre-prestage,
+  // post-sanitize) HTML keeps the original https:// URLs and stays valid
+  // across jobs — disk keeps the rewritten form, storage keeps canonical.
+  let canonicalHtml = index_html;
 
   // V4-3f.12: pre-stage external videos/audio locally. The HyperFrames CLI
   // downloads remote URLs itself, but if the URL returns an HTML page, a 403,
@@ -551,6 +607,19 @@ app.post("/job", async (req, res) => {
     if (!mediaResult.skipped) {
       console.log(`[worker] pre-staged ${mediaResult.downloaded.length} external media file(s)`);
       index_html = mediaResult.html;
+    } else if (typeof index_html === "string" && /src\s*=\s*["']assets\/vp-media-/i.test(index_html)) {
+      // V5.24: poisoned re-dispatch signature — HTML already carries job-local
+      // `assets/vp-media-*` paths but prestage found no https:// to download.
+      // Donor copy above heals the same-worker case; cross-worker/restart or
+      // poisoned storage still lands here and lint will fail below. Log the
+      // exact missing files so Coolify post-mortem points at the storage copy,
+      // not at the CLI rule.
+      const missing = [...index_html.matchAll(/src\s*=\s*["'](assets\/vp-media-[^"']+)["']/gi)]
+        .map((mm) => mm[1])
+        .filter((src, idx, arr) => arr.indexOf(src) === idx);
+      console.warn(
+        `[worker] pre-staged 0 files but HTML references ${missing.length} worker-local asset(s) (poisoned re-dispatch?): ${missing.slice(0, 8).join(", ")}`
+      );
     }
     // Persist validation metadata for diagnostics in callbacks.
     jobMediaValidation = {
@@ -619,25 +688,29 @@ app.post("/job", async (req, res) => {
   // (reconciliação de durações) e como alvo das edições. Fire-and-forget no
   // staging; a promessa fica no job para o callback reportar o resultado.
   // step:'preview' é o placeholder inicial — não pode competir com o HTML real.
+  // V5.24: persist canonicalHtml (pré-prestage) — o index_html reescrito contém
+  // `assets/vp-media-*` válidos só dentro deste jobDir; gravá-lo no storage
+  // envenenava o próximo job (prestage skipped → lint HYPERFRAMES_LINT_FAILED).
   const compositionUploadPromise = step !== "preview"
     ? persistCompositionArtifact(
       supabase,
       project_id,
-      index_html,
+      canonicalHtml,
       console.log,
       directUploadFailure("composition_html"),
     )
     : null;
 
   // V5-P3A (AD-5): derivar e publicar o registry de elementos ao lado da
-  // composição — index_html aqui já é o HTML FINAL (pós-sanitize/normalize),
-  // logo o inventário reflete exatamente o que o preview serve. Mesmo
-  // fire-and-forget; o resultado viaja no callback (composition_elements).
+  // composição — canonicalHtml aqui é o HTML CANÓNICO (pós-sanitize,
+  // pré-prestage, com URLs https:// originais), logo o inventário reflete o
+  // que o editor deve editar. O preview serve o HTML reescrito por jobDir.
+  // Mesmo fire-and-forget; o resultado viaja no callback (composition_elements).
   const elementsUploadPromise = step !== "preview"
     ? persistElementsArtifact(
       supabase,
       project_id,
-      deriveElements(index_html),
+      deriveElements(canonicalHtml),
       console.log,
       directUploadFailure("composition_elements"),
     )
