@@ -11,7 +11,7 @@
  *    instead of a truncated opaque message.
  */
 import { describe, it, expect } from "vitest";
-import { sanitizeCompositionTweens, extractLintFindings } from "./composition-sanitizer.js";
+import { sanitizeCompositionTweens, sanitizeTimelineRegistry, extractLintFindings } from "./composition-sanitizer.js";
 
 describe("sanitizeCompositionTweens", () => {
   it("rewrites left/top tween vars to x/y and reports the repairs", () => {
@@ -44,6 +44,83 @@ tl.to("#hero", { top: 40, opacity: 1 }, 0);
   it("skips external script tags and returns repairs empty for clean markup", () => {
     const html = '<script src="https://cdn.example/gsap.min.js"></script><script>gsap.set("#a", { opacity: 1 });</script>';
     const { html: out, repairs } = sanitizeCompositionTweens(html);
+    expect(out).toBe(html);
+    expect(repairs).toEqual([]);
+  });
+});
+
+// V5.27 Fase D — spec viva dos patterns do CLI 0.7.109 (cli.js:81715/81717).
+// A regra `gsap_timeline_not_registered` (cli.js:82941-82945) exige o registro
+// canônico DENTRO de cada bloco <script> que contém `gsap.timeline`.
+const CLI_ASSIGN_RE =
+  /window\.__timelines(?:\[\s*(?:["']([^"']+)["']|[A-Za-z_$][\w$.]*)\s*\]|\.\s*([A-Za-z_$][\w$]*))\s*=\s*([A-Za-z_$][\w$]*)/i;
+const CLI_OBJECT_LITERAL_RE =
+  /window\.__timelines\s*=\s*\{\s*(?:["'][^"']+["']|[A-Za-z_$][\w$]*)\s*:/i;
+
+function inlineScripts(html) {
+  return [...String(html).matchAll(/<script\b([^>]*)>([\s\S]*?)<\/script>/gi)]
+    .filter((m) => !/\bsrc\s*=/i.test(m[1]))
+    .map((m) => m[2]);
+}
+
+function expectCliRegistryParity(html) {
+  for (const body of inlineScripts(html)) {
+    if (!/gsap\.timeline/.test(body)) continue;
+    expect(
+      CLI_ASSIGN_RE.test(body) || CLI_OBJECT_LITERAL_RE.test(body),
+      `bloco ofensor sem registro canônico: ${body.slice(0, 160)}`,
+    ).toBe(true);
+  }
+}
+
+describe("sanitizeTimelineRegistry (V5.27 Fase D)", () => {
+  it("registra a timeline dentro do script ofensor (incidente: tl local sem registro)", () => {
+    const html = `<html><head></head><body>
+<div class="composition" data-composition-id="main"></div>
+<script>
+const tl = gsap.timeline({ paused: true });
+tl.fromTo("#scene-6-text-2", { opacity: 0 }, { opacity: 1, duration: 0.5 }, 32.1);
+</script>
+</body></html>`;
+    const { html: out, repairs } = sanitizeTimelineRegistry(html, "main");
+    expect(repairs).toHaveLength(1);
+    expect(out).toContain('window.__timelines["main"] = tl;');
+    expectCliRegistryParity(out);
+  });
+
+  it("deixa HTML canônico inalterado (idempotência)", () => {
+    const html = `<html><body><script>
+window.__timelines = window.__timelines || {};
+window.__timelines["main"] = gsap.timeline({ paused: true });
+</script></body></html>`;
+    const { html: out, repairs } = sanitizeTimelineRegistry(html, "main");
+    expect(out).toBe(html);
+    expect(repairs).toEqual([]);
+    expectCliRegistryParity(out);
+  });
+
+  it("repara múltiplos ofensores com 1 inserção cada, logada", () => {
+    const html = `<html><body>
+<script>const a = gsap.timeline({ paused: true }); a.to("#x", { opacity: 1 }, 0);</script>
+<script>const b = gsap.timeline({ paused: true }); b.to("#y", { opacity: 1 }, 1);</script>
+</body></html>`;
+    const { html: out, repairs } = sanitizeTimelineRegistry(html, "main");
+    expect(repairs).toHaveLength(2);
+    expect(out).toContain('window.__timelines["main"] = a;');
+    expect(out).toContain('window.__timelines["main"] = b;');
+    expectCliRegistryParity(out);
+  });
+
+  it("recusa mutação sem identificador extraível (vai ao lint, sem magia)", () => {
+    const html = `<html><body><script>gsap.timeline({ paused: true }).to("#x", { opacity: 1 }, 0);</script></body></html>`;
+    const { html: out, repairs } = sanitizeTimelineRegistry(html, "main");
+    expect(out).toBe(html);
+    expect(repairs).toEqual([]);
+  });
+
+  it("ignora scripts externos e blocos sem gsap.timeline", () => {
+    const html = '<script src="https://cdn.example/gsap.min.js"></script><script>const x = 1;</script>';
+    const { html: out, repairs } = sanitizeTimelineRegistry(html, "main");
     expect(out).toBe(html);
     expect(repairs).toEqual([]);
   });

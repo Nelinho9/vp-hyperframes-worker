@@ -142,6 +142,182 @@ export function sanitizeCompositionTweens(html) {
 }
 
 /**
+ * V5.27 Fase D — timeline-registry repair pré-lint (job 1700b4f4).
+ *
+ * Paridade com a regra `gsap_timeline_not_registered` do CLI 0.7.109
+ * (cli.js:82941-82945) e com o repair intra-script da edge (Fase A,
+ * `repairTimelineRegistry` em
+ * `visttapro/supabase/functions/video-v4-steps/edgeLint.ts`): cada bloco
+ * `<script>` inline que CRIA uma timeline (`gsap.timeline`) sem o registro
+ * canônico NO MESMO BLOCO ganha, logo após o statement de criação:
+ *
+ *   window.__timelines = window.__timelines || {};
+ *   window.__timelines["<compositionId>"] = <identificador>;
+ *
+ * onde o RHS é obrigatoriamente um identificador (cli.js:81717) — a forma
+ * ternária antiga (`= (typeof gsap !== "undefined") ? …`) nunca casava e o
+ * bloco injetado virava um offender adicional.
+ *
+ * Idempotente (blocos canônicos nunca tocados), no máximo 1 inserção por
+ * script ofensor. Um bloco cujo identificador não é extraível com confiança
+ * NÃO é mutado (o lint real reporta; sem magia). Sem fallback canônico: ao
+ * contrário da edge, o worker nunca inventa uma timeline quando nenhuma
+ * existe — só repara ofensores reais.
+ */
+
+const WINDOW_TIMELINE_ASSIGN_PATTERN =
+  /window\.__timelines(?:\[\s*(?:["']([^"']+)["']|[A-Za-z_$][\w$.]*)\s*\]|\.\s*([A-Za-z_$][\w$]*))\s*=\s*([A-Za-z_$][\w$]*)/i;
+
+const TIMELINE_REGISTRY_OBJECT_LITERAL_PATTERN =
+  /window\.__timelines\s*=\s*\{\s*(?:["'][^"']+["']|[A-Za-z_$][\w$]*)\s*:/i;
+
+/**
+ * CLI parity (cli.js:82943-82945): true when a script block CREATES a GSAP
+ * timeline but carries no canonical registration in the SAME block.
+ */
+function scriptCreatesUnregisteredTimeline(script) {
+  if (!/gsap\.timeline/.test(script)) return false;
+  return !(
+    WINDOW_TIMELINE_ASSIGN_PATTERN.test(script)
+    || TIMELINE_REGISTRY_OBJECT_LITERAL_PATTERN.test(script)
+  );
+}
+
+/** Index right after the `)` matching the `(` at `argsStart` (string-aware). */
+function matchTimelineParenEnd(source, argsStart) {
+  let depth = 1;
+  let i = argsStart;
+  let str = null;
+  while (i < source.length && depth > 0) {
+    const c = source[i];
+    if (str) {
+      if (c === "\\") i += 1;
+      else if (c === str) str = null;
+    } else if (c === '"' || c === "'" || c === "`") {
+      str = c;
+    } else if (c === "(") depth += 1;
+    else if (c === ")") depth -= 1;
+    i += 1;
+  }
+  return i;
+}
+
+/** Remove JS line/block comments before reasoning about a statement segment. */
+function stripTimelineJsComments(source) {
+  return String(source)
+    .replace(/\/\*[\s\S]*?\*\//g, " ")
+    .replace(/(^|[^:])\/\/[^\n\r]*/g, "$1 ");
+}
+
+/**
+ * Identifier assigned to the timeline creation at `callStart`:
+ * `const tl = ` → "tl"; `tl = ` → "tl"; `window.tl = ` → "window.tl".
+ * Returns null for anything not confidently an assignment.
+ */
+function timelineAssignedIdentifier(content, callStart) {
+  const before = content.slice(0, callStart);
+  const m = /(?:^|[;{}\n\r])\s*(?:(?:const|let|var)\s+)?([A-Za-z_$][\w$]*)(?:\s*\.\s*([A-Za-z_$][\w$]*))?\s*=\s*$/
+    .exec(before);
+  if (!m) return null;
+  return m[2] ? `${m[1]}.${m[2]}` : m[1];
+}
+
+/**
+ * Boundary right after the statement that owns the creation call (its first
+ * top-level `;`), or the index of the enclosing `}` — so the registration is
+ * spliced WITHOUT splitting a chained `gsap.timeline({...}).fromTo(...)`
+ * expression. Returns null when no safe boundary exists or the segment would
+ * land after a control-flow exit (`return`/`throw`/`break`/`continue`).
+ */
+function timelineRegistrationIndex(content, callEnd) {
+  let i = callEnd;
+  let parens = 0;
+  let brackets = 0;
+  let braces = 0;
+  let str = null;
+  let boundary = null;
+  while (i < content.length) {
+    const c = content[i];
+    const next = content[i + 1];
+    if (str) {
+      if (c === "\\") { i += 2; continue; }
+      if (c === str) str = null;
+      i += 1;
+      continue;
+    }
+    if (c === "/" && next === "/") {
+      const nl = content.indexOf("\n", i);
+      if (nl < 0) break;
+      i = nl + 1;
+      continue;
+    }
+    if (c === "/" && next === "*") {
+      const close = content.indexOf("*/", i + 2);
+      if (close < 0) break;
+      i = close + 2;
+      continue;
+    }
+    if (c === '"' || c === "'" || c === "`") { str = c; i += 1; continue; }
+    if (c === "(") parens += 1;
+    else if (c === ")") parens = Math.max(0, parens - 1);
+    else if (c === "[") brackets += 1;
+    else if (c === "]") brackets = Math.max(0, brackets - 1);
+    else if (c === "{") braces += 1;
+    else if (c === "}") {
+      if (parens === 0 && brackets === 0 && braces === 0) { boundary = i; break; }
+      braces = Math.max(0, braces - 1);
+    } else if (c === ";" && parens === 0 && brackets === 0 && braces === 0) {
+      boundary = i + 1;
+      break;
+    }
+    i += 1;
+  }
+  if (boundary === null) return null;
+  const segment = stripTimelineJsComments(content.slice(callEnd, boundary));
+  if (/\b(?:return|throw|break|continue)\b/.test(segment)) return null;
+  return boundary;
+}
+
+/**
+ * Register every unregistered timeline INSIDE the script block that creates
+ * it. Returns `{ html, repairs }` where `repairs` is a human-readable list
+ * of the insertions applied (for worker logs / diagnostics — same pattern
+ * as `sanitizeCompositionTweens`).
+ *
+ * @param {string} html composition HTML
+ * @param {string} [compositionId] registry key (defaults to "main")
+ */
+export function sanitizeTimelineRegistry(html, compositionId = "main") {
+  const repairs = [];
+  const source = String(html ?? "");
+  const key = /^[\w-]+$/.test(String(compositionId ?? "")) ? String(compositionId) : "main";
+  let scriptIndex = 0;
+  const out = source.replace(
+    /<script\b([^>]*)>([\s\S]*?)<\/script>/gi,
+    (full, attrs, content) => {
+      scriptIndex += 1;
+      if (/\bsrc\s*=/i.test(attrs)) return full;
+      if (!scriptCreatesUnregisteredTimeline(content)) return full;
+      const call = /\bgsap\s*\.\s*timeline\s*\(/.exec(content);
+      if (!call) return full;
+      const identifier = timelineAssignedIdentifier(content, call.index);
+      if (!identifier) return full;
+      const callEnd = matchTimelineParenEnd(content, call.index + call[0].length);
+      const insertAt = timelineRegistrationIndex(content, callEnd);
+      if (insertAt === null) return full;
+      const lineStart = content.lastIndexOf("\n", call.index) + 1;
+      const indent = /^[ \t]*/.exec(content.slice(lineStart, call.index))?.[0] ?? "";
+      const registration =
+        `${indent}window.__timelines = window.__timelines || {};\n`
+        + `${indent}window.__timelines["${key}"] = ${identifier};`;
+      repairs.push(`script#${scriptIndex}: registered "${identifier}" as "${key}"`);
+      return `<script${attrs}>${content.slice(0, insertAt)}\n${registration}\n${content.slice(insertAt)}</script>`;
+    }
+  );
+  return { html: out, repairs };
+}
+
+/**
  * Extract the structured findings array from a failed
  * `execSync("npx hyperframes lint --json ...")` error. Handles the JSON
  * document as a bare array, a `{ findings: [...] }` envelope, or JSON

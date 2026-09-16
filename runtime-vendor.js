@@ -191,14 +191,54 @@ const GENERIC_FONTS = new Set([
   '-apple-system', 'segoe ui', 'blinkmacsystemfont',
 ]);
 
+/**
+ * CLI parity (hyperframes 0.7.109, cli.js:81002-81010 — V5.27 Fase D):
+ * trim → strip a trailing `!important` → strip one surrounding quote →
+ * trim. Rejects empty names and function-like values (`var(--x)`), which
+ * the CLI never collects either. The worker preserves the author's casing
+ * in the returned value (case is only lowered for the generic comparison —
+ * the CLI compares case-insensitively, and `prepareOfflineFonts` covers
+ * case-insensitively too).
+ */
+function normalizeUsedFontName(part) {
+  const name = String(part ?? "")
+    .trim()
+    .replace(/\s*!important\s*$/i, "")
+    .replace(/^['"]|['"]$/g, "")
+    .trim();
+  if (!name || name.includes("(") || name.includes(")")) return null;
+  return name;
+}
+
+/**
+ * Scan source for font purposes: <script> bodies (JS strings can mention
+ * `font-family:` without using a font), HTML comments and CSS comments are
+ * removed first — the CLI strips CSS comments per style block (cli.js:80983)
+ * and never scans scripts for fonts. Mirrors `fontScanSource` in
+ * `visttapro/supabase/functions/video-v4-steps/edgeLint.ts` (Fase B).
+ */
+function fontScanSource(source) {
+  return String(source ?? "")
+    .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, " ")
+    .replace(/<!--[\s\S]*?-->/g, " ")
+    .replace(/\/\*[\s\S]*?\*\//g, " ");
+}
+
 /** Extract all non-generic font families referenced directly in CSS or style attributes. */
 export function extractCssFontFamilies(html) {
   if (typeof html !== "string") return [];
   const families = new Set();
-  const declRe = /font-family\s*:\s*([^;"}<]+)/gi;
-  for (const match of html.matchAll(declRe)) {
+  // CLI parity (cli.js:81007-81025, propRe `/font-family\s*:\s*([^;}{]+)/gi`):
+  // the old class `([^;"}<]+)` was blind to double-quoted names
+  // (`font-family: "berkeley mono"` — job 1700b4f4), so the family was never
+  // seen and no @font-face was injected while the CLI flagged it.
+  // @font-face blocks are excluded from the USED set exactly like the CLI
+  // does (cli.js:81012) — a declaration is not a use.
+  const scan = fontScanSource(html).replace(/@font-face\s*\{[^}]*\}/gi, " ");
+  const declRe = /font-family\s*:\s*([^;}{]+)/gi;
+  for (const match of scan.matchAll(declRe)) {
     for (const part of match[1].split(',')) {
-      const name = part.trim().replace(/^["']+|["']+$/g, '');
+      const name = normalizeUsedFontName(part);
       if (name && !GENERIC_FONTS.has(name.toLowerCase())) {
         families.add(name);
       }

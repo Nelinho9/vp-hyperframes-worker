@@ -5,6 +5,7 @@ import { join } from "node:path";
 import {
   classifyCheckEnvelope,
   extractCheckJson,
+  extractCssFontFamilies,
   extractGoogleFontFamilies,
   loadVendoredRuntimeBundles,
   localFontFaceStyle,
@@ -249,6 +250,30 @@ describe("offline font resolution (V4-3f.10)", () => {
   // V5.23: um spec individual com falha (404) cai para local() sem descartar
   // as famílias já resolvidas dos outros specs (antes, o catch global
   // deitava tudo fora ou — pior — emitia cobertura parcial sem complemento).
+  // V5.27 Fase D (job 1700b4f4): o regex de coleta era cego a nomes com
+  // aspas duplas (`font-family: "berkeley mono"`) — a família nunca era vista,
+  // nenhum @font-face era injetado e o CLI reprovava. Paridade com o CLI
+  // 0.7.109 (`([^;}{]+)` + normalizeUsedFontName, cli.js:81002-81010).
+  it("enxerga família com aspas duplas (reproduz o incidente berkeley mono)", () => {
+    expect(extractCssFontFamilies('h1{font-family: "berkeley mono", monospace}')).toEqual(["berkeley mono"]);
+  });
+
+  it("coleta limpa com !important e aspas simples", () => {
+    expect(extractCssFontFamilies("h1{font-family: 'space grotesk' !important, sans-serif}")).toEqual(["space grotesk"]);
+  });
+
+  it("prepareOfflineFonts cobre família em aspas duplas com local() (invariante V5.23 estendida)", async () => {
+    const jobDir = mkdtempSync(join(tmpdir(), "vp-font-job-"));
+    const html = `<!doctype html><html><head>
+      <style>.h{font-family: "berkeley mono", monospace}</style>
+    </head><body></body></html>`;
+    const result = await prepareOfflineFonts(html, { jobDir });
+    expect(result.families).toEqual(["berkeley mono"]);
+    expect(result.style).toContain("data-vp-fonts");
+    expect(result.style).toContain("@font-face");
+    expect(result.style).toContain("local('berkeley mono')");
+  });
+
   it("spec individual com falha cai para local() sem descartar as resolvidas", async () => {
     const jobDir = mkdtempSync(join(tmpdir(), "vp-font-job-"));
     const html = `<!doctype html><html><head>

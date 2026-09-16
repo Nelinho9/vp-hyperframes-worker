@@ -30,7 +30,7 @@ import { pathToFileURL, fileURLToPath } from "url";
 import { injectPreviewHelper, injectPreviewRuntime } from "./preview-helper.js";
 import { verifyPreviewToken } from "./preview-token.js";
 import { applyPatchesLinkedom, applyTimelineRestructure, normalizeClipWindows } from "./patch-engine.js";
-import { sanitizeCompositionTweens, extractLintFindings } from "./composition-sanitizer.js";
+import { sanitizeCompositionTweens, sanitizeTimelineRegistry, extractLintFindings } from "./composition-sanitizer.js";
 import { lintClipWindows, lintGsapTargets } from "./window-lint.js";
 import {
   classifyCheckEnvelope,
@@ -527,6 +527,26 @@ app.post("/job", async (req, res) => {
         `[worker] sanitized ${tweenFix.repairs.length} layout-prop tween(s) before lint: ${tweenFix.repairs.join("; ")}`
       );
       index_html = tweenFix.html;
+    }
+    // V5.27 Fase D: timeline-registry repair BEFORE lint — the worker's last
+    // line of defense against the gsap_timeline_not_registered error class
+    // (job 1700b4f4) that hard-failed the build on the worker. Mirrors the
+    // edge-side intra-script repair (Fase A); each insertion is logged like
+    // the tween-fixes above. Runs on the exact bytes the CLI will see, so it
+    // also covers re-dispatched Studio HTML and worker-materialized blocks
+    // that never pass through the edge.
+    try {
+      const compositionId =
+        index_html.match(/data-composition-id\s*=\s*["']([^"']+)["']/i)?.[1] ?? "main";
+      const registryFix = sanitizeTimelineRegistry(index_html, compositionId);
+      if (registryFix.repairs.length > 0) {
+        console.warn(
+          `[worker] registered ${registryFix.repairs.length} timeline(s) before lint: ${registryFix.repairs.join("; ")}`
+        );
+        index_html = registryFix.html;
+      }
+    } catch (err) {
+      console.warn(`[worker] timeline registry repair skipped: ${err?.message ?? err}`);
     }
     // V4-3f.10: resolve Google Fonts into local woff2 assets BEFORE the
     // sanitizer strips the references — lint's font_family_without_font_face
