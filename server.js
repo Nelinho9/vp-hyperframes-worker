@@ -114,6 +114,62 @@ export function buildDoneCallbackPayload(job, timings, uploaded, uploadErrors) {
   return payload;
 }
 
+/**
+ * V5_32 Fase C (C2 — D2): entrega do callback ao orquestrador com leitura de
+ * `res.ok`, retry com backoff curto e estado visível em `job.callback_status`
+ * (exposto no `/job/:id/status`). Antes o `await fetch(...)` era cego: um 400 da
+ * edge (ex.: schema do callback) passava por enviado, o job ficava `dispatched`
+ * e a UI mostrava loading eterno até ao teto do watchdog.
+ */
+export async function postCallback(url, secret, payload, options = {}) {
+  const {
+    fetchImpl = fetch,
+    attempts = 3,
+    baseDelayMs = 500,
+    log = console,
+    sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+  } = options;
+  const label = payload?.status ?? "?";
+  let last = { ok: false, attempts: 0 };
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    try {
+      const res = await fetchImpl(url, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Worker-Secret": secret || "",
+        },
+        body: JSON.stringify(payload),
+      });
+      if (res.ok) {
+        return { ok: true, status: res.status, attempts: attempt, at: new Date().toISOString() };
+      }
+      const bodyText = await res.text().catch(() => "");
+      last = {
+        ok: false,
+        status: res.status,
+        attempts: attempt,
+        error: `HTTP ${res.status}${bodyText ? `: ${bodyText.slice(0, 500)}` : ""}`,
+        at: new Date().toISOString(),
+      };
+      log.error(
+        `[callback] ${label} rejected by orchestrator (attempt ${attempt}/${attempts}): HTTP ${res.status}${bodyText ? ` ${bodyText.slice(0, 500)}` : ""}`
+      );
+    } catch (err) {
+      last = {
+        ok: false,
+        attempts: attempt,
+        error: err?.message ?? String(err),
+        at: new Date().toISOString(),
+      };
+      log.error(`[callback] ${label} transport error (attempt ${attempt}/${attempts}): ${last.error}`);
+    }
+    if (attempt < attempts) await sleep(baseDelayMs * attempt);
+  }
+  log.error(`[callback] giving up after ${attempts} attempt(s): ${last.error}`);
+  return last;
+}
+
 export async function awaitStagedUploads(job, uploaded = job.uploaded || {}) {
   if (job.compositionUploadPromise) {
     uploaded.composition_html = await job.compositionUploadPromise;
@@ -1463,19 +1519,16 @@ export async function runRender(jobId, jobDir) {
     job.total_ms = Date.now() - startTime;
 
     // Callback to orchestrator (V4-1 contract)
+    // V5_32 C2: entrega com res.ok + retry; o desfecho fica em
+    // `job.callback_status` (visível no /job/:id/status).
     if (job.callback?.url) {
-      try {
-        await fetch(job.callback.url, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "X-Worker-Secret": job.callback.secret || "",
-          },
-          body: JSON.stringify(buildDoneCallbackPayload(job, timings, uploaded, uploadErrors)),
-        });
-        console.log(`[callback] sent done for job ${job.id}`);
-      } catch (cbErr) {
-        console.error(`[callback] failed: ${cbErr.message}`);
+      job.callback_status = await postCallback(
+        job.callback.url,
+        job.callback.secret,
+        buildDoneCallbackPayload(job, timings, uploaded, uploadErrors),
+      );
+      if (job.callback_status.ok) {
+        console.log(`[callback] sent done for job ${job.id} (HTTP ${job.callback_status.status})`);
       }
     }
   } catch (err) {
@@ -1490,37 +1543,30 @@ export async function runRender(jobId, jobDir) {
     console.error(`[worker] job ${jobId} (${job?.project_id ?? "?"}) failed:\n${job.error.slice(-2000)}`);
 
     // Callback to orchestrator on failure
+    // V5_32 C2: mesma entrega robusta do caminho `done` (res.ok + retry +
+    // `callback_status`) — o 400 do schema que prendia o job deixa de ser mudo.
     if (job.callback?.url) {
-      try {
-        await fetch(job.callback.url, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "X-Worker-Secret": job.callback.secret || "",
-          },
-          body: JSON.stringify({
-            job_id: job.id,
-            project_id: job.project_id,
-            step: job.step,
-            status: "failed",
-            error: job.error,
-            total_ms: job.total_ms,
-            media_validation: job.media_validation || null,
-            // V4-3f.17 (Fase 5): full structured lint findings (when the
-            // failure was a lint error) so the orchestrator/UI can surface
-            // actionable detail instead of a truncated message.
-            lint_findings: job.lint_findings || null,
-            ...(Object.keys(job.upload_errors || {}).length > 0
-              ? { upload_errors: job.upload_errors }
-              : {}),
-            ...(job.window_normalization_warning
-              ? { window_normalization_warning: job.window_normalization_warning }
-              : {}),
-          }),
-        });
-        console.log(`[callback] sent failed for job ${job.id}`);
-      } catch (cbErr) {
-        console.error(`[callback] failed: ${cbErr.message}`);
+      job.callback_status = await postCallback(job.callback.url, job.callback.secret, {
+        job_id: job.id,
+        project_id: job.project_id,
+        step: job.step,
+        status: "failed",
+        error: job.error,
+        total_ms: job.total_ms,
+        media_validation: job.media_validation || null,
+        // V4-3f.17 (Fase 5): full structured lint findings (when the
+        // failure was a lint error) so the orchestrator/UI can surface
+        // actionable detail instead of a truncated message.
+        lint_findings: job.lint_findings || null,
+        ...(Object.keys(job.upload_errors || {}).length > 0
+          ? { upload_errors: job.upload_errors }
+          : {}),
+        ...(job.window_normalization_warning
+          ? { window_normalization_warning: job.window_normalization_warning }
+          : {}),
+      });
+      if (job.callback_status.ok) {
+        console.log(`[callback] sent failed for job ${job.id} (HTTP ${job.callback_status.status})`);
       }
     }
   }
