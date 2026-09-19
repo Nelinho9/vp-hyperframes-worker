@@ -96,6 +96,52 @@ describe("offline runtime vendor", () => {
     expect(result.fatal).toHaveLength(0);
   });
 
+  it("accepts the golden 0.7.109 envelope without a layout section", () => {
+    const envelope = JSON.parse(readFileSync(new URL("./fixtures/check-envelopes/hyperframes-0.7.109-info-only.json", import.meta.url), "utf8"));
+    const result = classifyCheckEnvelope(envelope);
+
+    expect(result.ok).toBe(true);
+    expect(result.version).toBe("0.7.109");
+    expect(result.layoutOk).toBe(true);
+    expect(result.motionOk).toBe(true);
+    expect(result.contrastOk).toBe(true);
+    expect(result.unknown).toHaveLength(1);
+    expect(result.unknown[0]).toMatchObject({ code: "check_result_unknown", version: "0.7.109" });
+  });
+
+  it("accepts the same golden envelope when the optional layout section is present", () => {
+    const envelope = JSON.parse(readFileSync(new URL("./fixtures/check-envelopes/hyperframes-0.7.109-with-layout.json", import.meta.url), "utf8"));
+    const result = classifyCheckEnvelope(envelope);
+
+    expect(result.ok).toBe(true);
+    expect(result.layoutOk).toBe(true);
+    expect(result.unknown).toHaveLength(1);
+  });
+
+  it("rejects a finding with severity error and preserves the CLI version", () => {
+    const envelope = JSON.parse(readFileSync(new URL("./fixtures/check-envelopes/hyperframes-0.7.109-error.json", import.meta.url), "utf8"));
+    const result = classifyCheckEnvelope(envelope);
+
+    expect(result.ok).toBe(false);
+    expect(result.fatal).toEqual(expect.arrayContaining([
+      expect.objectContaining({ code: "missing_asset", severity: "error" }),
+    ]));
+    expect(result.version).toBe("0.7.109");
+    expect(result.unknown).toHaveLength(0);
+  });
+
+  it("rejects an explicit runtime failure without a finding", () => {
+    const result = classifyCheckEnvelope({
+      ok: false,
+      runtime: { ok: false, findings: [] },
+      _meta: { version: "0.7.109" },
+    });
+
+    expect(result.ok).toBe(false);
+    expect(result.fatal[0]).toMatchObject({ code: "runtime_unknown_failure", version: "0.7.109" });
+    expect(result.unknown).toHaveLength(0);
+  });
+
   it("keeps page and console errors fatal", () => {
     const result = classifyCheckEnvelope({
       lint: { ok: true, findings: [] },

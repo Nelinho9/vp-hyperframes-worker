@@ -1,0 +1,14 @@
+{
+  "ok": false,
+  "strict": false,
+  "lint": {
+    "ok": false,
+    "errorCount": 1,
+    "findings": [
+      { "code": "missing_asset", "severity": "error", "message": "asset was not found" }
+    ]
+  },
+  "motion": { "ok": true, "findings": [] },
+  "contrast": { "ok": true, "findings": [] },
+  "_meta": { "version": "0.7.109" }
+}

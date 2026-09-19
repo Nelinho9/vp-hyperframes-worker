@@ -14,6 +14,7 @@ import {
   awaitStagedUploads,
 } from "./server.js";
 import { classifyCheckEnvelope, extractCheckJson } from "./runtime-vendor.js";
+import { formatCheckFailure } from "./server.js";
 
 describe("formatExecError", () => {
   it("appends stderr findings to the exec error message", () => {
@@ -80,6 +81,18 @@ describe("formatExecError", () => {
   it("does not downgrade a page error to a warning", () => {
     const envelope = extractCheckJson('{"ok":false,"lint":{"ok":true},"layout":{"ok":true},"runtime":{"ok":false,"findings":[{"code":"page_error","severity":"error","message":"ReferenceError"}]}}');
     expect(classifyCheckEnvelope(envelope).ok).toBe(false);
+  });
+
+  it("includes the CLI version and fatal findings in check failures", () => {
+    const classified = classifyCheckEnvelope({
+      ok: false,
+      lint: { ok: false, findings: [{ code: "missing_asset", severity: "error", message: "asset was not found" }] },
+      _meta: { version: "0.7.109" },
+    });
+
+    expect(formatCheckFailure(classified)).toBe(
+      "HyperFrames check failed (CLI 0.7.109)\nmissing_asset: asset was not found",
+    );
   });
 });
 

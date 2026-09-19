@@ -420,7 +420,7 @@ function findingList(section) {
 }
 
 function sectionIsOk(section) {
-  if (!section || typeof section !== "object") return false;
+  if (!section || typeof section !== "object") return true;
   return section.ok !== false && findingList(section).every((finding) => finding?.severity !== "error");
 }
 
@@ -438,29 +438,77 @@ function isTolerableNetworkFinding(finding) {
 
 /** Classify a HyperFrames --json check envelope without hiding JS errors. */
 export function classifyCheckEnvelope(envelope) {
-  const lint = envelope?.lint;
-  const layout = envelope?.layout;
-  const runtime = envelope?.runtime;
-  const runtimeFindings = [
-    ...findingList(runtime),
-    ...(Array.isArray(envelope?.runtimeFindings) ? envelope.runtimeFindings : []),
-  ];
-  const tolerated = runtimeFindings.filter((finding) => finding?.severity === "error" && isTolerableNetworkFinding(finding));
-  const fatal = runtimeFindings.filter((finding) => finding?.severity === "error" && !isTolerableNetworkFinding(finding));
-  const lintOk = sectionIsOk(lint);
-  const layoutOk = sectionIsOk(layout);
-  const runtimeUnknownFailure = Boolean(runtime && runtime.ok === false && runtimeFindings.length === 0);
+  const version = String(envelope?._meta?.version ?? "unknown");
+  const sectionNames = ["lint", "layout", "runtime", "motion", "contrast", "snapshots"];
+  const tolerated = [];
+  const fatal = [];
+  const warnings = [];
+  const sectionStatuses = {};
+
+  for (const name of sectionNames) {
+    const section = envelope?.[name];
+    const present = Boolean(section && typeof section === "object");
+    const findings = findingList(section);
+    const errorFindings = findings.filter((finding) => finding?.severity === "error");
+    const sectionTolerated = name === "runtime"
+      ? errorFindings.filter(isTolerableNetworkFinding)
+      : [];
+    const sectionFatal = errorFindings.filter((finding) => !sectionTolerated.includes(finding));
+
+    tolerated.push(...sectionTolerated);
+    warnings.push(...sectionTolerated);
+    warnings.push(...findings.filter((finding) => finding?.severity === "warning" || finding?.severity === "info"));
+
+    if (section?.ok === false && sectionFatal.length === 0 && sectionTolerated.length === 0) {
+      sectionFatal.push({
+        code: `${name}_unknown_failure`,
+        severity: "error",
+        message: `HyperFrames reported ${name}.ok=false without a finding`,
+        version,
+      });
+    }
+    fatal.push(...sectionFatal);
+    sectionStatuses[name] = {
+      present,
+      ok: sectionFatal.length === 0,
+    };
+  }
+
+  // Older CLI envelopes expose runtimeFindings at the top level. Keep reading
+  // them, but do not make the presence of a legacy section mandatory.
+  const legacyRuntimeFindings = Array.isArray(envelope?.runtimeFindings) ? envelope.runtimeFindings : [];
+  const legacyErrors = legacyRuntimeFindings.filter((finding) => finding?.severity === "error");
+  const legacyTolerated = legacyErrors.filter(isTolerableNetworkFinding);
+  tolerated.push(...legacyTolerated);
+  warnings.push(...legacyTolerated);
+  fatal.push(...legacyErrors.filter((finding) => !legacyTolerated.includes(finding)));
+  warnings.push(...legacyRuntimeFindings.filter((finding) => finding?.severity === "warning" || finding?.severity === "info"));
+
+  const unknown = [];
+  if (envelope?.ok === false && fatal.length === 0) {
+    unknown.push({
+      code: "check_result_unknown",
+      severity: "warning",
+      message: "HyperFrames reported ok=false without a known error finding",
+      version,
+    });
+  }
+  warnings.push(...unknown);
 
   return {
-    ok: lintOk && layoutOk && fatal.length === 0 && !runtimeUnknownFailure,
-    lintOk,
-    layoutOk,
+    ok: fatal.length === 0,
+    version,
+    sections: sectionStatuses,
+    lintOk: sectionStatuses.lint.ok,
+    layoutOk: sectionStatuses.layout.ok,
+    runtimeOk: sectionStatuses.runtime.ok,
+    motionOk: sectionStatuses.motion.ok,
+    contrastOk: sectionStatuses.contrast.ok,
+    snapshotsOk: sectionStatuses.snapshots.ok,
     tolerated,
-    fatal: runtimeUnknownFailure ? [{ code: "runtime_unknown_failure", severity: "error", message: "HyperFrames reported an unknown runtime failure" }, ...fatal] : fatal,
-    warnings: [
-      ...tolerated,
-      ...runtimeFindings.filter((finding) => finding?.severity === "warning" || finding?.severity === "info"),
-    ],
+    fatal,
+    unknown,
+    warnings,
   };
 }
 

@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "private": true,
   "type": "module",
-  "description": "VisttaPro HyperFrames render worker (V4-1) — dumb worker: no Supabase secrets, signed URL I/O + callback secret.",
+  "description": "VisttaPro HyperFrames render worker (V4-1) — dumb worker: no Supabase secrets, signed URL I/O + callback secret. HyperFrames CLI is pinned to 0.7.109; upgrade to 0.8.46 requires new check fixtures and validation.",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",

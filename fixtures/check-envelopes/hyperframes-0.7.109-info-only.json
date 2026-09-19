@@ -1,0 +1,18 @@
+{
+  "ok": false,
+  "strict": false,
+  "lint": {
+    "ok": true,
+    "errorCount": 0,
+    "warningCount": 0,
+    "infoCount": 2,
+    "findings": [
+      { "code": "overflow_info", "severity": "info", "message": "overflow checked" },
+      { "code": "font_info", "severity": "info", "message": "font checked" }
+    ]
+  },
+  "motion": { "ok": true, "errorCount": 0, "warningCount": 0, "infoCount": 0 },
+  "contrast": { "ok": true, "errorCount": 0, "warningCount": 0, "infoCount": 0, "checked": 19, "passed": 19 },
+  "snapshots": { "enabled": false },
+  "_meta": { "version": "0.7.109", "latestVersion": "0.8.46", "updateAvailable": true }
+}

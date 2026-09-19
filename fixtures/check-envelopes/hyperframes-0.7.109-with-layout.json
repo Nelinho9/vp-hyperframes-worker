@@ -1,0 +1,10 @@
+{
+  "ok": false,
+  "strict": false,
+  "lint": { "ok": true, "findings": [] },
+  "layout": { "ok": true, "findings": [] },
+  "motion": { "ok": true, "findings": [] },
+  "contrast": { "ok": true, "findings": [] },
+  "snapshots": { "enabled": false },
+  "_meta": { "version": "0.7.109" }
+}

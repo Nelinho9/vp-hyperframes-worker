@@ -357,6 +357,13 @@ export function spawnCommand(command, args, { timeout = 60000, env = process.env
   });
 }
 
+export function formatCheckFailure(classified) {
+  const findingText = classified.fatal
+    .map((finding) => `${finding.code ?? "runtime_error"}: ${finding.message ?? "unknown error"}`)
+    .join("\n");
+  return `HyperFrames check failed (CLI ${classified.version})\n${findingText || "unknown check failure"}`;
+}
+
 export async function runCheck(jobDir) {
   const command = process.env.HYPERFRAMES_BIN || "npx";
   const args = process.env.HYPERFRAMES_BIN
@@ -383,17 +390,18 @@ export async function runCheck(jobDir) {
 
   const classified = classifyCheckEnvelope(envelope);
   if (!classified.ok) {
-    const findingText = classified.fatal
-      .map((finding) => `${finding.code ?? "runtime_error"}: ${finding.message ?? "unknown error"}`)
-      .join("\n");
-    const error = new Error(`HyperFrames check failed${findingText ? `\n${findingText}` : ""}`);
+    const error = new Error(formatCheckFailure(classified));
     error.stdout = result.stdout;
     error.stderr = result.stderr;
     error.code = result.code;
     throw error;
   }
+  if (classified.unknown.length) {
+    const codes = classified.unknown.map((finding) => finding.code ?? "unknown").join(",");
+    console.warn(`[worker] hyperframes check returned ok=false without a known failure (CLI ${classified.version}; ${codes}); continuing with structured warning`);
+  }
   if (classified.warnings.length || result.code !== 0) {
-    console.warn(`[worker] hyperframes check continued with ${classified.warnings.length} tolerated warning(s)`);
+    console.warn(`[worker] hyperframes check continued with ${classified.warnings.length} warning(s) (CLI ${classified.version})`);
   }
   return { envelope, classified, result };
 }
