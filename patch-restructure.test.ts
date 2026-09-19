@@ -866,7 +866,9 @@ describe('POST /restructure/:id — V5-P0C frame-exact quantization', () => {
     const wins = extractWindows(html);
     expect(wins.map((w) => w.start)).toEqual([0, 5.9, 13.5]);
     expect(lintClipWindows(html).some((finding) => finding.code === 'clip_window_gap')).toBe(true);
-    const status = await fetch(`${base}/job/job-p0c-stage/status`);
+    const status = await fetch(`${base}/job/job-p0c-stage/status`, {
+      headers: { 'x-worker-secret': SECRET },
+    });
     const statusBody = (await status.json()) as { window_normalization_warning: { code: string; next_id: string } };
     expect(statusBody.window_normalization_warning).toMatchObject({
       code: 'CLIP_WINDOWS_NON_CONTIGUOUS',

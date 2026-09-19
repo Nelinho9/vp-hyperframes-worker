@@ -861,10 +861,31 @@ app.post("/job", async (req, res) => {
 });
 
 // ── Poll status ─────────────────────────────────────────────────────
+// Status is an internal reconciliation endpoint. Even authorized callers do
+// not need callback secrets or signed upload URLs to identify a terminal job.
+export function redactJobStatus(value) {
+  if (Array.isArray(value)) return value.map((item) => redactJobStatus(item));
+  if (!value || typeof value !== "object") return value;
+
+  const out = {};
+  for (const [key, child] of Object.entries(value)) {
+    if (key === "secret" && typeof child === "string") {
+      out[key] = "[redacted]";
+    } else if (key.endsWith("_upload_url") && typeof child === "string") {
+      out[key] = "[redacted]";
+    } else {
+      out[key] = redactJobStatus(child);
+    }
+  }
+  return out;
+}
+
 app.get("/job/:id/status", (req, res) => {
+  const auth = authorizedWorkerService(req);
+  if (!auth.ok) return res.status(auth.status).json({ error: auth.error });
   const job = jobs.get(req.params.id);
   if (!job) return res.status(404).json({ error: "not found" });
-  res.json(job);
+  res.json(redactJobStatus(job));
 });
 
 // ── V5.14 F7: supervisão da pipeline ──────────────────────────────
