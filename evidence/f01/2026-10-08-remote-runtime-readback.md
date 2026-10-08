@@ -123,3 +123,129 @@ No worker code was changed by this audit. The detailed debug, validation and imp
 The Coolify application is configured as Git source plus Dockerfile: repository `github.com/Nelinho9/vp-hyperframes-worker`, branch `feat/video-v534-f01-contracts-security`, commit `5e73bae3c78e52ceaf3d6f2029873f452a6d5688`, Dockerfile `/Dockerfile`. Container image **Image** and **Tag** are empty because no external registry image is configured. The deployment log explicitly records `Image not found (evfjtavsuuzllxneqpixofyz:5e73bae3c78e52ceaf3d6f2029873f452a6d5688). Building new image.`
 
 Therefore source commit plus Dockerfile is the applicable immutable build identity for this resource; a registry image digest is not a configured input. The remaining F01.7 gap is terminal render/manifest persistence and no duplicate rerender after restart, which the provider-free `staged` smoke did not prove.
+
+## F01.7 terminal render proof — mode: render, done and failed (2026-10-08)
+
+Session window 18:47–20:42 UTC. Repos before evidence commits: app
+`3c0c996206ee84dbbac4bfb7b4e4d04ac9db4788`, worker
+`eb4cde64894b1f20803b3f46a7905e225524d647` (clean trees). Coolify build
+commit unchanged: `5e73bae3c78e52ceaf3d6f2029873f452a6d5688`; the API restart
+below reused the same image (no source rebuild). Worker
+`https://vp-hf.46-224-139-143.sslip.io`, resource
+`evfjtavsuuzllxneqpixofyz` `running:healthy` before and after.
+
+The inbound credential was verified locally by SHA-256 digest only
+(`852ef330a0ff0ec978347e1b54ea7bbba7b0cf51cee8bdc97c2468cec6459cb3`,
+matching the recorded runtime digest); the value was never printed in this
+session beyond the pre-existing `.env` line.
+
+### Fixture design (provider-free)
+
+Two disposable V1 jobs with new UUIDs (project
+`f17b0000-0000-4000-8000-00000000b001`), callback secret distinct from
+`WORKER_SECRET`, unreachable `https://` callback sink
+(`vp-f01-sink-unreachable.test`):
+
+- Job `f17a0000-0000-4000-8000-00000000a001` (`step: build`, `mode: render`):
+  HTML without a body/composition root. Local CLI 0.7.109 lint reproduced
+  exit 1 with `root_missing_composition_id`, `root_missing_dimensions`,
+  `missing_timeline_registry` before any render/upload.
+- Job `f17a0000-0000-4000-8000-00000000a002` (`step: finalize`, `mode: render`):
+  self-contained 4s/1080x1920 composition (scene 1 of `fixtures/pj-launch`
+  inlined as data: URIs, 550059 bytes), lint+render validated locally
+  (~21s draft) before dispatch. Real signed upload URLs were minted for
+  disposable storage paths `projects/f17b.../renders/output.mp4` and
+  `projects/f17b.../snapshots/finalize-...a002.jpg` (Supabase service role,
+  same bucket the worker already uses).
+
+### Terminal failed (a001)
+
+- Authenticated POST -> `202 {queued}` at 18:54:04Z.
+- Readback `200 failed` at 18:54:08.323Z, `total_ms 2260`, error_code
+  `WORKER_JOB_FAILED`, input hash
+  `cb522252045f8efac7a564989f3ed77e3bfa4598ce1e89bfc8545eab0572bfbe`.
+- `callback_status {ok:false, attempts:3}` against the unreachable sink;
+  `uploaded {composition_html:true, composition_elements:true}` (Supabase
+  staging fallback), no MP4 upload, no provider.
+- Status body exposes no `inputs`, `outputs` or `callback` fields.
+
+### Terminal done (a002)
+
+- Authenticated POST -> `202 {queued}` at 19:33:45.072Z.
+- Readback `200 done` at 19:34:29.619Z, `total_ms 44547`; timings lint 1758ms
+  / check 15908ms / snapshot 5927ms / render 19744ms; input hash
+  `eeac6ac580f9fcb56c9cab681a974184a030380c2dcb28a3f7dbade1926d5dc3`.
+- `uploaded {mp4:true, composition_html:true, composition_elements:true,
+  snapshots:true}`; `output.mp4_url` storage ref and
+  `mp4_size_bytes 796569`.
+- Storage readback: MP4 796569 bytes, SHA-256
+  `ef876510237098d41d5230b0f07a45c3e5882b320310c79eb65621a84d68e687`,
+  magic `ftypisom`, plus 4 snapshot frames and composition artifacts with
+  sizes/mtimes recorded in the session log.
+- `callback_status {ok:false, attempts:3}` (unreachable sink), payload
+  persisted; delivery retry proven, happy-path delivery to a real
+  orchestrator endpoint remains NOT_EXECUTED.
+
+### Replay, conflict and auth negatives (remote)
+
+- Replay of the identical a001 POST -> `200 failed`; replay of a002 ->
+  `200 done`; both with byte-identical `started_at`/`completed_at`/
+  `total_ms` — no re-execution.
+- Same `job_id` with mutated HTML and a correctly recomputed `input_hash` ->
+  `409 {"error":"JOB_HASH_CONFLICT"}`.
+- No credential -> `401 invalid_secret`; wrong credential -> `401
+  invalid_secret`; the job's own callback secret used as inbound
+  credential -> `401 invalid_secret` (credential separation in transport).
+
+### Controlled restart and no-rerender
+
+- Coolify API `POST /applications/{uuid}/restart` at 19:38:43Z (deployment
+  `hgig6tfksfuaummiefkyvpd2`, new container
+  `evfjtavsuuzllxneqpixofyz-20261008T193834`, same image/source commit).
+- Boot log: `rehydrated 164 job(s)` (162 historical + 2 fixture), both
+  terminal callbacks re-delivered from the saved payload (3 attempts each,
+  `CALLBACK_TRANSPORT_FAILED`, new `at` timestamps 19:38:54/55Z).
+- Both jobs read back `failed`/`done` with identical hashes, timestamps and
+  `total_ms`; current-container log search: `f17a0000` 0 matches,
+  `F01_7_DEBUG` marker 0 matches, `persisted compositions` 0 matches — zero
+  re-execution after restart.
+- The boot supervisor re-registered the fixture project and returned it to
+  the watchdog after 8 consecutive 404s from `/status` (the project does
+  not exist in the orchestrator) — expected disposable-fixture behaviour.
+
+### Cleanup
+
+- Volume: both `f17a0000-*` job directories removed; `grep -c f17` -> `0`.
+- Storage: all 7 fixture objects (compositions x2, renders x1, snapshots x4)
+  removed; listing after removal -> `[]`.
+- Local scratch (`tmp-f017/`) and session screenshots deleted; no repo file
+  other than this evidence changed.
+
+### Matrix result
+
+PASS (local/controlled, pre-existing): auth-before-body, missing-config
+`503`, invalid-auth, schema/UUID/hash/path limits, callback
+separation/binding, atomic 0600 durability, queued/running/staged recovery,
+callback retry unit semantics, replay/no-rerender unit semantics.
+
+PASS (remote, this session): authenticated admission in `mode: render`;
+terminal `failed` (deterministic pre-upload lint failure); terminal `done`
+with real 19.7s render, signed-URL MP4 upload and persisted manifest/result
+refs; terminal callback retry incl. boot re-delivery; replay `200` and hash
+conflict `409`; three `401` negatives incl. callback-secret-as-inbound;
+restart survival without rerender; false-marker absence in hosted logs;
+fixture cleanup volume+storage.
+
+NOT_EXECUTED (declared limits): happy-path remote callback delivery to a
+real orchestrator endpoint (would require fabricating a remote job row);
+remote interruption of a live render (`WORKER_RESTART_INTERRUPTED` is
+local-test proven; both remote renders completed before the restart);
+remote readback of `job-state-v1.json` contents/0600 mode (durability is
+proven indirectly by state/hash/timestamp survival through a real
+container restart).
+
+Provider budget: 0 EUR (CPU-only CLI renders; no LLM/TTS/vision). No
+worker or Edge code was changed; no migration, secret rotation, merge or
+push occurred. Decision: **F01.7 terminal render contract PASS** in the
+applicable scope above; the declared NOT_EXECUTED limits are recorded here
+and in the app-side receipts.
