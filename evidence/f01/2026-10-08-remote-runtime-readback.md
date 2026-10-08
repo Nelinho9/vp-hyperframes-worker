@@ -102,6 +102,22 @@ This worker evidence is committed as `54525fd` (`docs(f01): record hosted worker
 
 Full SHA receipt correction: worker evidence `54525fdd8b7bfb41f21ca0766e9aa346c5cdbdce`; worker receipt `2768e6c459b5010ba19ca6cb74efff7891010f04`; corresponding app evidence `57248fa531d056187e7b0764072c619679d4ea65`; app receipt `ed682c0502c39b99a3a835d66347b12fc039233b`.
 
+## F01.7 local contract audit and next-session handoff (2026-10-08)
+
+The local audit checked `server.js`, `job-contract.js`, `job-queue.js`, `pipeline-runner.js`, the Dockerfile, the worker README, the directed security/persistence/callback tests, and the Edge producer contract. The result is a contract clarification, not a runtime correction.
+
+`parseRenderJob` accepts `mode: preview` and `mode: render`. `stageJob` deliberately leaves preview jobs at `staged` without invoking HyperFrames. The Edge producer uses `mode: render` for `build` and `finalize`; that path calls `runRender` and can finish as `done` or `failed`. The remote fixture `f01a0000-0000-4000-8000-000000000001` was therefore a valid provider-free staging smoke, but it was not a terminal render smoke. Its `staged` readback after restart does not prove or disprove the render path.
+
+Current F01.7 classification:
+
+- `PASS`: local auth-before-body, missing-config `503`, invalid-auth `401`, schema/UUID/hash/path limits, callback separation/binding, atomic durable queue, queued/running/staged recovery, terminal callback retry, and no-rerender replay tests.
+- `PASS`: Coolify Git source, branch, source commit, Dockerfile and health/build evidence; empty Image/Tag is expected for this resource.
+- `PASS`: provider-free remote admission, `401` negative, staged hash/timestamp survival, false-marker log absence and fixture cleanup.
+- `NOT_EXECUTED`: remote `mode: render` reaching terminal `done` or `failed`, remote terminal manifest/result persistence, and remote proof that restart/replay does not rerender the terminal job.
+- `NOT_APPLICABLE`: registry Image/Tag digest as a required Coolify input.
+
+No worker code was changed by this audit. The detailed debug, validation and implementation prompt is [NEXT_SESSION_F01_7_DEBUG.md](../../../visttapro/docs/video-engine/V5_34_PLANO_REFINAMENTO_PROFISSIONAL/NEXT_SESSION_F01_7_DEBUG.md). F01.7 remains open until a future session either proves the terminal render contract with a `mode: render` disposable fixture or records a concrete failure and its verified fix.
+
 ## Coolify build-flow clarification (2026-10-08)
 
 The Coolify application is configured as Git source plus Dockerfile: repository `github.com/Nelinho9/vp-hyperframes-worker`, branch `feat/video-v534-f01-contracts-security`, commit `5e73bae3c78e52ceaf3d6f2029873f452a6d5688`, Dockerfile `/Dockerfile`. Container image **Image** and **Tag** are empty because no external registry image is configured. The deployment log explicitly records `Image not found (evfjtavsuuzllxneqpixofyz:5e73bae3c78e52ceaf3d6f2029873f452a6d5688). Building new image.`
