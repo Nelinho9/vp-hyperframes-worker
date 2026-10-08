@@ -101,3 +101,9 @@ Provider budget remains 0 EUR.
 This worker evidence is committed as `54525fd` (`docs(f01): record hosted worker runtime readback`). The corresponding app documentation commit is `57248fa`. Both remain on `feat/video-v534-f01-contracts-security`; no merge or push to `main` occurred.
 
 Full SHA receipt correction: worker evidence `54525fdd8b7bfb41f21ca0766e9aa346c5cdbdce`; worker receipt `2768e6c459b5010ba19ca6cb74efff7891010f04`; corresponding app evidence `57248fa531d056187e7b0764072c619679d4ea65`; app receipt `ed682c0502c39b99a3a835d66347b12fc039233b`.
+
+## Coolify build-flow clarification (2026-10-08)
+
+The Coolify application is configured as Git source plus Dockerfile: repository `github.com/Nelinho9/vp-hyperframes-worker`, branch `feat/video-v534-f01-contracts-security`, commit `5e73bae3c78e52ceaf3d6f2029873f452a6d5688`, Dockerfile `/Dockerfile`. Container image **Image** and **Tag** are empty because no external registry image is configured. The deployment log explicitly records `Image not found (evfjtavsuuzllxneqpixofyz:5e73bae3c78e52ceaf3d6f2029873f452a6d5688). Building new image.`
+
+Therefore source commit plus Dockerfile is the applicable immutable build identity for this resource; a registry image digest is not a configured input. The remaining F01.7 gap is terminal render/manifest persistence and no duplicate rerender after restart, which the provider-free `staged` smoke did not prove.
