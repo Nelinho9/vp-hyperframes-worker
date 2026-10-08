@@ -95,3 +95,7 @@ the latter remains **UNKNOWN**. F01.7 therefore remains open and
 volume/mode, and secret presence/distinction are evidenced, while the effective
 image digest and remote missing-configuration `503` gate remain unqualified.
 Provider budget remains 0 EUR.
+
+## Commit receipt (2026-10-08)
+
+This worker evidence is committed as `54525fd` (`docs(f01): record hosted worker runtime readback`). The corresponding app documentation commit is `57248fa`. Both remain on `feat/video-v534-f01-contracts-security`; no merge or push to `main` occurred.
