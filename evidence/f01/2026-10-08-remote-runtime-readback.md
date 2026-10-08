@@ -45,3 +45,53 @@ remote job row, or remote restart was performed. Health plus the negative auth
 checks do not qualify a positive worker smoke or F01 cutover. Keep F01.7 and
 F01.12 open until the parent task records the digest/effective env and closes
 the callback/producer channels in the approved order.
+
+## Addendum: hosted runtime proof (2026-10-08)
+
+The Coolify deployment log supplied for this continuation was
+`deployment-a3hvmwoelyt5vd7txepoxoit-2026-10-08-15-00-42.txt`, SHA-256
+`CFE6E2AE16583686C3C1BF31A3B6F8410C6B0DA5B5BEC0DFE93E1177840FFE69`. It
+identifies source `Nelinho9/vp-hyperframes-worker`, branch
+`feat/video-v534-f01-contracts-security`, commit
+`5e73bae3c78e52ceaf3d6f2029873f452a6d5688`, build image ID
+`sha256:1866608fd8b5b6369d9cdfe4384c2e2edd8d6515737fc8574c8dc317e0900ee3`,
+and container `evfjtavsuuzllxneqpixofyz-20261008T144742`. The rolling update
+completed and the healthcheck reported `healthy`.
+
+Sanitised runtime logs reported 162 jobs rehydrated from
+`/tmp/hyperframes-worker`, `HyperFrames worker listening on :8787`, Chromium
+at `/usr/bin/chromium`, the same work directory, a connected Supabase client,
+and HMAC-SHA256 preview-token enforcement. The Coolify terminal readback
+reported Debian 12, hostname `fdc817a67cd3`, process `node server.js`, and
+volume `evfjtavsuuzllxneqpixofyz-vp-worker-data` mounted at
+`/tmp/hyperframes-worker`; the directory was `root:root` mode `755`. Only env
+names were recorded: `WORKER_SECRET`, `SUPERVISOR_SECRET`, `PREVIEW_SECRET`,
+`SUPABASE_URL`, `SUPABASE_KEY`, `SOURCE_COMMIT`, `COOLIFY_BRANCH`, and
+`COOLIFY_RESOURCE_UUID`. Secret values were not printed or persisted. Their
+SHA-256 digests were recorded as follows: WORKER_SECRET
+`852ef330a0ff0ec978347e1b54ea7bbba7b0cf51cee8bdc97c2468cec6459cb3`,
+SUPERVISOR_SECRET
+`463f502f68217bda70a8d063b4fa5461f2c38249ffcf5f180f7c7ed7ee6729a4`, and PREVIEW_SECRET
+`a07f0673176863677d2a8f906f7b1dd9ac62bf2a75f8521ab9765efe3b24fc14`.
+
+Provider-free authenticated admission of disposable job
+`f01a0000-0000-4000-8000-000000000001` returned `202 queued`; authenticated
+readback returned `200 staged` with input hash
+`20eed1269257a6c72efbee85e4ac194382a22120046628ecb37436fab0e9deb5`. The
+same job remained `staged` with the same hash and timestamps after a controlled
+`kill -TERM 1` restart and recovery. Public admission and unauthenticated
+status both returned `401`. No provider, upload, callback, or paid operation
+was invoked.
+
+A second disposable job carried false callback/upload markers. Admission
+returned `202`; searching the hosted runtime logs found no `F01_FAKE` match,
+and both fixture directories were removed with terminal confirmation
+`remaining=0`. No fixture file retained the markers.
+The direct hosted-log and cleanup proof closes F01.6.
+
+The build image ID above is not an effective running-container image digest;
+the latter remains **UNKNOWN**. F01.7 therefore remains open and
+`DEPLOY_BLOCKED`: positive auth, negative `401`, provider-free persistence,
+volume/mode, and secret presence/distinction are evidenced, while the effective
+image digest and remote missing-configuration `503` gate remain unqualified.
+Provider budget remains 0 EUR.
