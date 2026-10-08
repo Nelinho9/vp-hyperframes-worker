@@ -66,7 +66,7 @@ describe('V5_32 C2 — postCallback (res.ok + retry + estado visível)', () => {
     expect(result.status).toBe(400);
     expect(result.attempts).toBe(3);
     expect(result.error).toContain('400');
-    expect(result.error).toContain('BAD_BODY');
+    expect(result.error).not.toContain('BAD_BODY');
     expect(fetchImpl).toHaveBeenCalledTimes(3);
     expect(sleep).toHaveBeenCalledTimes(2); // backoff entre tentativas, nunca depois da última
     expect(log.error).toHaveBeenCalledTimes(4); // 3 tentativas + o «giving up» final
@@ -80,7 +80,7 @@ describe('V5_32 C2 — postCallback (res.ok + retry + estado visível)', () => {
     const result = await postCallback(URL, SECRET, PAYLOAD, { fetchImpl, sleep, log: logger() });
 
     expect(result).toMatchObject({ ok: false, attempts: 3 });
-    expect(result.error).toContain('ECONNREFUSED');
+    expect(result.error).toBe('CALLBACK_TRANSPORT_FAILED');
   });
 
   it('200 à primeira → uma tentativa, sem backoff', async () => {

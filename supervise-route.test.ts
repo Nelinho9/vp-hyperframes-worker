@@ -46,6 +46,7 @@ async function bootWorker(env: Record<string, string | undefined> = {}) {
     "SUPABASE_URL",
     "SUPABASE_KEY",
     "WORKER_SECRET",
+    "SUPERVISOR_SECRET",
     "PREVIEW_SECRET",
   ])
     delete process.env[key];
@@ -163,14 +164,15 @@ describe('POST /supervise', () => {
 
   it('GET /job/:id/status exige o secret e redige segredos do job e do payload', async () => {
     const created = await post('/job', {
+      job_id: '11111111-1111-4111-8111-111111111112',
       project_id: '11111111-1111-4111-8111-111111111111',
       step: 'build',
       mode: 'preview',
       inputs: { index_html: '<!doctype html><html><body>x</body></html>' },
       callback: { url: 'https://edge.example/callback', secret: 'callback-secret' },
       outputs: { mp4_upload_url: 'https://storage.example/mp4?token=upload-token' },
-    });
-    expect(created.status).toBe(200);
+    }, { 'x-worker-secret': SECRET });
+    expect(created.status).toBe(202);
     const { job_id: jobId } = await created.json();
 
     expect((await realFetch(`${base}/job/${jobId}/status`)).status).toBe(401);
@@ -179,8 +181,8 @@ describe('POST /supervise', () => {
     });
     expect(response.status).toBe(200);
     const status = await response.json();
-    expect(status.callback.secret).toBe('[redacted]');
-    expect(status.outputs.mp4_upload_url).toBe('[redacted]');
+    expect(status.callback).toBeUndefined();
+    expect(status.outputs).toBeUndefined();
     expect(JSON.stringify(status)).not.toContain('callback-secret');
     expect(JSON.stringify(status)).not.toContain('upload-token');
   });
@@ -219,6 +221,7 @@ describe('kill-switch + boot', () => {
     );
     await bootWorker({
       WORKER_SECRET: SECRET,
+      SUPERVISOR_SECRET: 'distinct-cron-fixture',
       SUPABASE_URL: 'https://ref.supabase.co',
       WORK_DIR: dir,
       PIPELINE_SUPERVISOR_TICK_MS: '1',

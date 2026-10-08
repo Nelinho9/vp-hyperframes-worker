@@ -169,17 +169,19 @@ describe('normalizeDriver — contrato entregue pelo orquestrador, fallback de b
     expect(normalizeDriver({ driver: { ...DRIVER, step_url: '' } }, {}).ok).toBe(false);
   });
 
-  it('reconstrói a partir do env no boot (SUPABASE_URL + WORKER_SECRET já existentes)', () => {
+  it('reconstrói a partir do env no boot com credencial supervisor própria', () => {
     const res = normalizeDriver(
       null,
       {
         SUPABASE_URL: 'https://projref.supabase.co',
-        WORKER_SECRET: 'cb-secret',
+        SUPERVISOR_SECRET: 'cron-secret',
+        WORKER_SECRET: 'distinct-dispatch-secret',
       },
       'rehydrated',
     );
     expect(res.ok).toBe(true);
     if (!res.ok) return;
+    expect(res.driver.secret).toBe('cron-secret');
     expect(res.driver.status_url).toBe('https://projref.supabase.co/functions/v1/video-v4-orchestrator/status?project_id=rehydrated');
     expect(res.driver.step_url).toBe('https://projref.supabase.co/functions/v1/video-v4-orchestrator/step');
     expect(res.driver.resume_url).toBe('https://projref.supabase.co/functions/v1/video-v4-orchestrator/resume');
@@ -188,6 +190,7 @@ describe('normalizeDriver — contrato entregue pelo orquestrador, fallback de b
   it('sem env nem corpo → não ok (o watchdog é a última linha)', () => {
     expect(normalizeDriver(null, {}).ok).toBe(false);
     expect(normalizeDriver(null, { SUPABASE_URL: 'https://x.supabase.co' }).ok).toBe(false);
+    expect(normalizeDriver(null, { SUPABASE_URL: 'https://x.supabase.co', WORKER_SECRET: 'dispatch-only' }, PROJECT).ok).toBe(false);
   });
 });
 

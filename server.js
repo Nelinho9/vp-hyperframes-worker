@@ -21,11 +21,14 @@
  */
 
 import express from "express";
-import { execSync, spawn } from "child_process";
+import { spawn } from "child_process";
 import { createClient } from "@supabase/supabase-js";
 import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync, copyFileSync } from "fs";
 import { join, basename, dirname } from "path";
-import { randomUUID } from "crypto";
+import { fetchBounded } from "./bounded-fetch.js";
+import { parseRenderJob, publicJob, confinedPath, secureEqual } from "./job-contract.js";
+import { createJobQueue, atomicWriteJob } from "./job-queue.js";
+import { jobEnvironment } from "./job-environment.js";
 import { pathToFileURL, fileURLToPath } from "url";
 import { injectPreviewHelper, injectPreviewRuntime } from "./preview-helper.js";
 import { verifyPreviewToken } from "./preview-token.js";
@@ -53,7 +56,18 @@ import {
 } from "./pipeline-runner.js";
 
 const app = express();
-app.use(express.json({ limit: "200mb" }));
+app.use('/job', (req, res, next) => {
+  const auth = authorizedWorkerService(req);
+  if (!auth.ok) return res.status(auth.status).json({ error: auth.error });
+  const timer = setTimeout(() => req.destroy(), 30_000);
+  req.once('end', () => clearTimeout(timer));
+  req.once('close', () => clearTimeout(timer));
+  next();
+});
+app.use(express.json({ limit: "48mb" }));
+app.use((error, _req, res, _next) => {
+  res.status(error.type === 'entity.too.large' ? 413 : 400).json({ error: 'INVALID_REQUEST_BODY' });
+});
 
 // ── Config ──────────────────────────────────────────────────────────
 const PORT = process.env.PORT || 8787;
@@ -65,10 +79,9 @@ const CHROME_PATH = process.env.CHROME_PATH || "/usr/bin/chromium";
 // V4-3g.5 (R5): quando definido, GET /preview/:id exige ?token= HMAC válido
 // (mesmo segredo que VIDEO_V4_PREVIEW_SECRET no orchestrator edge).
 const PREVIEW_SECRET = process.env.PREVIEW_SECRET || "";
-// V4-04C: server-to-server auth para /patch/:id + /restructure/:id — a rota
-// Vercel envia o secret de serviço (VIDEO_V4_CALLBACK_SECRET no lado Vercel,
-// partilhado aqui como WORKER_SECRET). Sem nenhum dos dois secrets, as rotas
-// de escrita recusam-se (503) em vez de ficarem abertas.
+// Inbound server-to-server auth: Edge VIDEO_V4_WORKER_SECRET.
+// Callback transport and boot supervisor use distinct credentials.
+// Missing inbound configuration always fails closed.
 const WORKER_SECRET = process.env.WORKER_SECRET || "";
 const runtimeBundles = loadVendoredRuntimeBundles();
 
@@ -101,7 +114,7 @@ export function buildDoneCallbackPayload(job, timings, uploaded, uploadErrors) {
   const payload = {
     job_id: job.id,
     project_id: job.project_id,
-    step: job.step,
+    step: job.step, request_id: job.request_id, revision: job.revision, input_hash: job.input_hash, callback_nonce: job.callback?.nonce,
     status: "done",
     timings,
     uploaded,
@@ -133,18 +146,18 @@ export async function postCallback(url, secret, payload, options = {}) {
   let last = { ok: false, attempts: 0 };
   for (let attempt = 1; attempt <= attempts; attempt += 1) {
     try {
-      const res = await fetchImpl(url, {
+      const { response: res } = await fetchBounded(url, { fetchImpl, timeoutMs: 15_000, maxBytes: 16_384, consumeBody: false, init: {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           "X-Worker-Secret": secret || "",
         },
         body: JSON.stringify(payload),
-      });
+      } });
       if (res.ok) {
         return { ok: true, status: res.status, attempts: attempt, at: new Date().toISOString() };
       }
-      const bodyText = await res.text().catch(() => "");
+      const bodyText = "";
       last = {
         ok: false,
         status: res.status,
@@ -159,7 +172,7 @@ export async function postCallback(url, secret, payload, options = {}) {
       last = {
         ok: false,
         attempts: attempt,
-        error: err?.message ?? String(err),
+        error: /^HTTP_\d+$|^DOWNLOAD_[A-Z_]+$/.test(err?.message || "") ? err.message : "CALLBACK_TRANSPORT_FAILED",
         at: new Date().toISOString(),
       };
       log.error(`[callback] ${label} transport error (attempt ${attempt}/${attempts}): ${last.error}`);
@@ -198,7 +211,7 @@ const SUPERVISOR_TICK_MS = Number(process.env.PIPELINE_SUPERVISOR_TICK_MS) || 15
  *
  * @param {string} projectId
  * @param {{ driver?: object } | null} body corpo do /supervise (contrato do
- *   orquestrador); `null` ⇒ deriva de SUPABASE_URL + WORKER_SECRET (boot).
+ *   orquestrador); `null` ⇒ deriva de SUPABASE_URL + SUPERVISOR_SECRET (boot).
  * @returns {{ supervised: boolean, reason?: string, status?: number }}
  */
 export function superviseProject(projectId, body) {
@@ -292,6 +305,18 @@ export function rehydrateJobs() {
 }
 
 rehydrateJobs();
+const jobQueue = createJobQueue({ root: WORK_DIR, jobs, processJob: stageJob, deliverCallback: retryTerminalCallback,
+  concurrency: process.env.JOB_CONCURRENCY, capacity: process.env.JOB_QUEUE_CAPACITY });
+jobQueue.recover();
+for (const job of [...jobs.values()].sort((a, b) => String(a.created_at).localeCompare(String(b.created_at)))) projectJobs.set(job.project_id, job.id);
+async function retryTerminalCallback(job) {
+  if (!job.callback?.url || job.callback_status?.ok) return;
+  job.callback_payload ||= { job_id: job.id, project_id: job.project_id, request_id: job.request_id, step: job.step,
+    revision: job.revision, input_hash: job.input_hash, callback_nonce: job.callback.nonce,
+    status: job.status, ...(job.status === 'failed' ? { error: job.error_code || 'WORKER_JOB_FAILED' } : {}) };
+  atomicWriteJob(job);
+  job.callback_status = await postCallback(job.callback.url, job.callback.secret, job.callback_payload);
+}
 
 /**
  * V4-3f.7: execSync failures carry stdout/stderr Buffers on the error
@@ -306,7 +331,7 @@ rehydrateJobs();
 export function formatExecError(err, { limit = 4000 } = {}) {
   const base = err?.message ?? String(err);
   const detail = [err?.stderr, err?.stdout]
-    .map((b) => (b ? b.toString() : ""))
+    .map((b) => (b ? b.toString().replace(/https?:\/\/[^\s"'<>]+/g, "[remote-resource]") : ""))
     .filter((s) => s.trim())
     .join("\n")
     .trim();
@@ -321,14 +346,13 @@ export function formatExecError(err, { limit = 4000 } = {}) {
 
 /** Upload an artifact using the signed PUT URL supplied by the orchestrator. */
 export async function uploadToSignedUrl(url, body, contentType) {
-  const response = await fetch(url, {
+  const { response } = await fetchBounded(url, { timeoutMs: 60_000, consumeBody: false, init: {
     method: "PUT",
     headers: { "Content-Type": contentType },
     body,
-  });
+  } });
   if (!response.ok) {
-    const detail = (await response.text().catch(() => "")).trim();
-    throw new Error(`signed upload failed (${response.status})${detail ? `: ${detail.slice(0, 400)}` : ""}`);
+    throw new Error(`signed upload failed (${response.status})`);
   }
 }
 
@@ -341,11 +365,11 @@ export function spawnCommand(command, args, { timeout = 60000, env = process.env
     let timedOut = false;
     const timer = setTimeout(() => {
       timedOut = true;
-      child.kill("SIGTERM");
+      child.kill("SIGKILL");
     }, timeout);
 
-    child.stdout?.on("data", (chunk) => { stdout += chunk.toString(); });
-    child.stderr?.on("data", (chunk) => { stderr += chunk.toString(); });
+    child.stdout?.on("data", (chunk) => { stdout = (stdout + chunk.toString()).slice(-1024 * 1024); });
+    child.stderr?.on("data", (chunk) => { stderr = (stderr + chunk.toString()).slice(-1024 * 1024); });
     child.once("error", (error) => {
       clearTimeout(timer);
       reject(Object.assign(error, { stdout, stderr }));
@@ -364,14 +388,14 @@ export function formatCheckFailure(classified) {
   return `HyperFrames check failed (CLI ${classified.version})\n${findingText || "unknown check failure"}`;
 }
 
-export async function runCheck(jobDir) {
+export async function runCheck(jobDir, env = { ...process.env, CHROME_PATH }) {
   const command = process.env.HYPERFRAMES_BIN || "npx";
   const args = process.env.HYPERFRAMES_BIN
     ? ["check", "--json", jobDir]
     : ["hyperframes", "check", "--json", jobDir];
   const result = await spawnCommand(command, args, {
     timeout: 60000,
-    env: { ...process.env, CHROME_PATH },
+    env,
   });
   if (result.timedOut) {
     const error = new Error(`Command timed out: ${command} ${args.join(" ")}`);
@@ -417,7 +441,8 @@ app.get("/healthz", (_req, res) => {
   res.json({
     ok: true,
     uptime_s: Math.round(process.uptime()),
-    active_jobs: jobs.size,
+    active_jobs: jobQueue.stats().active,
+    queue: jobQueue.stats(),
   });
 });
 
@@ -481,8 +506,7 @@ app.get("/bgm/:file", runtimeCors, (req, res) => {
 });
 
 // ── Submit job ──────────────────────────────────────────────────────
-app.post("/job", async (req, res) => {
-  const body = req.body;
+async function stageJob(body) {
   const project_id = body.project_id;
   const step = body.step;
   // Accept both formats: direct index_html OR nested in inputs (orchestrator format)
@@ -492,7 +516,7 @@ app.post("/job", async (req, res) => {
   const artifact_paths = body.artifact_paths;
 
   if (!project_id) {
-    return res.status(400).json({ error: "project_id required" });
+    throw new Error("INVALID_PROJECT_ID");
   }
 
   // Finalize intentionally reuses the composition that just completed the
@@ -518,7 +542,7 @@ app.post("/job", async (req, res) => {
   }
 
   if (!index_html) {
-    return res.status(400).json({ error: "index_html or inputs.index_html required" });
+    throw new Error("HTML_REQUIRED");
   }
 
   // V4-debug3: LLM may return JSON wrapper {title, duration, html} instead of
@@ -534,8 +558,8 @@ app.post("/job", async (req, res) => {
     }
   }
 
-  const jobId = body.job_id || randomUUID();
-  const jobDir = join(WORK_DIR, jobId);
+  const jobId = body.job_id;
+  const jobDir = confinedPath(WORK_DIR, jobId);
   mkdirSync(join(jobDir, "assets"), { recursive: true });
 
   // V5.24: heal worker-local asset reuse. `assets/vp-media-*` paths are only
@@ -658,10 +682,11 @@ app.post("/job", async (req, res) => {
     });
     if (!mediaResult.ok) {
       const summary = mediaResult.failures
-        .map((f) => `${f.url} -> ${f.reason}: ${f.detail}`)
+        .map((f) => `${f.reason}: ${f.detail}`)
         .join("; ");
       const error = new Error(`MEDIA_VALIDATION_FAILED: ${summary}`);
       jobs.set(jobId, {
+    ...jobs.get(jobId),
         id: jobId,
         project_id,
         step: step || "render",
@@ -681,12 +706,7 @@ app.post("/job", async (req, res) => {
         mode: body.mode === "preview" ? "preview" : "render",
         created_at: new Date().toISOString(),
       });
-      return res.status(422).json({
-        job_id: jobId,
-        status: "failed",
-        error: "MEDIA_VALIDATION_FAILED",
-        failures: mediaResult.failures,
-      });
+      throw error;
     }
     if (!mediaResult.skipped) {
       console.log(`[worker] pre-staged ${mediaResult.downloaded.length} external media file(s)`);
@@ -813,7 +833,7 @@ app.post("/job", async (req, res) => {
   if (body.assets) {
     for (const [name, data] of Object.entries(body.assets)) {
       const buf = Buffer.from(data, "base64");
-      const assetPath = join(jobDir, "assets", name);
+      const assetPath = confinedPath(join(jobDir, "assets"), name);
       mkdirSync(dirname(assetPath), { recursive: true });
       writeFileSync(assetPath, buf);
     }
@@ -823,6 +843,7 @@ app.post("/job", async (req, res) => {
   }
 
   jobs.set(jobId, {
+    ...jobs.get(jobId),
     id: jobId,
     project_id,
     step: step || "render",
@@ -845,40 +866,30 @@ app.post("/job", async (req, res) => {
   // mode:'preview' stages the composition only (no HyperFrames CLI run) —
   // used for editor previews and contract tests (V4-3f.3).
   if (body.mode !== "preview") {
-    // Run render asynchronously
-    runRender(jobId, jobDir).catch((err) => {
-      const job = jobs.get(jobId);
-      if (job) {
-        job.status = "failed";
-        job.error = formatExecError(err);
-      }
-    });
+    await runRender(jobId, jobDir);
   } else {
     jobs.get(jobId).status = "staged";
   }
 
-  res.json({ job_id: jobId, status: "queued" });
+}
+app.post('/job', (req, res) => {
+  try {
+    const { body, hash } = parseRenderJob(req.body, WORKER_SECRET);
+    const result = jobQueue.accept(body, hash);
+    if (result.status === 409) return res.status(409).json({ error: 'JOB_HASH_CONFLICT' });
+    if (result.status === 429) return res.status(429).json({ error: 'JOB_QUEUE_FULL' });
+    if (result.status === 503) return res.status(503).json({ error: 'DURABLE_STORE_UNAVAILABLE' });
+    return res.status(result.status).json({ job_id: result.job.id, status: result.job.status });
+  } catch (error) {
+    const code = error?.message || 'INVALID_JOB';
+    return res.status(/^[A-Z_]+$/.test(code) ? 400 : 503).json({ error: /^[A-Z_]+$/.test(code) ? code : 'DURABLE_STORE_UNAVAILABLE' });
+  }
 });
 
 // ── Poll status ─────────────────────────────────────────────────────
 // Status is an internal reconciliation endpoint. Even authorized callers do
 // not need callback secrets or signed upload URLs to identify a terminal job.
-export function redactJobStatus(value) {
-  if (Array.isArray(value)) return value.map((item) => redactJobStatus(item));
-  if (!value || typeof value !== "object") return value;
-
-  const out = {};
-  for (const [key, child] of Object.entries(value)) {
-    if (key === "secret" && typeof child === "string") {
-      out[key] = "[redacted]";
-    } else if (key.endsWith("_upload_url") && typeof child === "string") {
-      out[key] = "[redacted]";
-    } else {
-      out[key] = redactJobStatus(child);
-    }
-  }
-  return out;
-}
+export function redactJobStatus(value) { return publicJob(value); }
 
 app.get("/job/:id/status", (req, res) => {
   const auth = authorizedWorkerService(req);
@@ -889,13 +900,11 @@ app.get("/job/:id/status", (req, res) => {
 });
 
 // ── V5.14 F7: supervisão da pipeline ──────────────────────────────
-// Auth: mesmo padrão das rotas de escrita server-to-server (WORKER_SECRET, que
-// é o VIDEO_V4_CALLBACK_SECRET do orquestrador). O /supervise não tem segredos
-// próprios: o contrato (rotas da edge + secret) chega no corpo, porque o worker
-// é burro também na configuração.
+// Inbound /supervise auth uses WORKER_SECRET. Its private driver credential
+// targets the orchestrator independently; boot uses SUPERVISOR_SECRET.
 function authorizedWorkerService(req) {
   if (!WORKER_SECRET) return { ok: false, status: 503, error: "auth_not_configured" };
-  if ((req.get("x-worker-secret") || "") !== WORKER_SECRET) return { ok: false, status: 401, error: "invalid_secret" };
+  if (!secureEqual(req.get("x-worker-secret") || "", WORKER_SECRET)) return { ok: false, status: 401, error: "invalid_secret" };
   return { ok: true };
 }
 
@@ -1322,16 +1331,17 @@ export async function runRender(jobId, jobDir) {
   // cache entry from a previous render can never be reused.
   const extractCacheDir = join(jobDir, "__extract-cache");
   mkdirSync(extractCacheDir, { recursive: true });
-  process.env.HYPERFRAMES_EXTRACT_CACHE_DIR = extractCacheDir;
+  const jobEnv = jobEnvironment(jobDir, { ...process.env, CHROME_PATH });
+  atomicWriteJob(job);
 
   try {
     // Step 1: lint
     timings.lint_start = Date.now();
     try {
-      execSync(
-        `npx hyperframes lint --json "${jobDir}"`,
-        { encoding: "utf-8", timeout: 30000, env: { ...process.env, CHROME_PATH } }
-      );
+      const command = process.env.HYPERFRAMES_BIN || 'npx';
+      const args = process.env.HYPERFRAMES_BIN ? ['lint', '--json', jobDir] : ['hyperframes', 'lint', '--json', jobDir];
+      const result = await spawnCommand(command, args, { timeout: 30_000, env: jobEnv });
+      if (result.code !== 0 || result.timedOut) throw Object.assign(new Error('HyperFrames lint failed'), result);
     } catch (lintErr) {
       // V4-3f.17 (Fase 5): parse the --json findings so the job error and
       // the orchestrator callback carry the full structured list instead of
@@ -1361,7 +1371,7 @@ export async function runRender(jobId, jobDir) {
 
     // Step 2: check
     timings.check_start = Date.now();
-    await runCheck(jobDir);
+    await runCheck(jobDir, jobEnv);
     timings.check_ms = Date.now() - timings.check_start;
 
     // Step 3: snapshot — V5.22 Fase H3: per-scene POST-ENTRANCE sampling.
@@ -1393,7 +1403,7 @@ export async function runRender(jobId, jobDir) {
       }
       await spawnCommand(snapCmd, snapArgs, {
         timeout: 60000,
-        env: { ...process.env, CHROME_PATH, PRODUCER_LOW_MEMORY_MODE: "true" },
+        env: { ...jobEnv, PRODUCER_LOW_MEMORY_MODE: "true" },
       });
     } catch (snapErr) {
       console.warn(`[worker] snapshot generation warning: ${snapErr?.message ?? snapErr}`);
@@ -1423,7 +1433,7 @@ export async function runRender(jobId, jobDir) {
         : ["hyperframes", "snapshot", "--at", String(pngAt), "--no-end", "-o", outputPath, jobDir];
       renderResult = await spawnCommand(pngCommand, pngArgs, {
         timeout: 600000,
-        env: { ...process.env, CHROME_PATH, PRODUCER_LOW_MEMORY_MODE: "true" },
+        env: { ...jobEnv, PRODUCER_LOW_MEMORY_MODE: "true" },
       });
     } else {
       const renderCommand = process.env.HYPERFRAMES_BIN || "npx";
@@ -1433,7 +1443,7 @@ export async function runRender(jobId, jobDir) {
         : ["hyperframes", "render", "--quality", "high", "--workers", "1", ...fmtArgs, "-o", outputPath, jobDir];
       renderResult = await spawnCommand(renderCommand, renderArgs, {
         timeout: 600000,
-        env: { ...process.env, CHROME_PATH, PRODUCER_LOW_MEMORY_MODE: "true" },
+        env: { ...jobEnv, PRODUCER_LOW_MEMORY_MODE: "true" },
       });
       if (exportFormat === 'gif' && renderResult.code === 0) {
         try {
@@ -1551,11 +1561,8 @@ export async function runRender(jobId, jobDir) {
     // V5_32 C2: entrega com res.ok + retry; o desfecho fica em
     // `job.callback_status` (visível no /job/:id/status).
     if (job.callback?.url) {
-      job.callback_status = await postCallback(
-        job.callback.url,
-        job.callback.secret,
-        buildDoneCallbackPayload(job, timings, uploaded, uploadErrors),
-      );
+      job.callback_payload = buildDoneCallbackPayload(job, timings, uploaded, uploadErrors);
+      atomicWriteJob(job); await retryTerminalCallback(job);
       if (job.callback_status.ok) {
         console.log(`[callback] sent done for job ${job.id} (HTTP ${job.callback_status.status})`);
       }
@@ -1575,10 +1582,10 @@ export async function runRender(jobId, jobDir) {
     // V5_32 C2: mesma entrega robusta do caminho `done` (res.ok + retry +
     // `callback_status`) — o 400 do schema que prendia o job deixa de ser mudo.
     if (job.callback?.url) {
-      job.callback_status = await postCallback(job.callback.url, job.callback.secret, {
+      job.callback_payload = {
         job_id: job.id,
         project_id: job.project_id,
-        step: job.step,
+        step: job.step, request_id: job.request_id, revision: job.revision, input_hash: job.input_hash, callback_nonce: job.callback?.nonce,
         status: "failed",
         error: job.error,
         total_ms: job.total_ms,
@@ -1593,7 +1600,8 @@ export async function runRender(jobId, jobDir) {
         ...(job.window_normalization_warning
           ? { window_normalization_warning: job.window_normalization_warning }
           : {}),
-      });
+      };
+      atomicWriteJob(job); await retryTerminalCallback(job);
       if (job.callback_status.ok) {
         console.log(`[callback] sent failed for job ${job.id} (HTTP ${job.callback_status.status})`);
       }

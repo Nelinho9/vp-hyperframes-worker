@@ -1,0 +1,7 @@
+{
+  "run_id": "v534-f01-local-media-2026-10-08-r01",
+  "provider_budget_eur": 0,
+  "cli_pin": "0.7.109",
+  "outcome": "FAIL",
+  "error": "ENOENT: no such file or directory, open '/usr/local/lib/node_modules/hyperframes/package.json'"
+}

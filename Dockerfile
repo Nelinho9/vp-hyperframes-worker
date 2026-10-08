@@ -37,6 +37,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # HyperFrames CLI pinned (V4-0 spike version — determinism contract).
 RUN npm install -g hyperframes@0.7.109 && npm cache clean --force
 
+# The pinned CLI can start a detached global npm auto-install even on a
+# non-TTY build. Disable it before browser ensure and during worker runtime.
+ENV HYPERFRAMES_NO_UPDATE_CHECK=1 \
+    HYPERFRAMES_NO_AUTO_INSTALL=1
+
 # Chrome Headless Shell gerido pelo HyperFrames (o `render` usa-o em vez do
 # chromium de sistema; precisa de unzip para extrair o download).
 RUN hyperframes browser ensure || echo "browser ensure falhou — será retomado no boot"

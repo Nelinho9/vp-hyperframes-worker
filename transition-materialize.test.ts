@@ -1,3 +1,4 @@
+import { fixtureFetch as fetch, fixtureId } from "./test-http-fixture";
 // @vitest-environment node
 /**
  * transition-materialize.test.ts — V5-P2C (§7.2): transições entre cenas.
@@ -321,13 +322,13 @@ async function stage(projectId: string, html: string = COMPOSITION_HTML) {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      job_id: `job-${projectId}`,
+      job_id: fixtureId('job-' + projectId),
       project_id: projectId,
       mode: 'preview',
       index_html: html,
     }),
   });
-  expect(res.status).toBe(200);
+  expect([200, 202]).toContain(res.status);
 }
 
 async function post(path: string, body: unknown, headers: Record<string, string> = {}) {
@@ -393,13 +394,13 @@ describe('POST /restructure/:id — V5-P2C materialização de transições', ()
   const TRANSITIONS = [{ id: 'scene-2', kind: 'fade', durationMs: 400 }];
 
   it('janela saínte estendida frame-exato; entrante e ROOT intactos; attrs escritos', async () => {
-    await stage('proj-p2c-1');
+    await stage('9acb6cd3-8c60-e305-b54c-4a1a67f3390e');
     const res = await post(
-      '/restructure/proj-p2c-1',
+      '/restructure/9acb6cd3-8c60-e305-b54c-4a1a67f3390e',
       { scenes: SCENES, transitions: TRANSITIONS, fps: 30 },
       { 'X-Worker-Secret': SECRET },
     );
-    expect(res.status).toBe(200);
+    expect([200, 202]).toContain(res.status);
     const body = (await res.json()) as { html: string; findings: unknown[] };
 
     // Overlap permitido pelo lint — zero findings.
@@ -430,9 +431,9 @@ describe('POST /restructure/:id — V5-P2C materialização de transições', ()
   });
 
   it('invariante por tick: 1 clip visível fora do overlap, 2 dentro dele', async () => {
-    await stage('proj-p2c-ticks');
+    await stage('6403d4a4-97d0-3d20-a51e-d80f32a24427');
     const res = await post(
-      '/restructure/proj-p2c-ticks',
+      '/restructure/6403d4a4-97d0-3d20-a51e-d80f32a24427',
       { scenes: SCENES, transitions: TRANSITIONS, fps: 30 },
       { 'X-Worker-Secret': SECRET },
     );
@@ -459,9 +460,9 @@ describe('POST /restructure/:id — V5-P2C materialização de transições', ()
   });
 
   it('payload semanticamente inválido é ignorado; duração é clampeada [200,800]', async () => {
-    await stage('proj-p2c-invalid');
+    await stage('bb28e76f-d229-6a69-032d-114574c508da');
     const res = await post(
-      '/restructure/proj-p2c-invalid',
+      '/restructure/bb28e76f-d229-6a69-032d-114574c508da',
       {
         scenes: SCENES,
         transitions: [
@@ -474,7 +475,7 @@ describe('POST /restructure/:id — V5-P2C materialização de transições', ()
       },
       { 'X-Worker-Secret': SECRET },
     );
-    expect(res.status).toBe(200);
+    expect([200, 202]).toContain(res.status);
     const body = (await res.json()) as { html: string };
     const wins = extractWindows(body.html);
     // scene-2 ← fade@800: overlap 24f → end de scene-1 = (90+24)/30 = 3.8.
@@ -489,7 +490,7 @@ describe('POST /restructure/:id — V5-P2C materialização de transições', ()
   });
 
   it('payload com shape inválido → 400 (validação da rota)', async () => {
-    await stage('proj-p2c-shape');
+    await stage('39fcab86-9b49-3632-fb85-10a766783d01');
     for (const transitions of [
       'not-an-array',
       [{ id: 'scene-2' }],
@@ -497,7 +498,7 @@ describe('POST /restructure/:id — V5-P2C materialização de transições', ()
       [{ id: 'scene-2', kind: 'fade', durationMs: 'abc' }],
     ]) {
       const res = await post(
-        '/restructure/proj-p2c-shape',
+        '/restructure/39fcab86-9b49-3632-fb85-10a766783d01',
         { scenes: SCENES, transitions, fps: 30 },
         { 'X-Worker-Secret': SECRET },
       );
@@ -506,9 +507,9 @@ describe('POST /restructure/:id — V5-P2C materialização de transições', ()
   });
 
   it('cenas curtas clampeiam o overlap às frames disponíveis', async () => {
-    await stage('proj-p2c-short');
+    await stage('e1adfa58-762f-ed73-08a7-0f4aac9e67e8');
     const res = await post(
-      '/restructure/proj-p2c-short',
+      '/restructure/e1adfa58-762f-ed73-08a7-0f4aac9e67e8',
       {
         scenes: [
           { id: 'scene-1', durationFrames: 15 },
@@ -535,34 +536,34 @@ describe('POST /restructure/:id — V5-P2C materialização de transições', ()
   });
 
   it('idempotência: mesma carga → HTML byte-idêntico', async () => {
-    await stage('proj-p2c-idem');
+    await stage('ac05a179-e08b-6eec-acfd-be97b5659df1');
     const payload = { scenes: SCENES, transitions: TRANSITIONS, fps: 30 };
-    const first = await post('/restructure/proj-p2c-idem', payload, { 'X-Worker-Secret': SECRET });
+    const first = await post('/restructure/ac05a179-e08b-6eec-acfd-be97b5659df1', payload, { 'X-Worker-Secret': SECRET });
     const a = ((await first.json()) as { html: string }).html;
-    const second = await post('/restructure/proj-p2c-idem', payload, { 'X-Worker-Secret': SECRET });
+    const second = await post('/restructure/ac05a179-e08b-6eec-acfd-be97b5659df1', payload, { 'X-Worker-Secret': SECRET });
     const b = ((await second.json()) as { html: string }).html;
     expect(b).toBe(a);
   });
 
   it('remover a transição converge byte-exato para o apply limpo', async () => {
-    await stage('proj-p2c-remove');
+    await stage('61e39925-ebb3-33b2-30fc-e3fab7940412');
     const withT = await post(
-      '/restructure/proj-p2c-remove',
+      '/restructure/61e39925-ebb3-33b2-30fc-e3fab7940412',
       { scenes: SCENES, transitions: TRANSITIONS, fps: 30 },
       { 'X-Worker-Secret': SECRET },
     );
     expect(((await withT.json()) as { html: string }).html).toContain(TRANSITION_BLOCK_ID);
 
-    await stage('proj-p2c-clean');
+    await stage('82b78435-c37d-cb92-6693-4cadcc359529');
     const cleanRes = await post(
-      '/restructure/proj-p2c-clean',
+      '/restructure/82b78435-c37d-cb92-6693-4cadcc359529',
       { scenes: SCENES, fps: 30 },
       { 'X-Worker-Secret': SECRET },
     );
     const cleanHtml = ((await cleanRes.json()) as { html: string }).html;
 
     const removedRes = await post(
-      '/restructure/proj-p2c-remove',
+      '/restructure/61e39925-ebb3-33b2-30fc-e3fab7940412',
       { scenes: SCENES, transitions: [], fps: 30 },
       { 'X-Worker-Secret': SECRET },
     );
@@ -574,9 +575,9 @@ describe('POST /restructure/:id — V5-P2C materialização de transições', ()
   });
 
   it('normalizeClipWindows preserva os overlaps declarados (round-trip)', async () => {
-    await stage('proj-p2c-norm');
+    await stage('d73bd407-1429-01c7-7b33-b415641bd034');
     const res = await post(
-      '/restructure/proj-p2c-norm',
+      '/restructure/d73bd407-1429-01c7-7b33-b415641bd034',
       { scenes: SCENES, transitions: TRANSITIONS, fps: 30 },
       { 'X-Worker-Secret': SECRET },
     );

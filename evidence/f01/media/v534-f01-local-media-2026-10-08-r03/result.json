@@ -1,0 +1,198 @@
+{
+  "run_id": "v534-f01-local-media-2026-10-08-r03",
+  "provider_budget_eur": 0,
+  "cli_pin": "0.7.109",
+  "outcome": "PASS_LOCAL_RENDER_RESTART",
+  "installed_cli": "0.7.109",
+  "local_package_cli": "0.7.109",
+  "image_source_sha256": {
+    "server.js": "adeb7bcdca3cbe9b3b4d39596f45aa72b60f8a35044682edbdf0281a466a13ef",
+    "job-contract.js": "46cea9426dabfd8d03f7f0620ef4167444adca66ab53fcc05073f1e731e39776",
+    "job-queue.js": "5597253517500bcbc820c3f1735b86ef58e285e76e4dd18be5de0887d09381c6",
+    "job-environment.js": "c1340516fb5573153530e05276c8c16df9d239702d891303af20d0a515791f14",
+    "bounded-fetch.js": "2dc9b6215d729650a079d4eaaa3c37143bbf76f9614a09cbaefdc16da58a2c37",
+    "media-preloader.js": "cf4cbd2030955058c16b6bddd85e8620dc2756c9cfb11544edb26f0aa23892c2",
+    "pipeline-runner.js": "7f466d74916201bf0df985b426c9185f447d5d25486ea8343f4e33ec7be9c3f5"
+  },
+  "auth_negative_status": 401,
+  "admission_status": 202,
+  "terminal": {
+    "id": "10000000-0000-4000-a000-000000000061",
+    "project_id": "20000000-0000-4000-a000-000000000061",
+    "request_id": "10000000-0000-4000-a000-000000000061",
+    "step": "build",
+    "mode": "render",
+    "status": "done",
+    "revision": 1,
+    "input_hash": "f46b7397f3a89dfae379e4e19aea7732a2108bcb7dd184f34fd53db61f0b5d43",
+    "created_at": "2026-10-08T10:06:00.291Z",
+    "started_at": "2026-10-08T10:06:00.293Z",
+    "completed_at": "2026-10-08T10:06:41.486Z",
+    "total_ms": 41193,
+    "timings": {
+      "lint_start": 1791453960355,
+      "lint_ms": 8294,
+      "check_start": 1791453968649,
+      "check_ms": 12403,
+      "snapshot_start": 1791453981052,
+      "snapshot_ms": 7635,
+      "render_start": 1791453988687,
+      "render_ms": 12692
+    },
+    "callback_status": {
+      "ok": true,
+      "status": 200,
+      "attempts": 1,
+      "at": "2026-10-08T10:06:41.514Z"
+    },
+    "uploaded": {
+      "mp4": true,
+      "composition_html": false,
+      "composition_elements": false,
+      "snapshots": false
+    },
+    "output": {
+      "mp4_url": "projects/20000000-0000-4000-a000-000000000061/renders/output.mp4",
+      "mp4_size_bytes": 14240
+    }
+  },
+  "callback_binding": {
+    "request_id": "10000000-0000-4000-a000-000000000061",
+    "revision": 1,
+    "input_hash": "f46b7397f3a89dfae379e4e19aea7732a2108bcb7dd184f34fd53db61f0b5d43",
+    "status": "done"
+  },
+  "ffprobe": {
+    "streams": [
+      {
+        "index": 0,
+        "codec_name": "h264",
+        "codec_long_name": "H.264 / AVC / MPEG-4 AVC / MPEG-4 part 10",
+        "profile": "High",
+        "codec_type": "video",
+        "codec_tag_string": "avc1",
+        "codec_tag": "0x31637661",
+        "width": 640,
+        "height": 360,
+        "coded_width": 640,
+        "coded_height": 360,
+        "closed_captions": 0,
+        "film_grain": 0,
+        "has_b_frames": 0,
+        "sample_aspect_ratio": "1:1",
+        "display_aspect_ratio": "16:9",
+        "pix_fmt": "yuv420p",
+        "level": 30,
+        "color_range": "tv",
+        "color_space": "bt709",
+        "color_transfer": "bt709",
+        "color_primaries": "bt709",
+        "chroma_location": "center",
+        "field_order": "progressive",
+        "refs": 1,
+        "is_avc": "true",
+        "nal_length_size": "4",
+        "id": "0x1",
+        "r_frame_rate": "30/1",
+        "avg_frame_rate": "30/1",
+        "time_base": "1/15360",
+        "start_pts": 0,
+        "start_time": "0.000000",
+        "duration_ts": 30720,
+        "duration": "2.000000",
+        "bit_rate": "51216",
+        "bits_per_raw_sample": "8",
+        "nb_frames": "60",
+        "extradata_size": 50,
+        "disposition": {
+          "default": 1,
+          "dub": 0,
+          "original": 0,
+          "comment": 0,
+          "lyrics": 0,
+          "karaoke": 0,
+          "forced": 0,
+          "hearing_impaired": 0,
+          "visual_impaired": 0,
+          "clean_effects": 0,
+          "attached_pic": 0,
+          "timed_thumbnails": 0,
+          "captions": 0,
+          "descriptions": 0,
+          "metadata": 0,
+          "dependent": 0,
+          "still_image": 0
+        },
+        "tags": {
+          "language": "und",
+          "handler_name": "VideoHandler",
+          "vendor_id": "[0][0][0][0]",
+          "encoder": "Lavc59.37.100 libx264"
+        }
+      }
+    ],
+    "format": {
+      "filename": "/tmp/hyperframes-worker/10000000-0000-4000-a000-000000000061/renders/output.mp4",
+      "nb_streams": 1,
+      "nb_programs": 0,
+      "format_name": "mov,mp4,m4a,3gp,3g2,mj2",
+      "format_long_name": "QuickTime / MOV",
+      "start_time": "0.000000",
+      "duration": "2.000000",
+      "size": "14240",
+      "bit_rate": "56960",
+      "probe_score": 100,
+      "tags": {
+        "minor_version": "512",
+        "major_brand": "isom",
+        "compatible_brands": "isomiso2avc1mp41",
+        "hyperframes_version": "0.0.0-dev",
+        "hyperframes_renderer": "hyperframes",
+        "encoder": "Lavf59.27.100"
+      }
+    }
+  },
+  "media_bytes": 14240,
+  "restart_status": {
+    "id": "10000000-0000-4000-a000-000000000061",
+    "project_id": "20000000-0000-4000-a000-000000000061",
+    "request_id": "10000000-0000-4000-a000-000000000061",
+    "step": "build",
+    "mode": "render",
+    "status": "done",
+    "revision": 1,
+    "input_hash": "f46b7397f3a89dfae379e4e19aea7732a2108bcb7dd184f34fd53db61f0b5d43",
+    "created_at": "2026-10-08T10:06:00.291Z",
+    "started_at": "2026-10-08T10:06:00.293Z",
+    "completed_at": "2026-10-08T10:06:41.486Z",
+    "total_ms": 41193,
+    "timings": {
+      "lint_start": 1791453960355,
+      "lint_ms": 8294,
+      "check_start": 1791453968649,
+      "check_ms": 12403,
+      "snapshot_start": 1791453981052,
+      "snapshot_ms": 7635,
+      "render_start": 1791453988687,
+      "render_ms": 12692
+    },
+    "callback_status": {
+      "ok": true,
+      "status": 200,
+      "attempts": 1,
+      "at": "2026-10-08T10:06:41.514Z"
+    },
+    "uploaded": {
+      "mp4": true,
+      "composition_html": false,
+      "composition_elements": false,
+      "snapshots": false
+    },
+    "output": {
+      "mp4_url": "projects/20000000-0000-4000-a000-000000000061/renders/output.mp4",
+      "mp4_size_bytes": 14240
+    }
+  },
+  "duplicate_status": 200,
+  "state_mode": "600"
+}

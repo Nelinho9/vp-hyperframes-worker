@@ -21,6 +21,7 @@
  * extension, and anything else is rejected early with an actionable error.
  */
 
+import { fetchBounded } from "./bounded-fetch.js";
 import { createHash, randomBytes } from "crypto";
 import { spawn as defaultSpawn } from "child_process";
 import {
@@ -85,95 +86,9 @@ function hasMp4Magic(buffer) {
   return ftypOffset >= 4 && ftypOffset <= 8;
 }
 
-function fetchWithTimeout(fetchImpl, url, timeoutMs) {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
-  return fetchImpl(url, { signal: controller.signal }).finally(() => clearTimeout(timer));
-}
-
-function streamToBuffer(webStream, maxBytes) {
-  return new Promise((resolve, reject) => {
-    const chunks = [];
-    let total = 0;
-    const reader = webStream.getReader();
-    function pump() {
-      reader.read().then(({ done, value }) => {
-        if (done) {
-          resolve(Buffer.concat(chunks));
-          return;
-        }
-        const chunk = Buffer.from(value);
-        total += chunk.length;
-        if (total > maxBytes) {
-          reader.releaseLock();
-          reject(new Error(`file exceeds ${maxBytes} bytes`));
-          return;
-        }
-        chunks.push(chunk);
-        pump();
-      }, reject);
-    }
-    pump();
-  });
-}
-
-/**
- * Fetch a URL into a Buffer, enforcing HTTP success and the size cap. Shared
- * by the video/audio and image pre-staging paths.
- *
- * @param {string} url
- * @param {object} [options]
- * @param {typeof fetch} [options.fetchImpl]
- * @param {number} [options.timeoutMs]
- * @param {number} [options.maxBytes]
- * @returns {Promise<{ ok: true, buffer: Buffer } | { ok: false, reason: string, detail: string }>}
- */
-async function fetchMediaBuffer(url, {
-  fetchImpl = globalThis.fetch,
-  timeoutMs = DEFAULT_MEDIA_TIMEOUT_MS,
-  maxBytes = DEFAULT_MAX_BYTES,
-} = {}) {
-  let res;
-  try {
-    res = await fetchWithTimeout(fetchImpl, url, timeoutMs);
-  } catch (err) {
-    return { ok: false, reason: "download_failed", detail: `fetch error: ${err?.message ?? err}` };
-  }
-
-  if (!res.ok) {
-    const bodyPreview = await res.text().catch(() => "");
-    return {
-      ok: false,
-      reason: "download_failed",
-      detail: `HTTP ${res.status} ${res.statusText}${bodyPreview ? ` — ${bodyPreview.slice(0, 200)}` : ""}`,
-    };
-  }
-
-  // Validate content-length hints early, but be permissive (some CDNs omit it).
-  const contentLength = res.headers.get("content-length");
-  if (contentLength && Number(contentLength) > maxBytes) {
-    return {
-      ok: false,
-      reason: "download_failed",
-      detail: `file too large (${Number(contentLength)} bytes > ${maxBytes})`,
-    };
-  }
-
-  let buffer;
-  if (typeof res.arrayBuffer === "function") {
-    const ab = await res.arrayBuffer();
-    buffer = Buffer.from(ab);
-  } else {
-    const body = res.body;
-    if (!body) {
-      return { ok: false, reason: "download_failed", detail: "empty response body" };
-    }
-    buffer = await streamToBuffer(body, maxBytes);
-  }
-  if (buffer.length > maxBytes) {
-    return { ok: false, reason: "download_failed", detail: `file exceeds ${maxBytes} bytes` };
-  }
-  return { ok: true, buffer };
+export async function fetchMediaBuffer(url, options = {}) {
+  try { const { buffer } = await fetchBounded(url, options); return { ok: true, buffer }; }
+  catch (error) { return { ok: false, reason: 'download_failed', detail: error.message }; }
 }
 
 /**
@@ -230,7 +145,7 @@ export async function downloadAndValidateImage(url, assetsDir, hash, {
   maxBytes = DEFAULT_MAX_BYTES,
   log = () => {},
 } = {}) {
-  log(`[media-preloader] downloading image ${url.slice(0, 120)}...`);
+  log(`[media-preloader] downloading image ${urlHash(url)}...`);
   const fetched = await fetchMediaBuffer(url, { fetchImpl, timeoutMs, maxBytes });
   if (!fetched.ok) return fetched;
   const buffer = fetched.buffer;
@@ -291,7 +206,7 @@ export async function downloadAndValidateMedia(
 ) {
   mkdirSync(dirname(destPath), { recursive: true });
 
-  log(`[media-preloader] downloading ${url.slice(0, 120)}...`);
+  log(`[media-preloader] downloading ${urlHash(url)}...`);
   const fetched = await fetchMediaBuffer(url, { fetchImpl, timeoutMs, maxBytes });
   if (!fetched.ok) return fetched;
   const buffer = fetched.buffer;
@@ -430,7 +345,7 @@ export async function downloadAndValidateAudio(url, assetsDir, hash, {
   log = () => {},
   spawnImpl = defaultSpawn,
 } = {}) {
-  log(`[media-preloader] downloading audio ${url.slice(0, 120)}...`);
+  log(`[media-preloader] downloading audio ${urlHash(url)}...`);
   const fetched = await fetchMediaBuffer(url, { fetchImpl, timeoutMs, maxBytes });
   if (!fetched.ok) return fetched;
   const buffer = fetched.buffer;
@@ -524,6 +439,7 @@ export function rewriteHtmlMediaUrls(html, mapping) {
  */
 export async function prestageExternalMedia(html, jobDir, options = {}) {
   const urls = extractMediaUrls(html);
+  if (urls.length > (options.maxMediaCount || 128)) return { ok: false, reason: "MEDIA_COUNT_LIMIT", failures: [{ reason: "MEDIA_COUNT_LIMIT", detail: "Media count limit exceeded" }] };
   if (urls.length === 0) {
     return { ok: true, html, downloaded: [], skipped: true };
   }

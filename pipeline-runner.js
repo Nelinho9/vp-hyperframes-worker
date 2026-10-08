@@ -55,7 +55,8 @@ function isHttpUrl(value) {
  * ter) esses valores configurados (Dockerfile: "Worker is DUMB: no Supabase
  * secrets baked in").
  * Fonte de reserva (só no boot, para re-registrar projetos com job em curso):
- * deriva do `SUPABASE_URL` + `WORKER_SECRET` que o contentor já tem, exatamente
+ * deriva do `SUPABASE_URL` + `SUPERVISOR_SECRET`, credencial interna própria
+ * (cron do orchestrator), nunca da credencial inbound WORKER_SECRET, exatamente
  * com o mesmo default que a edge usa para `VIDEO_V4_CALLBACK_URL`.
  *
  * @param {{ project_id?: string, driver?: object } | null} body
@@ -86,7 +87,7 @@ export function normalizeDriver(body, env = {}, projectId) {
   }
 
   const base = env.SUPABASE_URL ? String(env.SUPABASE_URL).replace(/\/$/, '') + ORCHESTRATOR_FN_PATH : '';
-  const secret = env.WORKER_SECRET || '';
+  const secret = env.SUPERVISOR_SECRET || '';
   if (base && secret && pid) {
     return {
       ok: true,

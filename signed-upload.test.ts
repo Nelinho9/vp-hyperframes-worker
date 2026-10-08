@@ -45,6 +45,6 @@ describe('uploadToSignedUrl', () => {
     const address = server.address() as { port: number };
 
     await expect(uploadToSignedUrl(`http://127.0.0.1:${address.port}/upload`, Buffer.from('x'), 'video/mp4'))
-      .rejects.toThrow('signed upload failed (500): storage unavailable');
+      .rejects.toThrow('signed upload failed (500)');
   });
 });

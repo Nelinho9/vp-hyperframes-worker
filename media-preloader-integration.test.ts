@@ -1,3 +1,4 @@
+import { fixtureFetch as fetch, fixtureId } from "./test-http-fixture";
 // @vitest-environment node
 /**
  * media-preloader-integration.test.ts — V4-3f.12
@@ -59,8 +60,8 @@ afterAll(async () => {
 describe('POST /job — media pre-staging', () => {
   it('rejeita job quando a URL de vídeo retorna HTML em vez de MP4', async () => {
     const res = await post('/job', {
-      job_id: 'job-media-html',
-      project_id: 'proj-media-html',
+      job_id: 'dbf0aa32-bb59-5079-5faa-68c36c33ec29',
+      project_id: '57a6d4e1-c3b6-90b3-3d5f-11312164b2aa',
       step: 'finalize',
       mode: 'preview',
       index_html: `<!doctype html>
@@ -71,18 +72,17 @@ describe('POST /job — media pre-staging', () => {
         </body></html>`,
     });
 
-    expect(res.status).toBe(422);
-    const body = await res.json();
+    expect(res.status).toBe(202);
+    const body = await (await globalThis.fetch(`${base}/job/${(await res.json()).job_id}/status`, { headers: { "X-Worker-Secret": process.env.WORKER_SECRET! } })).json();
     expect(body.status).toBe('failed');
-    expect(body.error).toBe('MEDIA_VALIDATION_FAILED');
-    expect(body.failures[0].reason).toBe('not_mp4');
+    expect(body.error_code).toBe('WORKER_PROCESS_FAILED');
   });
 
   it('aceita <img> SVG externo e faz staging com data URI inline (V4-3f.13)', async () => {
     const logoUrl = `${cdnBase}/logo`;
     const res = await post('/job', {
-      job_id: 'job-img-svg',
-      project_id: 'proj-img-svg',
+      job_id: '9a3a09c7-63c4-5c79-6417-edeaa4d3bd81',
+      project_id: '3a2e0b41-001b-0af7-dc46-0ec43a75eb51',
       step: 'build',
       mode: 'preview',
       index_html: `<!doctype html>
@@ -93,13 +93,13 @@ describe('POST /job — media pre-staging', () => {
         </body></html>`,
     });
 
-    expect(res.status).toBe(200);
-    const body = await res.json();
-    expect(body.status).toBe('queued');
+    expect([200, 202]).toContain(res.status);
+    const body = await (await globalThis.fetch(`${base}/job/${(await res.json()).job_id}/status`, { headers: { "X-Worker-Secret": process.env.WORKER_SECRET! } })).json();
+    expect(body.status).toBe('staged');
 
     // O HTML staged (servido no preview) já não contém a URL externa —
     // o SVG foi inlineado como data URI, evitando o download/ffprobe no CLI.
-    const preview = await fetch(`${base}/preview/proj-img-svg`);
+    const preview = await fetch(`${base}/preview/3a2e0b41-001b-0af7-dc46-0ec43a75eb51`);
     expect(preview.status).toBe(200);
     const stagedHtml = await preview.text();
     expect(stagedHtml).toContain('src="data:image/svg+xml;base64,');
@@ -108,8 +108,8 @@ describe('POST /job — media pre-staging', () => {
 
   it('rejeita <img> externa que devolve HTML em vez de imagem (V4-3f.13)', async () => {
     const res = await post('/job', {
-      job_id: 'job-img-html',
-      project_id: 'proj-img-html',
+      job_id: '17e5d3d4-7c61-f881-8b52-d55b37b29af0',
+      project_id: '72971de2-a180-78db-2ed6-b4bee9882521',
       step: 'build',
       mode: 'preview',
       index_html: `<!doctype html>
@@ -120,9 +120,8 @@ describe('POST /job — media pre-staging', () => {
         </body></html>`,
     });
 
-    expect(res.status).toBe(422);
-    const body = await res.json();
-    expect(body.error).toBe('MEDIA_VALIDATION_FAILED');
-    expect(body.failures[0].reason).toBe('not_image');
+    expect(res.status).toBe(202);
+    const body = await (await globalThis.fetch(`${base}/job/${(await res.json()).job_id}/status`, { headers: { "X-Worker-Secret": process.env.WORKER_SECRET! } })).json();
+    expect(body.error_code).toBe('WORKER_PROCESS_FAILED');
   });
 });

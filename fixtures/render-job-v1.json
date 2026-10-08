@@ -1,0 +1,31 @@
+{
+  "contract_version": 1,
+  "job_id": "10000000-0000-4000-a000-000000000001",
+  "project_id": "20000000-0000-4000-a000-000000000001",
+  "request_id": "10000000-0000-4000-a000-000000000001",
+  "revision": 1,
+  "step": "finalize",
+  "mode": "render",
+  "inputs": {
+    "index_html": "<html><body>F01 deterministic fixture</body></html>"
+  },
+  "options": {
+    "quality": "high",
+    "fps": 30
+  },
+  "artifact_paths": {
+    "mp4": "projects/20000000-0000-4000-a000-000000000001/renders/output.mp4",
+    "contact_sheet": "projects/20000000-0000-4000-a000-000000000001/snapshots/finalize-10000000-0000-4000-a000-000000000001.jpg"
+  },
+  "outputs": {
+    "mp4_upload_url": "https://storage.example.test/upload?token=FAKE_UPLOAD_MARKER",
+    "snapshots_upload_url": "https://storage.example.test/upload?token=FAKE_UPLOAD_MARKER"
+  },
+  "callback": {
+    "url": "https://edge.example.test/callback",
+    "secret": "FAKE_CALLBACK_MARKER",
+    "nonce": "30000000-0000-4000-a000-000000000001",
+    "expires_at": "2099-10-07T00:00:00.000Z"
+  },
+  "input_hash": "337de6ea1728b62c9a7c292cff93dcf113b473940cc0c4a982a4512824a79e30"
+}
