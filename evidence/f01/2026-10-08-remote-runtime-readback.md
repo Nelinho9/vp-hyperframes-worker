@@ -99,3 +99,5 @@ Provider budget remains 0 EUR.
 ## Commit receipt (2026-10-08)
 
 This worker evidence is committed as `54525fd` (`docs(f01): record hosted worker runtime readback`). The corresponding app documentation commit is `57248fa`. Both remain on `feat/video-v534-f01-contracts-security`; no merge or push to `main` occurred.
+
+Full SHA receipt correction: worker evidence `54525fdd8b7bfb41f21ca0766e9aa346c5cdbdce`; worker receipt `2768e6c459b5010ba19ca6cb74efff7891010f04`; corresponding app evidence `57248fa531d056187e7b0764072c619679d4ea65`; app receipt `ed682c0502c39b99a3a835d66347b12fc039233b`.
