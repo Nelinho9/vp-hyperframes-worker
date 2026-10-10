@@ -97,7 +97,9 @@ describe('injectPreviewHelper — unit', () => {
 describe('PREVIEW_HELPER_SCRIPT — contrato do protocolo', () => {
   it('implementa seleção por click com postMessage select/deselect', () => {
     expect(PREVIEW_HELPER_SCRIPT).toContain("closest('[id],[data-hf-id]')");
-    expect(PREVIEW_HELPER_SCRIPT).toContain("action: 'select'");
+    // F06.02: envelope versionado via builder partilhado (ação parametrizada).
+    expect(PREVIEW_HELPER_SCRIPT).toContain("buildSelectEnvelope(el, 'select')");
+    expect(PREVIEW_HELPER_SCRIPT).toContain('action: action');
     expect(PREVIEW_HELPER_SCRIPT).toContain("action: 'deselect'");
     expect(PREVIEW_HELPER_SCRIPT).toContain('getBoundingClientRect()');
     expect(PREVIEW_HELPER_SCRIPT).toContain('bbox');
@@ -611,18 +613,20 @@ describe('PREVIEW_HELPER_SCRIPT — operações de nó (V5-P1E §6.5)', () => {
   });
 });
 
-/** Dispara um evento real num elemento linkedom (bubbles; key opcional p/ keydown). */
+/** Dispara um evento real num elemento linkedom (bubbles; key/modificadores p/ keydown). */
 function fireElementEvent(
   h: BootedHelper,
   el: unknown,
   type: string,
-  opts?: { key?: string },
+  opts?: { key?: string; ctrlKey?: boolean; metaKey?: boolean },
 ): { defaultPrevented: boolean } {
   const EventCtor = h.document.defaultView!.Event as unknown as {
-    new (type: string, init?: { bubbles?: boolean; cancelable?: boolean }): Event & { key?: string };
+    new (type: string, init?: { bubbles?: boolean; cancelable?: boolean }): Event & { key?: string; ctrlKey?: boolean; metaKey?: boolean };
   };
   const ev = new EventCtor(type, { bubbles: true, cancelable: Boolean(opts?.key) });
   if (opts?.key) ev.key = opts.key;
+  if (opts?.ctrlKey) ev.ctrlKey = true;
+  if (opts?.metaKey) ev.metaKey = true;
   (el as { dispatchEvent: (e: unknown) => boolean }).dispatchEvent(ev);
   return { defaultPrevented: ev.defaultPrevented };
 }
@@ -632,7 +636,7 @@ describe('PREVIEW_HELPER_SCRIPT — edição inline de texto (V5-P1B)', () => {
 
   function findAction(messages: unknown[], action: string) {
     return messages.find((m) => (m as { action?: string }).action === action) as
-      | { action: string; elementId?: string; text?: string }
+      | { action: string; elementId?: string; text?: string; cancelled?: boolean }
       | undefined;
   }
 
@@ -697,14 +701,20 @@ describe('PREVIEW_HELPER_SCRIPT — edição inline de texto (V5-P1B)', () => {
     expect(h.parentMessages.length).toBe(total);
   });
 
-  it('Enter commita com preventDefault (sem <div>/<br> no conteúdo)', () => {
+  // F06.06: Enter sozinho insere linha (multiline); Ctrl/Cmd+Enter confirma.
+  it('Enter sozinho insere linha (sem commit); Ctrl+Enter confirma', () => {
     const h = bootHelper(EDITOR_HTML);
     const el = h.document.querySelector('#text-headline-1');
     h.dblclick(el);
 
     const res = fireElementEvent(h, el, 'keydown', { key: 'Enter' });
 
-    expect(res.defaultPrevented).toBe(true);
+    expect(res.defaultPrevented).toBe(false);
+    expect(countAction(h.parentMessages, 'edit-end')).toBe(0);
+    expect(el!.getAttribute('contenteditable')).toBe('true');
+
+    const res2 = fireElementEvent(h, el, 'keydown', { key: 'Enter', ctrlKey: true });
+    expect(res2.defaultPrevented).toBe(true);
     expect(countAction(h.parentMessages, 'edit-end')).toBe(1);
     expect(el!.getAttribute('contenteditable')).toBeNull();
   });
@@ -723,6 +733,8 @@ describe('PREVIEW_HELPER_SCRIPT — edição inline de texto (V5-P1B)', () => {
     expect(el!.textContent).toBe('Old');
     const end = findAction(h.parentMessages, 'edit-end')!;
     expect(end.text).toBe('Old');
+    // F06.06: Esc cancela (cancelled:true) — o pai descarta sem persistir.
+    expect(end.cancelled).toBe(true);
     expect(el!.getAttribute('contenteditable')).toBeNull();
   });
 

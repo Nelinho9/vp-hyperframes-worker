@@ -25,7 +25,8 @@ describe('PREVIEW_HELPER_SCRIPT × áudio (V5-P5C)', () => {
 
   it('select transporta as props de áudio vivas (parse dos data-*)', () => {
     expect(PREVIEW_HELPER_SCRIPT).toContain('parseAudioAttrs');
-    expect(PREVIEW_HELPER_SCRIPT).toContain("msg.audio = parseAudioAttrs(el)");
+    // F06.02: leitura partilhada click/element-bbox (readAuthoredAttrs).
+    expect(PREVIEW_HELPER_SCRIPT).toContain('out.audio = parseAudioAttrs(el)');
   });
 
   it('lote de patch toca o caminho vivo do volume/mute', () => {

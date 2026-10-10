@@ -5,17 +5,23 @@
  * injected before `</body>`. The helper implements BOTH directions of the
  * PreviewCanvas ↔ iframe protocol (docs: V4_03_STUDIO_UX_REFINED.md §3.1/§3.2):
  *
- * iframe → parent (sent with targetOrigin '*' — the PARENT validates origin):
- *   { action: 'select',   elementId, bbox: {x,y,w,h}, src? }  on click of
- *     [id]/[data-hf-id]; V5-P1C: src transporta o atributo vivo de elementos
- *     media (hidrata a thumb do inspector — NUNCA entra nas props editáveis)
+ * iframe → parent (sent with targetOrigin '*' — the PARENT validates origin
+ * AND event.source beyond origin):
+ *   { source:'hf-preview', action:'select', elementId, bbox, envelopeVersion:1,
+ *     text?, props?, anim?, audio?, keyframes?, src?, timing?, capabilities? }
+ *     F06.02: click com envelope VERSIONADO e props reais por tipo (leitores
+ *     partilhados com element-bbox; sem mutation para obter propriedades).
+ *     V5-P1C: src transporta o atributo vivo (fora das props editáveis).
  *   { action: 'deselect' }                              on click outside any element
  *   { action: 'edit-start', elementId, bbox }           V5-P1B: dblclick on a
  *     TEXT element entered inline-edit mode (contentEditable on the element)
  *   { action: 'text-input', elementId, text, bbox }     V5-P1B: debounced 300ms
- *     input while editing (textContent of the editable)
- *   { action: 'edit-end',  elementId, text, bbox }      V5-P1B: commit on
- *     blur/Enter/Esc (Esc restores the original text first)
+ *     input while editing (textContent of the editable; F06.06: draft local
+ *     no pai — NUNCA chega ao worker sem confirmação)
+ *   { action: 'edit-end',  elementId, text, bbox, cancelled? }  F06.06:
+ *     blur/Ctrl+Enter confirmam (UMA mutation); Esc cancela (cancelled:true,
+ *     original restaurado via textContent, sem persistir). Enter sozinho
+ *     insere linha (multiline); paste insere texto puro (nunca innerHTML).
  *   { source:'hf-preview', action:'element-at-point', elementId|null,
  *     elementType?, bbox?, src? }                       V5-P1C: resposta ao
  *     hit-test do drop mediado pelo pai (coords NATIVAS da composição)
@@ -199,7 +205,94 @@ export const PREVIEW_HELPER_SCRIPT = `(function () {
     reportDiagnostic('page.unhandledrejection', ev && ev.reason ? String(ev.reason) : 'unknown rejection');
   });
 
-  // ── iframe → parent: click selection ─────────────────────────────────
+  // ── F06.02: leitores/validadores PARTILHADOS (click + element-bbox) ──
+  // Envelope versionado com props REAIS por tipo: conteúdo textual authored
+  // (textContent, nunca innerHTML), attrs authored de animação/áudio,
+  // source/timing relevante e capacidade. Leitura PURA — nunca executa
+  // mutation para obter propriedades. Ausente = unknown (o pai NÃO funde
+  // defaults). Props animadas lidas no frame corrente NÃO sobrescrevem a
+  // autoria GSAP (só attrs data-anim-*/data-kf; valores computados do
+  // runtime nunca entram no saco authored).
+  var SELECTION_ENVELOPE_VERSION = 1;
+
+  function readAuthoredAttrs(el) {
+    var out = { props: {}, anim: {}, audio: null, keyframes: null, src: null, timing: null, capabilities: {} };
+    try {
+      var type = inferElementTypeFromId(el.getAttribute('data-hf-id') || el.id);
+      // Texto authored (textContent — nunca innerHTML de conteúdo do utilizador).
+      if (type === 'text') {
+        out.text = el.textContent == null ? '' : el.textContent;
+      }
+      // Attrs authored de animação (data-anim-*).
+      var animIn = el.getAttribute('data-anim-in');
+      var animOut = el.getAttribute('data-anim-out');
+      var animDur = el.getAttribute('data-anim-dur-ms');
+      var animDelay = el.getAttribute('data-anim-delay-ms');
+      if (animIn) out.anim.animIn = animIn;
+      if (animOut) out.anim.animOut = animOut;
+      if (animDur) out.anim.animDurMs = animDur;
+      if (animDelay) out.anim.animDelayMs = animDelay;
+      // Attrs authored de áudio (só em AUDIO — estado real das tracks).
+      if (el.tagName === 'AUDIO') {
+        out.audio = parseAudioAttrs(el);
+      }
+      // Keyframes authored (data-kf JSON).
+      var kfRaw = typeof el.getAttribute === 'function' ? el.getAttribute('data-kf') : null;
+      if (kfRaw) out.keyframes = kfRaw;
+      // Src vivo (media) — fora das props editáveis no pai.
+      var liveSrc = typeof el.getAttribute === 'function' ? el.getAttribute('src') : null;
+      if (liveSrc) out.src = liveSrc;
+      // Source/timing relevante: host [data-start] mais próximo.
+      try {
+        var host = el.closest ? el.closest('[data-start]') : null;
+        if (host) {
+          var s0 = parseFloat(host.getAttribute('data-start'));
+          var d0 = parseFloat(host.getAttribute('data-duration'));
+          out.timing = {
+            start: (isFinite(s0) && s0 >= 0) ? s0 : null,
+            duration: (isFinite(d0) && d0 > 0) ? d0 : null
+          };
+        }
+      } catch (eT) { /* sem timing — unknown no pai */ }
+      // Capacidade declarada: trim/speed/ducking UNSUPPORTED até F07/worker
+      // os suportarem (UI_ONLY_PROPS); só texto é editável como texto.
+      out.capabilities = {
+        editableAsText: type === 'text',
+        supportsTrim: false,
+        supportsSpeed: false,
+        supportsDucking: false
+      };
+    } catch (eR) { /* leitura best-effort — o pai degrada para unknown */ }
+    return out;
+  }
+
+  function buildSelectEnvelope(el, action) {
+    var id = el.getAttribute('data-hf-id') || el.id;
+    var r = el.getBoundingClientRect();
+    var authored = readAuthoredAttrs(el);
+    var msg = {
+      source: 'hf-preview',
+      action: action,
+      elementId: id,
+      bbox: { x: Math.round(r.left), y: Math.round(r.top), w: Math.round(r.width), h: Math.round(r.height) },
+      envelopeVersion: SELECTION_ENVELOPE_VERSION
+    };
+    if (authored.text !== undefined) msg.text = authored.text;
+    var hasProps = false;
+    for (var k in authored.props) { if (Object.prototype.hasOwnProperty.call(authored.props, k)) { hasProps = true; break; } }
+    if (hasProps) msg.props = authored.props;
+    var hasAnim = false;
+    for (var a in authored.anim) { if (Object.prototype.hasOwnProperty.call(authored.anim, a)) { hasAnim = true; break; } }
+    if (hasAnim) msg.anim = authored.anim;
+    if (authored.audio) msg.audio = authored.audio;
+    if (authored.keyframes) msg.keyframes = authored.keyframes;
+    if (authored.src) msg.src = authored.src;
+    if (authored.timing) msg.timing = authored.timing;
+    msg.capabilities = authored.capabilities;
+    return msg;
+  }
+
+  // ── iframe → parent: click selection (envelope versionado F06.02) ───
   document.addEventListener('click', function (ev) {
     try {
       var target = ev.target;
@@ -208,25 +301,7 @@ export const PREVIEW_HELPER_SCRIPT = `(function () {
         parent.postMessage({ action: 'deselect' }, '*');
         return;
       }
-      var id = el.getAttribute('data-hf-id') || el.id;
-      var r = el.getBoundingClientRect();
-      var msg = {
-        action: 'select',
-        elementId: id,
-        bbox: { x: Math.round(r.left), y: Math.round(r.top), w: Math.round(r.width), h: Math.round(r.height) }
-      };
-      // V5-P1C: atributo src VIVO (media elements) — hidrata a thumb do
-      // inspector; o pai guarda-o FORA das props editáveis (nunca persistido).
-      var liveSrc = typeof el.getAttribute === 'function' ? el.getAttribute('src') : null;
-      if (liveSrc) msg.src = liveSrc;
-      // V5-P8B §2.1: keyframes vivas — inspector/preview mostram o estado real.
-      var kfRaw = typeof el.getAttribute === 'function' ? el.getAttribute('data-kf') : null;
-      if (kfRaw) msg.keyframes = kfRaw;
-      // V5-P5C §10.3: props de áudio VIVAS — inspector mostra o estado real.
-      if (el.tagName === 'AUDIO') {
-        msg.audio = parseAudioAttrs(el);
-      }
-      parent.postMessage(msg, '*');
+      parent.postMessage(buildSelectEnvelope(el, 'select'), '*');
     } catch (e) { /* never break the preview */ }
   }, true);
 
@@ -289,9 +364,13 @@ export const PREVIEW_HELPER_SCRIPT = `(function () {
     el.removeEventListener('input', onEditInput);
     el.removeEventListener('keydown', onEditKeydown);
     el.removeEventListener('blur', onEditBlur);
+    el.removeEventListener('paste', onEditPaste);
   }
 
-  function finishEdit() {
+  // F06.06: finishEdit(false) = confirmar (UMA mutation no pai);
+  // finishEdit(true) = cancelar via Esc (restaura o original, sem persistir).
+  // Conteúdo do utilizador viaja como textContent — NUNCA innerHTML.
+  function finishEdit(cancelled) {
     var el = activeEditor;
     if (!el) return;
     if (inputTimer !== null) { clearTimeout(inputTimer); inputTimer = null; }
@@ -301,12 +380,13 @@ export const PREVIEW_HELPER_SCRIPT = `(function () {
     activeEditor = null;
     var msg = elementEnvelope(el, 'edit-end');
     msg.text = el.textContent == null ? '' : el.textContent;
+    msg.cancelled = cancelled === true;
     sendToParent(msg);
   }
 
   function enterEditMode(el) {
     if (activeEditor === el) return;
-    if (activeEditor) finishEdit(); // defensive: blur may not fire in every env
+    if (activeEditor) finishEdit(false); // defensive: blur may not fire in every env
     activeEditor = el;
     originalText = el.textContent == null ? '' : el.textContent;
     el.setAttribute('contenteditable', 'true');
@@ -314,6 +394,7 @@ export const PREVIEW_HELPER_SCRIPT = `(function () {
     el.addEventListener('input', onEditInput);
     el.addEventListener('keydown', onEditKeydown);
     el.addEventListener('blur', onEditBlur);
+    el.addEventListener('paste', onEditPaste);
     sendToParent(elementEnvelope(el, 'edit-start'));
     placeCaretAtEnd(el);
   }
@@ -334,19 +415,51 @@ export const PREVIEW_HELPER_SCRIPT = `(function () {
   function onEditKeydown(ev) {
     if (!activeEditor) return;
     if (ev.key === 'Escape') {
+      // Esc cancela: restaura o original antes do commit; o pai descarta sem
+      // persistir (cancelled:true) e restaura o preview.
       ev.preventDefault();
-      activeEditor.textContent = originalText; // restore before commit
-      finishEdit();
-    } else if (ev.key === 'Enter') {
-      // Enter is commit-only: contenteditable would insert <div>/<br> which
-      // textContent flattens — multi-line stays explicitly out of scope.
+      activeEditor.textContent = originalText; // textContent — nunca innerHTML
+      finishEdit(true);
+    } else if (ev.key === 'Enter' && (ev.ctrlKey || ev.metaKey)) {
+      // Ctrl/Cmd+Enter confirma (UMA mutation no pai); Enter sozinho insere
+      // linha em campos multiline (comportamento nativo do contentEditable).
       ev.preventDefault();
-      finishEdit();
+      finishEdit(false);
     }
+    // Enter sem modificador: insere linha (multiline suportado; textContent
+    // preserva quebras de linha, IME e emoji).
+  }
+
+  // F06.06: paste preserva conteúdo como TEXTO PURO (emoji/IME/multiline),
+  // sem HTML do clipboard (nunca innerHTML de conteúdo do utilizador).
+  function onEditPaste(ev) {
+    if (!activeEditor) return;
+    try {
+      ev.preventDefault();
+      var text = '';
+      if (ev.clipboardData && typeof ev.clipboardData.getData === 'function') {
+        text = ev.clipboardData.getData('text/plain');
+      }
+      if (!text) return;
+      if (document.queryCommandSupported && document.queryCommandSupported('insertText')) {
+        document.execCommand('insertText', false, text);
+      } else {
+        // Fallback: anexa como nó de texto (textContent — nunca innerHTML).
+        var sel = window.getSelection ? window.getSelection() : null;
+        if (sel && sel.rangeCount > 0) {
+          var range = sel.getRangeAt(0);
+          range.deleteContents();
+          range.insertNode(document.createTextNode(text));
+          range.collapse(false);
+        } else {
+          activeEditor.textContent = (activeEditor.textContent || '') + text;
+        }
+      }
+    } catch (eP) { /* paste nativo como fallback — nunca quebrar a edição */ }
   }
 
   function onEditBlur() {
-    if (activeEditor) finishEdit();
+    if (activeEditor) finishEdit(false);
   }
 
   document.addEventListener('dblclick', function (ev) {
@@ -618,22 +731,19 @@ export const PREVIEW_HELPER_SCRIPT = `(function () {
         sendToParent({ source: 'hf-preview', action: 'element-scene', elementId: data.elementId, startSeconds: s0, durationSeconds: d0 });
       } catch (eS) { /* never break the preview */ }
     } else if (data.action === 'element-bbox' && typeof data.elementId === 'string') {
-      // V5-P3C §2.5: bbox MEDIDA na página viva para o focus programático
-      // (flash+select a partir do tab Assets). Responde SEMPRE — bbox null
-      // quando o elemento não existe (o pai degrada sem overlay mentiroso).
+      // V5-P3C §2.5 + F06.02: bbox MEDIDA na página viva para o focus
+      // programático — MESMO builder do click (leitores partilhados, envelope
+      // versionado com props reais). Responde SEMPRE — bbox null quando o
+      // elemento não existe (o pai degrada sem overlay mentiroso).
       try {
         var fbEl = document.getElementById(data.elementId);
         if (!fbEl) {
           try { fbEl = document.querySelector('[data-hf-id="' + data.elementId + '"]'); } catch (eQ) { fbEl = null; }
         }
         if (!fbEl) {
-          sendToParent({ source: 'hf-preview', action: 'element-bbox', elementId: data.elementId, bbox: null });
+          sendToParent({ source: 'hf-preview', action: 'element-bbox', elementId: data.elementId, bbox: null, envelopeVersion: SELECTION_ENVELOPE_VERSION });
         } else {
-          var fbMsg = elementEnvelope(fbEl, 'element-bbox');
-          fbMsg.source = 'hf-preview';
-          var fbSrc = typeof fbEl.getAttribute === 'function' ? fbEl.getAttribute('src') : null;
-          if (fbSrc) fbMsg.src = fbSrc;
-          sendToParent(fbMsg);
+          sendToParent(buildSelectEnvelope(fbEl, 'element-bbox'));
         }
       } catch (eB) { /* never break the preview */ }
     }
