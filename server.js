@@ -48,6 +48,11 @@ import { compositionStoragePath, persistCompositionArtifact } from "./compositio
 import { captureThumbnails, computeArtifactHash, parseScenePostEntranceTimes, buildRenderSnapshotArgs, renderSnapshotsLegacyFrames } from "./thumbnails.js";
 import { deriveElements, persistElementsArtifact } from "./elements-registry.js";
 import { persistRenderSnapshots } from "./snapshots-upload.js";
+import { resolveWorkerRenderOptions, persistEffectiveOptions } from "./render-options.js";
+import { buildExportArgv as buildF04ExportArgv, buildLintArgv as buildF04LintArgv, buildCheckArgv as buildF04CheckArgv } from "./render-argv.js";
+import { validateFfprobeOutput as validateF04Bytes, isPngSignature, isMp4Signature } from "./render-verify.js";
+import { validateTemporalAudioPlan, parseRootWindows, parseRootDuration } from "./render-temporal.js";
+import { buildEvidenceManifest, buildCoverageSchedule, evidenceSnapshotPath, CLI_VERSION as F04_CLI_VERSION } from "./render-evidence.js";
 import {
   createSupervisionRegistry,
   normalizeDriver,
@@ -111,14 +116,25 @@ export function recordUploadFailure(uploadErrors, channel, error, warn = console
 }
 
 export function buildDoneCallbackPayload(job, timings, uploaded, uploadErrors) {
+  // F04-T11: callback usa job/project/step/revision que correspondem ao job aceito;
+  // duplicate/out-of-order não troca artefacto de outra revisão. Reconcile usa o
+  // mesmo resultado público redigido, nunca wire privado.
   const payload = {
     job_id: job.id,
     project_id: job.project_id,
-    step: job.step, request_id: job.request_id, revision: job.revision, input_hash: job.input_hash, callback_nonce: job.callback?.nonce,
+    step: job.step, request_id: job.request_id, revision: job.composition_revision ?? job.revision, input_hash: job.input_hash, callback_nonce: job.callback?.nonce,
     status: "done",
     timings,
     uploaded,
     total_ms: job.total_ms,
+    // F04-T11: revisões correlacionadas + effective options + output medido.
+    contract_revision: job.contract_revision ?? 1,
+    composition_revision: job.composition_revision ?? job.revision,
+    composition_hash: job.composition_hash ?? null,
+    effective_config_revision: job.effective_config_revision ?? null,
+    effective_config_hash: job.effective_config_hash ?? null,
+    ...(job.measured_output ? { measured_output: job.measured_output } : {}),
+    ...(job.evidence_manifest ? { evidence: { status: job.evidence_manifest.status, revision: job.evidence_manifest.revision } } : {}),
   };
   if (Object.keys(uploadErrors).length > 0) payload.upload_errors = uploadErrors;
   if (job.window_normalization_warning) {
@@ -274,16 +290,30 @@ export function rehydrateJobs() {
   }
   // O job MAIS RECENTE por projeto ganha o mapping (o build faz overwrite
   // do placeholder staged no /start).
+  // F04-T11: reidratação não transforma done/failed em staged. Quando existe
+  // job-state-v1.json durável (jobQueue), ele é a fonte (preserva terminal
+  // status/options/result/evidence); o marker job.json só cobre legacy/preview.
   found.sort((a, b) => String(a.marker.created_at ?? "").localeCompare(String(b.marker.created_at ?? "")));
   for (const { marker, jobDir } of found) {
-    jobs.set(marker.job_id, {
-      id: marker.job_id,
-      project_id: marker.project_id,
-      step: marker.step || "render",
-      status: "staged",
-      created_at: marker.created_at || new Date().toISOString(),
-      job_dir: jobDir,
-    });
+    if (jobs.has(marker.job_id)) continue;
+    let durable = null;
+    try {
+      const statePath = join(jobDir, "job-state-v1.json");
+      if (existsSync(statePath)) durable = JSON.parse(readFileSync(statePath, "utf-8"));
+    } catch { durable = null; }
+    if (durable && (durable.status === "done" || durable.status === "failed")) {
+      durable.job_dir = jobDir;
+      jobs.set(marker.job_id, durable);
+    } else {
+      jobs.set(marker.job_id, {
+        id: marker.job_id,
+        project_id: marker.project_id,
+        step: marker.step || "render",
+        status: "staged",
+        created_at: marker.created_at || new Date().toISOString(),
+        job_dir: jobDir,
+      });
+    }
     projectJobs.set(marker.project_id, marker.job_id);
   }
   if (found.length) console.log(`[worker] rehydrated ${found.length} job(s) from ${WORK_DIR}`);
@@ -509,8 +539,55 @@ app.get("/bgm/:file", runtimeCors, (req, res) => {
 async function stageJob(body) {
   const project_id = body.project_id;
   const step = body.step;
-  // Accept both formats: direct index_html OR nested in inputs (orchestrator format)
-  let index_html = body.index_html || body.inputs?.index_html || body.inputs?.index_html_url;
+  // F04-T02/T03: options efetivas tipadas, guardadas no job durável F01 e
+  // recuperadas no restart. Staging usa a mesma effective fps que render.
+  // Alias N-1 só pelo adapter definido; unknown/invalid nunca viram defaults silenciosos.
+  const resolvedOptions = resolveWorkerRenderOptions(body);
+  if (resolvedOptions.ok === false) {
+    const detail = resolvedOptions.failures.map((f) => `[${f.code}] expected=${f.expected} observed=${f.observed}`).join(" | ");
+    throw new Error(`F04_EFFECTIVE_OPTIONS_INVALID: ${detail}`);
+  }
+  const effectiveFps = resolvedOptions.options.fps;
+  const effectiveFormat = resolvedOptions.options.format;
+  // F04-T03: inline-vs-ref como union discriminada; refs só pelo transporte
+  // autenticado/bounded F01. Nunca passar string URL ao parser como se fosse HTML.
+  // Inline: body.index_html ou inputs.index_html (string HTML). Ref: inputs.index_html_url (https).
+  // Fixture legacy: inputs.fixture com proveniência explícita.
+  const inlineHtml = typeof body.index_html === "string" && body.index_html.length > 0
+    ? body.index_html
+    : (body.inputs && typeof body.inputs.index_html === "string" && body.inputs.index_html.length > 0 ? body.inputs.index_html : "");
+  const refUrl = body.inputs && typeof body.inputs.index_html_url === "string" && body.inputs.index_html_url.length > 0
+    ? body.inputs.index_html_url : "";
+  const fixtureName = body.inputs && typeof body.inputs.fixture === "string" ? body.inputs.fixture : "";
+  let compositionProvenance = body.options_provenance === "legacy-fallback" ? "legacy-fallback" : "fresh";
+  // F04-T03: recusar expected revision stale (producer já recusa; defesa em profundidade).
+  if (typeof body.composition_revision === "number" && typeof body.revision === "number"
+    && body.composition_revision !== body.revision) {
+    throw new Error(`STALE_REVISION: expected composition_revision ${body.composition_revision}, observed revision ${body.revision}`);
+  }
+  let index_html = inlineHtml;
+  let compositionSourceKind = inlineHtml ? "inline" : "";
+  if (!index_html && refUrl) {
+    // Ref: só https pelo transporte bounded; worker faz download explícito aqui.
+    // (O pre-stage de media continua separado; isto é a fonte de composição.)
+    let refOk = false;
+    try { const u = new URL(refUrl); refOk = u.protocol === "https:"; } catch { refOk = false; }
+    if (!refOk) throw new Error("INVALID_COMPOSITION_SOURCE");
+    // Não confundir URL com HTML: descarregar pelo transporte bounded F01.
+    try {
+      const { response, body: refBody } = await fetchBounded(refUrl, { timeoutMs: 30_000, consumeBody: true, maxBytes: 8 * 1024 * 1024, init: {} });
+      if (!response.ok) throw new Error(`ref fetch ${response.status}`);
+      index_html = Buffer.from(refBody).toString("utf-8");
+      compositionSourceKind = "ref";
+    } catch (err) {
+      throw new Error(`COMPOSITION_REF_FETCH_FAILED: ${err?.message ?? err}`);
+    }
+  }
+  if (!index_html && fixtureName) {
+    // Fallback legacy com proveniência explícita (fixture do worker, sem fingir composição fresca).
+    compositionProvenance = "legacy-fallback";
+    compositionSourceKind = "legacy-fixture";
+  }
   const callback = body.callback;
   const outputs = body.outputs;
   const artifact_paths = body.artifact_paths;
@@ -738,11 +815,15 @@ async function stageJob(body) {
   // V5-P0C §2.1 + V5_16.2 B1: quantize rounding drift onto the fps grid before
   // consumers run, but preserve a builder-declared gap across the whole root
   // composition. Timeline intent is never silently collapsed.
+  // F04-T02/T05: staging usa a mesma effective fps que render (nunca body.fps solto).
   let windowLintFindings = [];
   let windowNormalizationWarning = null;
   if (typeof index_html === "string") {
     try {
-      const stagingFps = Number.isFinite(Number(body.fps)) && Number(body.fps) > 0 ? Number(body.fps) : 30;
+      const stagingFps = effectiveFps;
+      if (body?.fps !== undefined && Number(body.fps) !== effectiveFps) {
+        console.warn(`[worker] body.fps ${body.fps} ignorado — staging usa effective fps ${effectiveFps}`);
+      }
       const norm = normalizeClipWindows(index_html, stagingFps);
       if (norm.warning) {
         windowNormalizationWarning = norm.warning;
@@ -842,8 +923,56 @@ async function stageJob(body) {
     writeFileSync(join(jobDir, VENDORED_GSAP_ASSET_PATH), runtimeBundles.gsap);
   }
 
+  // F04-T05: validar root/windows e audio plan F03 antes do render.
+  // Source durations reais vs slots sem truncar VO; sem word estimates como acústica.
+  // N-1: HTML legacy sem scene-N (testes/preview antigos) segue com proveniência
+  // legacy explícita em vez de falhar — producer novo envia root/windows e cai no ramo estrito.
+  if (typeof index_html === "string" && body.mode !== "preview") {
+    const rootDuration = parseRootDuration(index_html);
+    const rootWindows = parseRootWindows(index_html).map((w) => ({ id: w.id, start: w.start, duration: w.duration }));
+    if (rootWindows.length === 0) {
+      console.warn(`[worker] F04 temporal: sem root windows (legacy, provenance=${compositionProvenance}); segue sem gate estrito`);
+    } else {
+    const audioSlots = Array.isArray(body.audio_plan?.slots) ? body.audio_plan.slots.map((s, i) => ({
+      frameNumber: typeof s.frameNumber === "number" ? s.frameNumber : i + 1,
+      measuredSec: typeof s.measuredSec === "number" ? s.measuredSec : (typeof s.measured_duration === "number" ? s.measured_duration : null),
+      measurementSource: typeof s.measurementSource === "string" ? s.measurementSource : (typeof s.measurement_source === "string" ? s.measurement_source : null),
+      windowStart: typeof s.windowStart === "number" ? s.windowStart : (typeof s.window_start === "number" ? s.window_start : 0),
+      windowEnd: typeof s.windowEnd === "number" ? s.windowEnd : (typeof s.window_end === "number" ? s.window_end : 0),
+    })) : [];
+    const temporal = validateTemporalAudioPlan({
+        rootDuration, windows: rootWindows, audioSlots,
+        transitionsMs: Array.isArray(body.transitions_ms) ? body.transitions_ms : [],
+        fps: effectiveFps,
+      });
+      if (temporal.ok === false) {
+        const detail = temporal.failures.map((f) => `[${f.code}] expected=${f.expected} observed=${f.observed}`).join(" | ");
+        const error = new Error(`F04_TEMPORAL_AUDIO_INVALID: ${detail}`);
+        jobs.set(jobId, {
+          ...jobs.get(jobId),
+          id: jobId, project_id, step: step || "render", status: "failed",
+          created_at: new Date().toISOString(), job_dir: jobDir,
+          callback, outputs, artifact_paths,
+          error: formatExecError(error),
+          effective_options: resolvedOptions.options,
+          options_provenance: resolvedOptions.options.provenance,
+          composition_source_kind: compositionSourceKind,
+          composition_provenance: compositionProvenance,
+        });
+        writeJobMarker(jobDir, {
+          job_id: jobId, project_id, step: step || "render",
+          mode: body.mode === "preview" ? "preview" : "render",
+          created_at: new Date().toISOString(),
+        });
+        throw error;
+      }
+    }
+  }
+
+  const baseRecord = jobs.get(jobId) ?? {};
+  const withOptions = persistEffectiveOptions({ ...baseRecord }, resolvedOptions);
   jobs.set(jobId, {
-    ...jobs.get(jobId),
+    ...withOptions,
     id: jobId,
     project_id,
     step: step || "render",
@@ -853,6 +982,15 @@ async function stageJob(body) {
     callback,
     outputs,
     artifact_paths,
+    // F04-T11: lifecycle enriquecido (contract/config/composition/evidence revisions,
+    // effective options, proveniência). Restart não transforma done/failed em staged.
+    contract_revision: 1,
+    composition_revision: resolvedOptions.options.composition_revision,
+    composition_hash: resolvedOptions.options.composition_hash,
+    effective_config_revision: resolvedOptions.options.effective_config_revision,
+    effective_config_hash: resolvedOptions.options.effective_config_hash,
+    composition_source_kind: compositionSourceKind,
+    composition_provenance: compositionProvenance,
     media_validation: jobMediaValidation,
     window_lint_findings: windowLintFindings,
     window_normalization_warning: windowNormalizationWarning,
@@ -1335,11 +1473,10 @@ export async function runRender(jobId, jobDir) {
   atomicWriteJob(job);
 
   try {
-    // Step 1: lint
+    // Step 1: lint (F04-T06: argv não-shell via builder dedicado).
     timings.lint_start = Date.now();
     try {
-      const command = process.env.HYPERFRAMES_BIN || 'npx';
-      const args = process.env.HYPERFRAMES_BIN ? ['lint', '--json', jobDir] : ['hyperframes', 'lint', '--json', jobDir];
+      const { command, args } = buildF04LintArgv(jobDir);
       const result = await spawnCommand(command, args, { timeout: 30_000, env: jobEnv });
       if (result.code !== 0 || result.timedOut) throw Object.assign(new Error('HyperFrames lint failed'), result);
     } catch (lintErr) {
@@ -1374,16 +1511,15 @@ export async function runRender(jobId, jobDir) {
     await runCheck(jobDir, jobEnv);
     timings.check_ms = Date.now() - timings.check_start;
 
-    // Step 3: snapshot — V5.22 Fase H3: per-scene POST-ENTRANCE sampling.
-    // `snapshot --frames 5` sampled uniformly INCLUDING t=0, where entrances
-    // (spring-pop ~1s, fromTo opacity ~0.6s + delay) had not run yet — a
-    // sampler-vs-entrance mismatch (E5/H0), not a composition defect. Now:
-    // min(start + 1.5s, midpoint, end - margin) per root scene (contract of
-    // scenePostEntranceFrame in timelineV4Model.ts), 1 frame/scene, max 5.
-    // Fallbacks (legacy --frames 5): no scenes/unreadable HTML/read error, or
-    // RENDER_SNAPSHOTS_LEGACY_FRAMES=1 (rollback without redeploy). Warn-only,
-    // never fatal for the render; --describe false = zero Gemini cost.
+    // Step 3: snapshot — F04-T09: schedule determinístico de TODAS as root
+    // scene windows + boundaries/transições + CTA final (teste >5 cenas).
+    // Substitui o corte primeiros-5: pós-entrada + boundary + final-cta por
+    // cena, com clamping frame-exato para cenas curtas e nested ignorados
+    // (só root entra — contrato). Orçamento documentado via maxSamples;
+    // excedente vira skipped explícito, nunca cobertura integral fingida.
+    // Rollback: RENDER_SNAPSHOTS_LEGACY_FRAMES=1 restaura --frames 5.
     timings.snapshot_start = Date.now();
+    let coverageSchedule = { samples: [], skipped: [], missing: [] };
     try {
       let snapCmd = process.env.HYPERFRAMES_BIN || "npx";
       let snapArgs = process.env.HYPERFRAMES_BIN
@@ -1393,9 +1529,23 @@ export async function runRender(jobId, jobDir) {
         const snapIndexPath = join(jobDir, "index.html");
         if (!renderSnapshotsLegacyFrames() && existsSync(snapIndexPath)) {
           const snapHtml = readFileSync(snapIndexPath, "utf-8");
-          const times = parseScenePostEntranceTimes(snapHtml);
-          if (times.length > 0) {
-            ({ command: snapCmd, args: snapArgs } = buildRenderSnapshotArgs(times, jobDir));
+          const { parseSceneWindows } = await import("./thumbnails.js");
+          const wins = parseSceneWindows(snapHtml).map((w, i) => ({ id: `scene-${i + 1}`, start: w.start, end: w.end }));
+          if (wins.length > 0) {
+            const effFpsForSnap = job.effective_options?.fps ?? 30;
+            coverageSchedule = buildCoverageSchedule({ windows: wins, fps: effFpsForSnap, maxSamples: 24 });
+            const times = coverageSchedule.samples.map((s) => s.time_s);
+            if (times.length > 0) {
+              ({ command: snapCmd, args: snapArgs } = buildRenderSnapshotArgs(times, jobDir));
+            }
+            if (coverageSchedule.skipped.length > 0) {
+              console.warn(`[worker] coverage budget: ${coverageSchedule.skipped.length} sample(s) skipped (${coverageSchedule.skipped.map((s) => s.id).join(",")})`);
+            }
+          } else {
+            const times = parseScenePostEntranceTimes(snapHtml);
+            if (times.length > 0) {
+              ({ command: snapCmd, args: snapArgs } = buildRenderSnapshotArgs(times, jobDir));
+            }
           }
         }
       } catch (snapPrepErr) {
@@ -1410,13 +1560,30 @@ export async function runRender(jobId, jobDir) {
     }
     timings.snapshot_ms = Date.now() - timings.snapshot_start;
 
-    // Step 4: render
+    // Step 4: render (F04-T06: argv não-shell via builder dedicado; F04-T02: usa
+    // effective_options persistidas, nunca body.fps solto nem fallback MP4).
     timings.render_start = Date.now();
+    const _effOpts = job.effective_options && typeof job.effective_options === "object" ? job.effective_options : null;
     const _payloadOpts = (job.payload && typeof job.payload.options === 'object' && job.payload.options) ? job.payload.options : {};
-    const _rawFmt = typeof _payloadOpts.format === 'string' ? _payloadOpts.format : 'mp4';
+    const _rawFmt = typeof _effOpts?.format === 'string' ? _effOpts.format : (typeof _payloadOpts.format === 'string' ? _payloadOpts.format : 'mp4');
     const _validFmts = new Set(['mp4', 'webm', 'gif', 'png']);
-    const exportFormat = _validFmts.has(_rawFmt) ? _rawFmt : 'mp4';
-    const outputName = exportFormat === 'png' ? 'frame.png' : `output.${exportFormat}`;
+    if (!_validFmts.has(_rawFmt)) {
+      throw new Error(`F04_UNSUPPORTED_FORMAT: expected=format em [mp4,webm,gif,png] observed=${String(_rawFmt)}`);
+    }
+    const exportFormat = _rawFmt;
+    const _effFps = typeof _effOpts?.fps === "number" ? _effOpts.fps : 30;
+    const _effDur = typeof _effOpts?.duration_target_seconds === "number" ? _effOpts.duration_target_seconds : (typeof _payloadOpts.duration_target_seconds === "number" ? _payloadOpts.duration_target_seconds : 15);
+    const exportBuilt = buildF04ExportArgv({
+      format: exportFormat, jobDir,
+      fps: _effFps,
+      pngAtSeconds: _payloadOpts.pngAtSeconds ?? _effOpts?.pngAtSeconds,
+      gifSeconds: _payloadOpts.gifSeconds,
+      durationTargetSeconds: _effDur,
+    });
+    if (exportBuilt.ok === false) {
+      throw new Error(`${exportBuilt.code}: expected=${exportBuilt.expected} observed=${exportBuilt.observed}`);
+    }
+    const outputName = exportBuilt.outputName;
     const outputPath = join(jobDir, "renders", outputName);
     mkdirSync(join(jobDir, "renders"), { recursive: true });
     // V4-3f.11: spawn (not execSync) so full stdout/stderr survive a
@@ -1426,39 +1593,35 @@ export async function runRender(jobId, jobDir) {
     // instances that OOM the box mid-capture.
     let renderResult;
     if (exportFormat === 'png') {
-      const pngAt = typeof _payloadOpts.pngAtSeconds === 'number' && Number.isFinite(_payloadOpts.pngAtSeconds) ? _payloadOpts.pngAtSeconds : 1.5;
-      const pngCommand = process.env.HYPERFRAMES_BIN || "npx";
-      const pngArgs = process.env.HYPERFRAMES_BIN
-        ? ["snapshot", "--at", String(pngAt), "--no-end", "-o", outputPath, jobDir]
-        : ["hyperframes", "snapshot", "--at", String(pngAt), "--no-end", "-o", outputPath, jobDir];
-      renderResult = await spawnCommand(pngCommand, pngArgs, {
-        timeout: 600000,
+      renderResult = await spawnCommand(exportBuilt.command, exportBuilt.args, {
+        timeout: exportBuilt.deadlineMs,
         env: { ...jobEnv, PRODUCER_LOW_MEMORY_MODE: "true" },
       });
     } else {
-      const renderCommand = process.env.HYPERFRAMES_BIN || "npx";
-      const fmtArgs = exportFormat !== 'mp4' ? ["--format", exportFormat] : [];
-      const renderArgs = process.env.HYPERFRAMES_BIN
-        ? ["render", "--quality", "high", "--workers", "1", ...fmtArgs, "-o", outputPath, jobDir]
-        : ["hyperframes", "render", "--quality", "high", "--workers", "1", ...fmtArgs, "-o", outputPath, jobDir];
-      renderResult = await spawnCommand(renderCommand, renderArgs, {
-        timeout: 600000,
+      renderResult = await spawnCommand(exportBuilt.command, exportBuilt.args, {
+        timeout: exportBuilt.deadlineMs,
         env: { ...jobEnv, PRODUCER_LOW_MEMORY_MODE: "true" },
       });
       if (exportFormat === 'gif' && renderResult.code === 0) {
-        try {
-          const gifSeconds = typeof _payloadOpts.gifSeconds === 'number' && Number.isFinite(_payloadOpts.gifSeconds) ? _payloadOpts.gifSeconds : 8;
-          const { spawn } = await import('node:child_process');
-          const gifTrim = await new Promise((resolve) => {
-            const ff = spawn('ffmpeg', ['-y', '-t', String(gifSeconds), '-i', outputPath, '-c', 'copy', outputPath + '.tmp'], { stdio: 'pipe' });
-            let resolved = false;
-            ff.on('close', (c) => { if (!resolved) { resolved = true; resolve(c); } });
-            ff.on('error', () => { if (!resolved) { resolved = true; resolve(1); } });
-          });
-          if (gifTrim === 0) {
-            try { const { renameSync } = await import('node:fs'); renameSync(outputPath + '.tmp', outputPath); } catch {}
+        // F04-T06: GIF aplica target duration com formato explícito, deadline e erro visível.
+        const gifSeconds = typeof _payloadOpts.gifSeconds === 'number' && Number.isFinite(_payloadOpts.gifSeconds) ? _payloadOpts.gifSeconds : 8;
+        const { spawn } = await import('node:child_process');
+        const gifTrim = await new Promise((resolve) => {
+          const ff = spawn('ffmpeg', ['-y', '-t', String(gifSeconds), '-i', outputPath, '-c', 'copy', outputPath + '.tmp'], { stdio: 'pipe' });
+          let stderr = "";
+          ff.stderr?.on("data", (c) => { stderr += c.toString(); });
+          let resolved = false;
+          ff.on('close', (c) => { if (!resolved) { resolved = true; resolve({ code: c, stderr }); } });
+          ff.on('error', (e) => { if (!resolved) { resolved = true; resolve({ code: 1, stderr: String(e?.message ?? e) }); } });
+          setTimeout(() => { if (!resolved) { resolved = true; try { ff.kill("SIGKILL"); } catch {} resolve({ code: 124, stderr: "ffmpeg deadline" }); } }, 120_000);
+        });
+        if (gifTrim.code === 0) {
+          try { const { renameSync } = await import('node:fs'); renameSync(outputPath + '.tmp', outputPath); } catch (renameErr) {
+            throw new Error(`F04_GIF_TRIM_FAILED: rename falhou: ${renameErr?.message ?? renameErr}`);
           }
-        } catch {}
+        } else {
+          throw new Error(`F04_GIF_TRIM_FAILED: ffmpeg exit ${gifTrim.code} ${String(gifTrim.stderr).slice(-500)}`);
+        }
       }
     }
     // Persist the full CLI output on the (now persistent) volume for
@@ -1481,6 +1644,57 @@ export async function runRender(jobId, jobDir) {
       throw error;
     }
     timings.render_ms = Date.now() - timings.render_start;
+
+    // F04-T07: verificar bytes antes de upload/DONE (ffprobe + signature/MIME).
+    // Divergência falha com expected/observed + diagnóstico sanitizado.
+    {
+      const { createHash } = await import("node:crypto");
+      const outBytes = existsSync(outputPath) ? readFileSync(outputPath) : Buffer.alloc(0);
+      const outHash = outBytes.length > 0 ? createHash("sha256").update(outBytes).digest("hex") : "";
+      let ffprobeJson = { format: {}, streams: [] };
+      try {
+        const ff = await spawnCommand("ffprobe", ["-v", "error", "-show_format", "-show_streams", "-of", "json", outputPath], { timeout: 30_000, env: jobEnv });
+        const raw = (ff.stdout || "").trim() || "{}";
+        ffprobeJson = JSON.parse(raw);
+      } catch (ffErr) {
+        // PNG pode não ter streams ffprobe úteis em fixtures mínimas; GIF idem.
+        // Para mp4/webm a ausência de ffprobe é falha explícita.
+        if (exportFormat === "mp4" || exportFormat === "webm") {
+          throw new Error(`F04_FFPROBE_FAILED: expected=ffprobe válido para ${exportFormat} observed=${String(ffErr?.message ?? ffErr).slice(0, 200)}`);
+        }
+      }
+      // Signature rápida por formato (defesa em profundidade além do ffprobe).
+      if (exportFormat === "png" && outBytes.length > 0 && !isPngSignature(outBytes)) {
+        throw new Error("F04_SIGNATURE_MISMATCH: expected=PNG signature observed=bytes não-PNG");
+      }
+      if (exportFormat === "mp4" && outBytes.length > 0 && !isMp4Signature(outBytes)) {
+        console.warn("[worker] mp4 signature atípica (ftyp ausente no offset 4) — ffprobe decide");
+      }
+      const effForVerify = {
+        width: _effOpts?.width ?? 1920, height: _effOpts?.height ?? 1080,
+        fps: _effFps, duration_target_seconds: _effDur, format: exportFormat,
+        mode: "deterministic",
+      };
+      const verified = validateF04Bytes({
+        ffprobeJson,
+        mime: exportBuilt.mime,
+        fileSizeBytes: outBytes.length,
+        expected: effForVerify,
+      });
+      if (verified.ok === false) {
+        const detail = verified.failures.map((f) => `[${f.code}] expected=${f.expected} observed=${f.observed}`).join(" | ");
+        try {
+          writeFileSync(join(jobDir, "byte-verify-failure.json"), JSON.stringify({ expected: effForVerify, failures: verified.failures, mime: exportBuilt.mime, size: outBytes.length, hash: outHash }, null, 2));
+        } catch {}
+        throw new Error(`F04_BYTE_VERIFY_FAILED: ${detail}`);
+      }
+      job.measured_output = {
+        format: exportFormat, mime: exportBuilt.mime,
+        width: effForVerify.width, height: effForVerify.height, fps: effForVerify.fps,
+        duration_target_seconds: effForVerify.duration_target_seconds,
+        size_bytes: outBytes.length, sha256: outHash,
+      };
+    }
 
     // Collect results
     const snapshots = existsSync(join(jobDir, "snapshots")) ? readdirSync(join(jobDir, "snapshots")).filter((f) => f.endsWith(".png")) : [];
@@ -1550,6 +1764,62 @@ export async function runRender(jobId, jobDir) {
     } else {
       uploaded.snapshots = false;
       recordUploadFailure(uploadErrors, "snapshots", supabaseConfig.error);
+    }
+    // F04-T08: publicar evidence set por execução (namespace job/revision +
+    // index/manifest com source, render job, composition hash, CLI version,
+    // timestamp, scene/boundary IDs, paths/hashes/status). Publicação atómica;
+    // parcial declara missing sem promover set antigo. Artefact paths e
+    // MIME/output name coincidem com signed target e callback.
+    {
+      const { createHash } = await import("node:crypto");
+      const { readdirSync: rd, readFileSync: rf, writeFileSync: wf, existsSync: ex } = await import("node:fs");
+      const snapDir = join(jobDir, "snapshots");
+      let snapFiles = [];
+      try { snapFiles = ex(snapDir) ? rd(snapDir).filter((f) => f.toLowerCase().endsWith(".png")).sort() : []; } catch { snapFiles = []; }
+      const snapEntries = snapFiles.slice(0, 24).map((file, i) => {
+        let hash = "";
+        try { hash = createHash("sha256").update(rf(join(snapDir, file))).digest("hex"); } catch { hash = ""; }
+        const cov = coverageSchedule.samples[i];
+        return { file, scene_id: cov?.scene_id ?? null, time_s: cov?.time_s ?? 0, sha256: hash };
+      });
+      const sceneIds = [...new Set(coverageSchedule.samples.map((s) => s.scene_id))];
+      const manifest = buildEvidenceManifest({
+        jobId: job.id, projectId: job.project_id, step: job.step,
+        revision: job.composition_revision ?? job.revision,
+        inputHash: job.input_hash ?? "",
+        compositionHash: job.composition_hash ?? "",
+        effectiveConfigRevision: job.effective_config_revision ?? 0,
+        effectiveConfigHash: job.effective_config_hash ?? "",
+        sceneIds,
+        boundaryIds: coverageSchedule.samples.filter((s) => s.kind === "boundary").map((s) => s.scene_id),
+        outputs: job.measured_output ? [{
+          name: outputName,
+          path: `projects/${job.project_id}/renders/${outputName}`,
+          mime: exportBuilt.mime,
+          size_bytes: job.measured_output.size_bytes,
+          sha256: job.measured_output.sha256,
+          width: job.measured_output.width, height: job.measured_output.height,
+          fps: job.measured_output.fps, duration_sec: job.measured_output.duration_target_seconds,
+        }] : [],
+        snapshots: snapEntries.map((s) => ({ ...s, path: evidenceSnapshotPath({ projectId: job.project_id, jobId: job.id, revision: job.composition_revision ?? job.revision, file: s.file }) })),
+        coverage: {
+          total_windows: coverageSchedule.samples.length,
+          sampled: snapEntries.length,
+          skipped: coverageSchedule.skipped,
+          missing: snapEntries.length === 0 ? ["no-snapshots-captured"] : [],
+        },
+      });
+      try {
+        const tmp = join(jobDir, "evidence-manifest.json.tmp");
+        const fin = join(jobDir, "evidence-manifest.json");
+        wf(tmp, JSON.stringify(manifest, null, 2));
+        const { renameSync } = await import("node:fs");
+        renameSync(tmp, fin);
+      } catch (evErr) {
+        console.warn(`[worker] evidence manifest persist failed: ${evErr?.message ?? evErr}`);
+      }
+      job.evidence_manifest = manifest;
+      job.evidence_status = manifest.status;
     }
     job.uploaded = uploaded;
     job.upload_errors = uploadErrors;

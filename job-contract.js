@@ -65,7 +65,26 @@ export function parseRenderJob(value, workerSecret) {
     }
     if (body.options.format !== undefined && !['mp4', 'webm', 'gif', 'png'].includes(body.options.format)) fail('INVALID_OPTIONS');
     if (body.options.quality !== undefined && !['low', 'medium', 'high'].includes(body.options.quality)) fail('INVALID_OPTIONS');
+    // F04-T02: unknown/invalid nunca viram defaults silenciosos — chaves fora do contrato falham.
+    const allowedOptions = new Set(['width', 'height', 'fps', 'duration', 'duration_target_seconds', 'format', 'quality', 'aspect_ratio', 'pngAtSeconds', 'gifSeconds', 'effective_config_revision', 'effective_config_hash', 'composition_revision', 'composition_hash']);
+    for (const key of Object.keys(body.options)) {
+      if (!allowedOptions.has(key)) fail('INVALID_OPTIONS');
+    }
   }
+  // F04-T03: fonte de composição imutável (union discriminada inline-vs-ref) + hashes.
+  // Opcionais para N-1; quando presentes, validados. Tokens/URLs efémeros nunca são identidade.
+  if (body.composition_revision !== undefined && (!Number.isSafeInteger(body.composition_revision) || body.composition_revision < 1)) fail('INVALID_REVISION');
+  if (body.composition_hash !== undefined && (typeof body.composition_hash !== 'string' || !/^[a-f0-9]{64}$/i.test(body.composition_hash))) fail('INVALID_REVISION');
+  if (body.effective_config_revision !== undefined && (!Number.isSafeInteger(body.effective_config_revision) || body.effective_config_revision < 0)) fail('INVALID_REVISION');
+  if (body.effective_config_hash !== undefined && (typeof body.effective_config_hash !== 'string' || (body.effective_config_hash !== '' && !/^[a-f0-9]{64}$/i.test(body.effective_config_hash)))) fail('INVALID_REVISION');
+  if (body.composition_source !== undefined) {
+    const src = body.composition_source;
+    if (!src || typeof src !== 'object' || (src.kind !== 'inline' && src.kind !== 'ref')) fail('INVALID_COMPOSITION_SOURCE');
+    if (src.kind === 'ref') {
+      try { const u = new URL(src.url); if (u.protocol !== 'https:') fail('INVALID_COMPOSITION_SOURCE'); } catch { fail('INVALID_COMPOSITION_SOURCE'); }
+    }
+  }
+  if (body.options_provenance !== undefined && body.options_provenance !== 'fresh' && body.options_provenance !== 'legacy-fallback') fail('INVALID_OPTIONS');
   if (body.artifact_paths !== undefined) {
     if (!body.artifact_paths || typeof body.artifact_paths !== 'object' || Array.isArray(body.artifact_paths)) fail('INVALID_ARTIFACT_PATH');
     for (const [key, path] of Object.entries(body.artifact_paths)) {
