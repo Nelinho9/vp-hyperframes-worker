@@ -165,8 +165,8 @@ export function applyPatchesLinkedom(html, patches) {
     if (property === "textContent" || property === "text") {
       el.textContent = value;
     } else if (property === NODE_OP_PROPERTY) {
-      // V5-P1E §6.5: operações de nó — remove/duplicate. Cenas recusadas e
-      // valores desconhecidos fazem `continue` (não contam como aplicados).
+      // V5-P1E §6.5 + F05: operações de nó — remove/duplicate/move-*.
+      // Cenas recusadas e valores desconhecidos fazem `continue`.
       if (isRootOwnedSceneClip(el, document)) continue;
       if (value === "remove") {
         if (el.parentNode) el.parentNode.removeChild(el);
@@ -183,9 +183,55 @@ export function applyPatchesLinkedom(html, patches) {
         if (el.parentNode) el.parentNode.insertBefore(clone, el.nextSibling);
         created.push(newId);
         touchedNode = true;
+      } else if (value === "move-up" || value === "move-down" || value === "move-top" || value === "move-bottom") {
+        // F05.06: reorder dentro do MESMO parent; recusa cross-container
+        // (só move dentro do parent atual) e cenas (já recusadas acima).
+        const parent = el.parentNode;
+        if (!parent) continue;
+        const siblings = Array.from(parent.children || []).filter(
+          (s) => s !== el && s.getAttribute && (s.getAttribute("id") || s.getAttribute("data-hf-id")),
+        );
+        if (siblings.length === 0) continue;
+        if (value === "move-up") {
+          const prev = el.previousElementSibling;
+          if (!prev) continue;
+          parent.insertBefore(el, prev);
+          touchedNode = true;
+        } else if (value === "move-down") {
+          const next = el.nextElementSibling;
+          if (!next) continue;
+          parent.insertBefore(next, el);
+          touchedNode = true;
+        } else if (value === "move-top") {
+          parent.appendChild(el);
+          touchedNode = true;
+        } else if (value === "move-bottom") {
+          parent.insertBefore(el, parent.firstChild);
+          touchedNode = true;
+        }
       } else {
         continue;
       }
+    } else if (property === "label") {
+      // F05.06: rename persiste como data-label (sem tocar texto/layout).
+      if (value) el.setAttribute("data-label", value);
+      else el.removeAttribute("data-label");
+    } else if (property === "hidden") {
+      // F05.07: hidden é alteração visual persistida (data-hidden + display),
+      // sem sair do registry. "true" esconde; qualquer outro valor mostra.
+      const hide = value === "true" || value === "1";
+      if (hide) {
+        el.setAttribute("data-hidden", "true");
+        el.setAttribute("style", mergeStyle(el.getAttribute("style"), "display", "none"));
+      } else {
+        el.removeAttribute("data-hidden");
+        el.setAttribute("style", removeStyleDecl(el.getAttribute("style"), "display"));
+      }
+    } else if (property === "locked") {
+      // F05.07: locked é flag do editor SEM efeito visual no render.
+      const lock = value === "true" || value === "1";
+      if (lock) el.setAttribute("data-locked", "true");
+      else el.removeAttribute("data-locked");
     } else if (property === "src") {
       el.setAttribute("src", value);
     } else if (property === "background-image") {
@@ -232,6 +278,14 @@ export function applyPatchesLinkedom(html, patches) {
   if (touchedKf || touchedNode) outHtml = upsertKeyframeBlock(outHtml, collectKeyframeSpecs(document));
   if (touchesAudioProps(patches)) outHtml = upsertAudioBlock(outHtml);
   return { html: outHtml, applied, created };
+}
+
+/** Remove one declaration from a style attribute (F05 hidden→show). */
+function removeStyleDecl(existing, prop) {
+  if (!existing) return "";
+  const re = new RegExp(`(^|;)\\s*${prop}\\s*:\\s*[^;]*;?`, "i");
+  const out = existing.replace(re, (_m, sep) => (sep ? ";" : "")).replace(/^\s*;\s*/, "").replace(/\s*;\s*$/, "").trim();
+  return out;
 }
 
 /** Merge one `prop: value` declaration into an existing style attribute.

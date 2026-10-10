@@ -1,6 +1,5 @@
 /**
- * elements-registry — V5-P3A (§8.1, AD-5): inventário de elementos da
- * composição (`elements.json`) derivado retroativamente do index.html staged.
+ * elements-registry — V5-P3A (§8.1, AD-5) + F05 (V5.34 composições/camadas).
  *
  * É a cola editor↔assets↔chat↔quality: S16 serve GET /elements a partir
  * deste artefacto, S17 lista assets usados, P4 consome-o nas tools do chat e
@@ -8,11 +7,32 @@
  * worker; /patch e /restructure cavalgam a resposta e o caller persiste —
  * mesmas regras do HTML em V4-04C).
  *
- * Contrato (docs/video-engine/V5_P3A_ELEMENTS_REGISTRY.md §2):
+ * Contrato v1 (docs/video-engine/V5_P3A_ELEMENTS_REGISTRY.md §2):
  *   { version: 1, elements: [{ id, type, sceneId, text?, srcAssetUrl?,
  *                              animIn?, animOut?, bboxAtSceneStart? }] }
  * Campos opcionais são OMITIDOS quando não se aplicam ("não lido do DOM" ≠
  * valor neutro); ordem de documento; dedup de id (primeira ocorrência ganha).
+ *
+ * Contrato v2 (F05 — C5/C6):
+ *   { version: 2, compositionId, revision: number|null, elements: [V2Entry],
+ *     conflicts: [{ id, firstIndex, duplicateIndex }] }
+ * V2Entry = v1 + { compositionId, parentId, order, orderInParent, label, role,
+ *   hidden, locked, z, scope, bboxSource, assetRef, assetProvenance,
+ *   hasSignedUrl, typeProvenance, capabilities, start, duration, mediaOffset }.
+ * HTML continua canónico; o registry é vista derivada versionada, nunca um
+ * segundo modelo concorrente. Leitura v1 preservada via adaptV1RegistryToV2 /
+ * normalizeRegistry. IDs duplicados geram conflito identificado, nunca dedup
+ * silencioso (o primeiro vence no inventário, o conflito fica explícito).
+ * Locked é flag do editor sem efeito visual; hidden é alteração visual
+ * persistida (data-hidden + display:none) sem sair do registry. Áudio global
+ * (sceneId null + type audio) tem scope "composition", nunca é descartado.
+ * Group/shape nunca são coagidos a text: data-element-type explícito e tokens
+ * reservados têm precedência; o fallback text fica marcado como
+ * typeProvenance "fallback" e editableAsText só aí é true para text.
+ * assetRef é a identidade canónica SEM query/fragment (URLs assinadas nunca
+ * são identidade); srcAssetUrl v1 mantido por compatibilidade com
+ * hasSignedUrl explícito. bbox sem layout é best-effort
+ * (bboxSource "authored-best-effort") distinguida de "unmeasured".
  *
  * Derivação SEM layout: linkedom não mede caixas — `bboxAtSceneStart` é
  * best-effort a partir do estilo inline (authored px + deltas `--el-*`
@@ -21,7 +41,8 @@
 
 import { parseHTML } from "linkedom";
 
-export const ELEMENTS_VERSION = 1;
+export const ELEMENTS_VERSION = 2;
+export const ELEMENTS_V1 = 1;
 
 const ARTIFACTS_BUCKET = "video-artifacts";
 
@@ -83,22 +104,31 @@ function hasSvgAncestor(el) {
   return false;
 }
 
-/** Type inference per spec §2.2 (estável → prefixo → tag → svg → background → text). */
-function inferType(el) {
+/**
+ * F05: inferência de tipo com proveniência explícita e sem coercion
+ * group/shape→text. Ordem: data-element-type explícito → token estável →
+ * prefixo → tag → svg → background → fallback text (marcado).
+ */
+function inferTypeV2(el) {
+  const explicit = (el.getAttribute("data-element-type") || "").trim().toLowerCase();
+  if (explicit === "text" || explicit === "image" || explicit === "video" || explicit === "audio" || explicit === "group" || explicit === "shape") {
+    return { type: explicit, provenance: "explicit" };
+  }
   const id = effectiveId(el);
   const stable = stableIdType(id);
-  if (stable) return stable;
+  if (stable) return { type: stable, provenance: "stable" };
   const prefix = (id.split("-")[0] || "").toLowerCase();
   for (const [re, type] of PREFIX_TYPES) {
-    if (re.test(prefix)) return type;
+    if (re.test(prefix)) return { type, provenance: "prefix" };
   }
   const tag = (el.tagName || "").toLowerCase();
-  if (tag === "img") return "image";
-  if (tag === "video") return "video";
-  if (tag === "audio") return "audio";
-  if (hasSvgAncestor(el)) return "shape";
-  if (backgroundImageUrl(el.getAttribute("style"))) return "image";
-  return "text"; // mesmo fallback do editor (inferElementType)
+  if (tag === "img") return { type: "image", provenance: "tag" };
+  if (tag === "video") return { type: "video", provenance: "tag" };
+  if (tag === "audio") return { type: "audio", provenance: "tag" };
+  if (tag === "svg") return { type: "shape", provenance: "tag" };
+  if (hasSvgAncestor(el)) return { type: "shape", provenance: "svg" };
+  if (backgroundImageUrl(el.getAttribute("style"))) return { type: "image", provenance: "background" };
+  return { type: "text", provenance: "fallback" }; // mesmo fallback do editor (inferElementType)
 }
 
 /** Nearest ancestor `.clip` id (walk manual: nunca o próprio elemento). */
@@ -113,6 +143,19 @@ function nearestSceneId(el) {
     }
     if (isClip) return effectiveId(node) || null;
     node = node.parentNode;
+  }
+  return null;
+}
+
+/** Nearest ancestor element id (parentId F05; null quando não há). */
+function nearestParentId(el) {
+  let node = el.parentNode;
+  while (node && typeof node.getAttribute === "function") {
+    const pid = effectiveId(node);
+    if (pid) return pid;
+    if (node.tagName && String(node.tagName).toLowerCase() === "html") return null;
+    node = node.parentNode;
+    if (!node || typeof node.tagName !== "string") return null;
   }
   return null;
 }
@@ -168,33 +211,139 @@ function isRootOwnedSceneClip(el, root) {
   return owner === null || owner === root;
 }
 
+function humanizeId(id) {
+  return String(id || "")
+    .replace(/-copy-\d+$/i, "")
+    .replace(/^scene-\d+-([a-z]+)-\d+$/i, "$1")
+    .replace(/[-_]+/g, " ")
+    .trim() || String(id || "");
+}
+
+function parseFiniteNumber(raw) {
+  if (raw === null || raw === undefined || raw === "") return null;
+  const n = Number(raw);
+  return Number.isFinite(n) ? n : null;
+}
+
+function parseZIndex(styleAttr) {
+  if (!styleAttr) return null;
+  const m = styleAttr.match(/(^|;)\s*z-index\s*:\s*(-?\d+)/i);
+  if (!m) return null;
+  const n = parseInt(m[2], 10);
+  return Number.isFinite(n) ? n : null;
+}
+
+function isHiddenElement(el, styleAttr) {
+  try {
+    if (el.hasAttribute("hidden")) return true;
+  } catch { /* linkedom sem hasAttribute? segue */ }
+  const dataHidden = (el.getAttribute("data-hidden") || "").trim().toLowerCase();
+  if (dataHidden === "true" || dataHidden === "1" || dataHidden === "hidden") return true;
+  if (!styleAttr) return false;
+  if (/(^|;)\s*display\s*:\s*none/i.test(styleAttr)) return true;
+  if (/(^|;)\s*visibility\s*:\s*hidden/i.test(styleAttr)) return true;
+  return false;
+}
+
+function isLockedElement(el) {
+  const v = (el.getAttribute("data-locked") || "").trim().toLowerCase();
+  return v === "true" || v === "1" || v === "locked";
+}
+
 /**
- * Derive the element registry from a composition HTML string.
+ * Identidade canónica do asset SEM query/fragment (URLs assinadas nunca são
+ * identidade). Devolve { ref, provenance, hasSignedUrl }.
+ */
+function canonicalAssetRef(raw) {
+  if (!raw) return { ref: null, provenance: "none", hasSignedUrl: false };
+  const s = String(raw).trim();
+  if (!s) return { ref: null, provenance: "none", hasSignedUrl: false };
+  const qIndex = s.indexOf("?");
+  const hIndex = s.indexOf("#");
+  const cut = qIndex >= 0 ? qIndex : hIndex >= 0 ? hIndex : -1;
+  const hasQuery = qIndex >= 0 || hIndex >= 0;
+  const lower = s.toLowerCase();
+  const signedHints = ["signature=", "expires=", "x-amz-", "se=", "sig=", "token=", "sas", "signed"];
+  const hasSignedUrl = hasQuery && signedHints.some((h) => lower.includes(h));
+  const ref = cut >= 0 ? s.slice(0, cut) : s;
+  if (!ref) return { ref: null, provenance: "none", hasSignedUrl };
+  if (/^(assets\/|projects\/|compositions\/)/i.test(ref)) return { ref, provenance: hasSignedUrl ? "signed-url-redacted" : "relative", hasSignedUrl };
+  if (/^https?:\/\//i.test(ref)) return { ref, provenance: hasSignedUrl ? "signed-url-redacted" : "remote", hasSignedUrl };
+  return { ref, provenance: hasSignedUrl ? "signed-url-redacted" : "relative", hasSignedUrl };
+}
+
+/**
+ * Derive the element registry from a composition HTML string (F05 v2).
  *
  * @param {string} html Persisted/staged composition HTML.
- * @returns {{ version: number, elements: Array<object> }}
+ * @param {{ revision?: number, compositionId?: string }} [opts]
+ * @returns {{ version: number, compositionId: string, revision: number|null,
+ *            elements: Array<object>, conflicts: Array<object> }}
  */
-export function deriveElements(html) {
+export function deriveElements(html, opts = {}) {
   const { document } = parseHTML(html);
   const root = document.querySelector("[data-composition-id]");
-  const seen = new Set();
+  const compositionId =
+    (root && root.getAttribute("data-composition-id")) || opts.compositionId || "main";
+  const revision = Number.isInteger(opts.revision) && opts.revision >= 0 ? opts.revision : null;
+  const seen = new Map();
+  const conflicts = [];
   const elements = [];
+  const parentCounts = new Map();
+  let order = 0;
   for (const el of document.querySelectorAll("[id],[data-hf-id]")) {
     const id = effectiveId(el);
-    if (!id || seen.has(id)) continue;
-    seen.add(id);
-    if (el === root) continue; // a própria composição não é conteúdo
-    if (id.startsWith("__vp")) continue; // blocos materializados/artefactos
-    if (isRootOwnedSceneClip(el, root)) continue; // cenas são da timeline
+    if (!id) continue;
+    if (seen.has(id)) {
+      conflicts.push({ id, firstIndex: seen.get(id), duplicateIndex: order });
+      order += 1;
+      continue;
+    }
+    seen.set(id, order);
+    if (el === root) { order += 1; continue; } // a própria composição não é conteúdo
+    if (id.startsWith("__vp")) { order += 1; continue; } // blocos materializados/artefactos
+    if (isRootOwnedSceneClip(el, root)) { order += 1; continue; } // cenas são da timeline
+
+    const { type, provenance } = inferTypeV2(el);
+    const sceneId = nearestSceneId(el);
+    const parentId = nearestParentId(el);
+    const parentKey = parentId || "__root__";
+    const orderInParent = parentCounts.get(parentKey) ?? 0;
+    parentCounts.set(parentKey, orderInParent + 1);
+    const styleAttr = el.getAttribute("style");
+    const hidden = isHiddenElement(el, styleAttr);
+    const locked = isLockedElement(el);
+    const z = parseZIndex(styleAttr);
+    const scope = sceneId ? "scene" : (type === "audio" ? "composition" : "free");
+    const role = (el.getAttribute("data-role") || "").trim()
+      || (type === "audio" && sceneId === null ? "composition-audio" : type);
 
     const entry = {
       id,
-      type: inferType(el),
-      sceneId: nearestSceneId(el),
+      type,
+      typeProvenance: provenance,
+      compositionId,
+      sceneId,
+      parentId,
+      order,
+      orderInParent,
+      scope,
+      role,
+      hidden,
+      locked,
     };
-    const styleAttr = el.getAttribute("style");
+    if (z !== null) entry.z = z;
 
-    if (entry.type === "text") {
+    const labelAttr = (el.getAttribute("data-label") || el.getAttribute("aria-label") || "").trim();
+    if (labelAttr) entry.label = labelAttr;
+    else if (type === "text") {
+      const text = (el.textContent || "").trim();
+      entry.label = text ? text.slice(0, 60) : humanizeId(id);
+    } else {
+      entry.label = humanizeId(id);
+    }
+
+    if (type === "text") {
       const text = (el.textContent || "").trim();
       if (text) entry.text = text;
     }
@@ -203,6 +352,10 @@ export function deriveElements(html) {
     const bgUrl = backgroundImageUrl(styleAttr);
     const assetUrl = src || bgUrl;
     if (assetUrl) entry.srcAssetUrl = assetUrl;
+    const canon = canonicalAssetRef(assetUrl);
+    if (canon.ref) entry.assetRef = canon.ref;
+    entry.assetProvenance = canon.provenance;
+    entry.hasSignedUrl = canon.hasSignedUrl;
 
     const animIn = (el.getAttribute("data-anim-in") || "").trim();
     const animOut = (el.getAttribute("data-anim-out") || "").trim();
@@ -221,11 +374,112 @@ export function deriveElements(html) {
     }
 
     const bbox = bboxAtSceneStart(styleAttr);
-    if (bbox) entry.bboxAtSceneStart = bbox;
+    if (bbox) {
+      entry.bboxAtSceneStart = bbox;
+      entry.bboxSource = "authored-best-effort";
+    } else {
+      entry.bboxSource = "unmeasured";
+    }
+
+    const start = parseFiniteNumber(el.getAttribute("data-start"));
+    const duration = parseFiniteNumber(el.getAttribute("data-duration"));
+    const mediaOffset = parseFiniteNumber(el.getAttribute("data-media-offset"));
+    if (start !== null) entry.start = start;
+    if (duration !== null) entry.duration = duration;
+    if (mediaOffset !== null) entry.mediaOffset = mediaOffset;
+
+    entry.capabilities = {
+      renamable: true,
+      reorderable: true,
+      hideable: true,
+      lockable: true,
+      duplicable: true,
+      removable: true,
+      editableAsText: type === "text",
+    };
+
+    if (revision !== null) entry.revision = revision;
 
     elements.push(entry);
+    order += 1;
   }
-  return { version: ELEMENTS_VERSION, elements };
+  return { version: ELEMENTS_VERSION, compositionId, revision, elements, conflicts };
+}
+
+/** True quando o envelope é registry v1 (leitura legacy preservada). */
+export function isV1Registry(reg) {
+  return Boolean(reg && reg.version === 1 && Array.isArray(reg.elements));
+}
+
+/** True quando o envelope é registry v2 (F05). */
+export function isV2Registry(reg) {
+  return Boolean(reg && reg.version === 2 && Array.isArray(reg.elements));
+}
+
+/**
+ * Adapta um registry v1 para v2 com defaults explícitos (proveniência
+ * "v1-adapter"). Nunca inventa revision: usa opts.revision ou null.
+ */
+export function adaptV1RegistryToV2(v1, opts = {}) {
+  const compositionId = opts.compositionId || v1.compositionId || "main";
+  const revision = Number.isInteger(opts.revision) ? opts.revision
+    : (Number.isInteger(v1.revision) ? v1.revision : null);
+  const parentCounts = new Map();
+  const elements = (v1.elements || []).map((e, idx) => {
+    const parentId = e.parentId ?? null;
+    const parentKey = parentId || "__root__";
+    const orderInParent = parentCounts.get(parentKey) ?? 0;
+    parentCounts.set(parentKey, orderInParent + 1);
+    const type = e.type || "text";
+    const canon = canonicalAssetRef(e.srcAssetUrl || e.assetRef || null);
+    return {
+      id: e.id,
+      type,
+      typeProvenance: "v1-adapter",
+      compositionId,
+      sceneId: e.sceneId ?? null,
+      parentId,
+      order: Number.isInteger(e.order) ? e.order : idx,
+      orderInParent,
+      scope: (e.sceneId ?? null) ? "scene" : (type === "audio" ? "composition" : "free"),
+      role: e.role || ((type === "audio" && (e.sceneId ?? null) === null) ? "composition-audio" : type),
+      label: e.label || humanizeId(e.id),
+      hidden: e.hidden ?? false,
+      locked: e.locked ?? false,
+      ...(e.z !== undefined && e.z !== null ? { z: e.z } : {}),
+      ...(e.text ? { text: e.text } : {}),
+      ...(e.srcAssetUrl ? { srcAssetUrl: e.srcAssetUrl } : {}),
+      ...(canon.ref ? { assetRef: canon.ref } : {}),
+      assetProvenance: e.assetProvenance || canon.provenance,
+      hasSignedUrl: e.hasSignedUrl ?? canon.hasSignedUrl,
+      ...(e.animIn ? { animIn: e.animIn } : {}),
+      ...(e.animOut ? { animOut: e.animOut } : {}),
+      ...(e.keyframes ? { keyframes: e.keyframes } : {}),
+      ...(e.bboxAtSceneStart ? { bboxAtSceneStart: e.bboxAtSceneStart } : {}),
+      bboxSource: e.bboxSource || (e.bboxAtSceneStart ? "authored-best-effort" : "unmeasured"),
+      ...(e.start !== undefined ? { start: e.start } : {}),
+      ...(e.duration !== undefined ? { duration: e.duration } : {}),
+      ...(e.mediaOffset !== undefined ? { mediaOffset: e.mediaOffset } : {}),
+      capabilities: e.capabilities || {
+        renamable: true,
+        reorderable: true,
+        hideable: true,
+        lockable: true,
+        duplicable: true,
+        removable: true,
+        editableAsText: type === "text",
+      },
+      ...(revision !== null ? { revision } : {}),
+    };
+  });
+  return { version: 2, compositionId, revision, elements, conflicts: [], adaptedFrom: 1 };
+}
+
+/** Normaliza v1 ou v2 para v2; lança em envelope inválido. */
+export function normalizeRegistry(reg, opts = {}) {
+  if (isV2Registry(reg)) return reg;
+  if (isV1Registry(reg)) return adaptV1RegistryToV2(reg, opts);
+  throw new Error("normalizeRegistry: envelope de registry inválido (esperado v1 ou v2)");
 }
 
 /**

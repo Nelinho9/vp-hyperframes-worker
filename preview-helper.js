@@ -500,8 +500,32 @@ export const PREVIEW_HELPER_SCRIPT = `(function () {
               });
               nodeOpTouched = true;
             }
+          } else if (value === 'move-up' || value === 'move-down' || value === 'move-top' || value === 'move-bottom') {
+            // F05.06: reorder dentro do MESMO parent na página viva.
+            var parent = el.parentNode;
+            if (parent) {
+              if (value === 'move-up' && el.previousElementSibling) parent.insertBefore(el, el.previousElementSibling);
+              else if (value === 'move-down' && el.nextElementSibling) parent.insertBefore(el.nextElementSibling, el);
+              else if (value === 'move-top') parent.appendChild(el);
+              else if (value === 'move-bottom') parent.insertBefore(el, parent.firstChild);
+              nodeOpTouched = true;
+            }
           }
           // Valor desconhecido → sem efeito.
+        } else if (p.property === 'label') {
+          // F05.06: rename sem tocar texto/layout.
+          if (value) el.setAttribute('data-label', value);
+          else el.removeAttribute('data-label');
+        } else if (p.property === 'hidden') {
+          // F05.07: hidden visual persistido, sem sair do registry.
+          var hide = (value === 'true' || value === '1');
+          if (hide) { el.setAttribute('data-hidden', 'true'); el.style.setProperty('display', 'none'); }
+          else { el.removeAttribute('data-hidden'); el.style.removeProperty('display'); }
+        } else if (p.property === 'locked') {
+          // F05.07: locked sem efeito visual.
+          var lock = (value === 'true' || value === '1');
+          if (lock) el.setAttribute('data-locked', 'true');
+          else el.removeAttribute('data-locked');
         } else if (p.property === 'src') {
           el.setAttribute('src', value);
         } else if (p.property === 'background-image') {

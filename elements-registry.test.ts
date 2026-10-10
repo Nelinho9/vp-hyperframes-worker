@@ -45,12 +45,13 @@ const FIXTURE = `<!doctype html>
 
 describe('deriveElements', () => {
   it('expõe a versão do envelope', () => {
-    expect(ELEMENTS_VERSION).toBe(1);
+    // F05: bump v1→v2 (leitura v1 preservada via adaptV1RegistryToV2).
+    expect(ELEMENTS_VERSION).toBe(2);
   });
 
   it('deriva o inventário em ordem de documento com exclusões corretas', () => {
     const registry = deriveElements(FIXTURE);
-    expect(registry.version).toBe(1);
+    expect(registry.version).toBe(2);
     // Raiz (`main`), cenas (scene-1/scene-2) e blocos __vp* ficam FORA;
     // elementos com id OU data-hf-id entram pela ordem do documento.
     expect(registry.elements.map((e) => e.id)).toEqual([
@@ -142,7 +143,7 @@ describe('deriveElements', () => {
     expect(byId.get('hero-bg')).not.toHaveProperty('bboxAtSceneStart');
   });
 
-  it('é determinístico e dedup id (primeira ocorrência ganha)', () => {
+  it('é determinístico e dedup id (primeira ocorrência ganha + conflito F05)', () => {
     const a = deriveElements(FIXTURE);
     const b = deriveElements(FIXTURE);
     expect(a).toEqual(b);
@@ -153,6 +154,9 @@ describe('deriveElements', () => {
     );
     expect(dup.elements).toHaveLength(1);
     expect(dup.elements[0].id).toBe('twice');
+    // F05: nunca dedup silencioso — conflito identificado.
+    expect(dup.conflicts).toHaveLength(1);
+    expect(dup.conflicts[0].id).toBe('twice');
   });
 });
 

@@ -959,7 +959,8 @@ describe('elements registry nas respostas — V5-P3A', () => {
     expect([200, 202]).toContain(res.status);
     const body = (await res.json()) as { ok: boolean; html: string; elements: ElementsEnvelope };
     expect(body.ok).toBe(true);
-    expect(body.elements.version).toBe(1);
+    // F05: registry v2 (leitura v1 via adapter).
+    expect(body.elements.version).toBe(2);
 
     const byId = new Map(body.elements.elements.map((e) => [e.id, e]));
     expect(byId.get('text-headline-1')).toMatchObject({
