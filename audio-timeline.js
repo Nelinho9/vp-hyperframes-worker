@@ -18,12 +18,17 @@ const ROLE_TOKENS = [
   { re: /^(sfx|sfxs|effect|fx)$/i, role: "sfx" },
 ];
 
+const SCOPE_MARKER_ROLE_RE = /^(composition|scene|global)[-_ ]?audio$/i;
+
 export function inferAudioRole(input = {}) {
   const explicit = String(input.role ?? "").trim().toLowerCase();
   for (const { re, role } of ROLE_TOKENS) {
     if (explicit && re.test(explicit)) return role;
   }
-  if (explicit !== "" && explicit !== "audio") return null;
+  // Reparo F12: o adapter v1 carimba audio sem sceneId como 'composition-audio'
+  // (âmbito, não papel) — cair à inferência por id em vez de descartar o clip,
+  // o que deixava as lanes Voz/Música a zero com áudio publicado.
+  if (explicit !== "" && explicit !== "audio" && !SCOPE_MARKER_ROLE_RE.test(explicit)) return null;
   const id = input.id ?? "";
   const stable = /^scene-\d+-([a-z]+)-\d+(?:-copy-\d+)*$/i.exec(id);
   const token = stable ? stable[1].toLowerCase() : String(id.split("-")[0] || "").toLowerCase();
@@ -67,12 +72,22 @@ function humanizeClipLabel(elementId, role) {
 export function deriveAudioClips(elements = [], opts = {}) {
   const authored = opts.authoredById ?? {};
   const hashes = opts.sourceHashById ?? {};
+  const windows = Array.isArray(opts.sceneWindows) ? opts.sceneWindows : [];
   const out = [];
   for (const el of elements) {
     if ((el.type ?? "audio") !== "audio") continue;
     const role = inferAudioRole({ id: el.id, role: el.role, type: el.type });
     if (!role) continue;
     const scope = el.scope === "composition" || el.sceneId == null ? "composition" : "scene";
+    // Reparo F12: clips de voz injetados à root (sceneId null) pertencem à
+    // cena cuja janela contém o seu start — sem isto, o drill-down esconde a
+    // voz e a lane Voz fica a zero na vista da cena.
+    let sceneId = el.sceneId ?? null;
+    if (sceneId === null && role === "voice" && typeof el.start === "number") {
+      const hit = windows.find((w) => typeof w.start === "number" && typeof w.duration === "number"
+        && el.start >= w.start && el.start < w.start + w.duration);
+      if (hit) sceneId = hit.id;
+    }
     const a = authored[el.id] ?? {};
     const start = typeof el.start === "number" && Number.isFinite(el.start) && el.start >= 0 ? el.start : 0;
     const duration = typeof el.duration === "number" && Number.isFinite(el.duration) && el.duration > 0 ? el.duration : 0;
@@ -82,7 +97,7 @@ export function deriveAudioClips(elements = [], opts = {}) {
       trackId: trackIdForRole(role),
       role,
       scope: el.id === "bgm-main" ? "composition" : scope,
-      sceneId: el.sceneId ?? null,
+      sceneId,
       elementId: el.id,
       label: typeof el.label === "string" && el.label.trim() ? el.label : humanizeClipLabel(el.id, role),
       source,

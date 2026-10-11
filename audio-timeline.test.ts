@@ -35,3 +35,21 @@ describe('worker audio-timeline — timing/regeneração', () => {
     expect(r.ok).toBe(false);
   });
 });
+
+describe('worker audio-timeline — reparo F12 (composition-audio + sceneId por janela)', () => {
+  const legacyRows = [
+    { id: 'scene-1-voice-1', type: 'audio', role: 'composition-audio', sceneId: null, scope: 'composition', start: 0, duration: 3, assetRef: 'projects/p/audio/vo-1.wav' },
+    { id: 'bgm-main', type: 'audio', role: 'composition-audio', sceneId: null, scope: 'composition', start: 0, duration: 15, assetRef: 'bgm/deep-confidence.mp3' },
+  ];
+  const windows = [{ id: 'scene-1', start: 0, duration: 3 }];
+  it("role composition-audio cai à inferência por id (paridade app)", () => {
+    expect(inferAudioRole({ id: 'scene-1-voice-1', role: 'composition-audio' })).toBe('voice');
+    expect(inferAudioRole({ id: 'bgm-main', role: 'composition-audio' })).toBe('music');
+  });
+  it('voz sem sceneId ganha a cena da janela (paridade app)', () => {
+    const clips = deriveAudioClips(legacyRows, { sceneWindows: windows });
+    expect(clips.find((c) => c.clipId === 'scene-1-voice-1')?.sceneId).toBe('scene-1');
+    expect(clips.find((c) => c.clipId === 'bgm-main')?.sceneId).toBeNull();
+    expect(clips.filter((c) => c.role === 'voice')).toHaveLength(1);
+  });
+});
