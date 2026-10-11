@@ -23,7 +23,7 @@ do `vp-hyperframes-worker` é necessário nem autorizado por esta fase.
 
 ## SHA local
 
-- Worker: sem commit nesta fase (branch sobre `357618b`; confirmar limpeza no fecho).
+- Worker: `19482221251fc51af3113847ac02bbf7e0c5ac09` (só este recibo; sem diff runtime; `git status` limpo fora dele).
 
 ## Handoff
 
