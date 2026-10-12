@@ -46,4 +46,13 @@ describe("worker render-evidence (F04-T08)", () => {
     expect(evidenceStatus({ outputs: [{ name: "o" }], coverage: { missing: ["x"] } })).toBe("partial");
     expect(evidenceStatus({ outputs: [{ name: "o" }], coverage: { missing: [] } })).toBe("complete");
   });
+
+  it("opção A F12-voz: media_prestage no manifest, sem tokens", () => {
+    const outcomes = [{ url: "https://cdn.example.com/a.wav", tag: "audio", ok: true, ms: 12, kind: "wav", duration_s: 2.5 }];
+    const m = buildEvidenceManifest({ jobId: "j", projectId: "p", step: "build", revision: 1, mediaPrestage: { outcomes } });
+    expect(m.media_prestage).toEqual({ outcomes });
+    expect(JSON.stringify(m)).not.toContain("token=");
+    const def = buildEvidenceManifest({ jobId: "j", projectId: "p", step: "build", revision: 1 });
+    expect(def.media_prestage).toBeNull();
+  });
 });

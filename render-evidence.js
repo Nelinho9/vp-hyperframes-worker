@@ -65,6 +65,7 @@ export function buildEvidenceManifest({
   jobId, projectId, step, revision, inputHash,
   compositionHash, effectiveConfigRevision, effectiveConfigHash,
   sceneIds, boundaryIds, outputs, snapshots, coverage, generatedAt,
+  mediaPrestage,
 }) {
   const manifest = {
     manifest_version: MANIFEST_VERSION,
@@ -83,6 +84,9 @@ export function buildEvidenceManifest({
     outputs: outputs ?? [],
     snapshots: snapshots ?? [],
     coverage: coverage ?? { total_windows: 0, sampled: 0, skipped: [], missing: [] },
+    // Opção A (F12-voz): resultados do pré-stage de media por ficheiro, com
+    // URLs mascaradas (sem tokens) — substitui os logs runtime invisíveis.
+    media_prestage: mediaPrestage ?? null,
     status: "partial",
   };
   manifest.status = evidenceStatus(manifest);

@@ -734,6 +734,9 @@ async function stageJob(body) {
   }
 
   let jobMediaValidation = null;
+  // Opção A (F12-voz): resultados do pré-stage por ficheiro (URLs mascaradas)
+  // para a evidence — substitui os logs runtime invisíveis no Coolify.
+  let jobMediaOutcomes = [];
 
   // V5.24: canonical HTML for storage/registry. prestage rewrites https://
   // srcs to job-local `assets/vp-media-*` paths (sha1(url) → jobDir/assets).
@@ -757,6 +760,7 @@ async function stageJob(body) {
       timeoutMs: 60_000,
       log: console.log,
     });
+    if (Array.isArray(mediaResult.outcomes)) jobMediaOutcomes = mediaResult.outcomes;
     if (!mediaResult.ok) {
       const summary = mediaResult.failures
         .map((f) => `${f.reason}: ${f.detail}`)
@@ -1808,6 +1812,7 @@ export async function runRender(jobId, jobDir) {
           skipped: coverageSchedule.skipped,
           missing: snapEntries.length === 0 ? ["no-snapshots-captured"] : [],
         },
+        mediaPrestage: { outcomes: jobMediaOutcomes },
       });
       try {
         const tmp = join(jobDir, "evidence-manifest.json.tmp");

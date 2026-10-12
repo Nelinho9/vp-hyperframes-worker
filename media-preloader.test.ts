@@ -15,11 +15,13 @@ import { PassThrough } from 'node:stream';
 import type { ChildProcess } from 'node:child_process';
 import {
   extractMediaUrls,
+  maskMediaUrl,
   rewriteHtmlMediaUrls,
   downloadAndValidateMedia,
   downloadAndValidateImage,
   downloadAndValidateAudio,
   prestageExternalMedia,
+  sanitizeMediaDetail,
   sniffAudioKind,
   sniffImageKind,
 } from './media-preloader.js';
@@ -597,5 +599,32 @@ describe('prestageExternalMedia × <audio> (V5-P5A)', () => {
     expect(result.ok).toBe(false);
     if (result.ok) return;
     expect(result.failures[0].reason).toBe('not_mp4');
+  });
+});
+
+describe('opção A F12-voz — URLs mascaradas na evidence (sem tokens)', () => {
+  it('maskMediaUrl remove query/hash/credenciais, mantém origem+path', () => {
+    expect(maskMediaUrl('https://x.supabase.co/storage/v1/object/sign/video-artifacts/p/audio/vo-1.wav?token=SECRET&foo=1#frag'))
+      .toBe('https://x.supabase.co/storage/v1/object/sign/video-artifacts/p/audio/vo-1.wav');
+    expect(maskMediaUrl('https://user:pass@cdn.example.com/a.mp4?token=T')).toBe('https://cdn.example.com/a.mp4');
+    expect(maskMediaUrl('notaurl')).toBe('(invalid-url)');
+  });
+  it('sanitizeMediaDetail mascara URLs embutidas em erros', () => {
+    const out = sanitizeMediaDetail('fetch failed for https://cdn.example.com/a.mp4?token=SECRET boom');
+    expect(out).not.toContain('token=SECRET');
+    expect(out).toContain('https://cdn.example.com/a.mp4');
+  });
+  it('failures do prestage nunca carregam query (tokens)', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'vp-media-'));
+    const fetchImpl = vi.fn().mockResolvedValue(makeResponse(minimalMp3Buffer(), { contentType: 'audio/mpeg' }));
+    const signed = 'https://cdn.example.com/intro.mp4?token=SECRET';
+    const result = await prestageExternalMedia(`<video id="v1" src="${signed}"></video>`, dir, { fetchImpl });
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.failures[0].url).toBe('https://cdn.example.com/intro.mp4');
+    const urls = result.outcomes.map((o) => o.url);
+    expect(urls).toEqual(['https://cdn.example.com/intro.mp4']);
+    expect(result.outcomes[0].ok).toBe(false);
+    expect(typeof result.outcomes[0].ms).toBe('number');
   });
 });

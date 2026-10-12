@@ -38,6 +38,29 @@ const DEFAULT_MAX_BYTES = 500 * 1024 * 1024; // 500 MB
 const MP4_MAGIC = Buffer.from("ftyp", "ascii");
 
 /**
+ * Opção A (F12-voz): máscara de URLs com segredo — origem + pathname, sem
+ * query/hash/credenciais. Signed URLs do Storage são bearer tokens: nunca
+ * persistem (evidence, job rows, logs) com `?token=`.
+ */
+export function maskMediaUrl(url) {
+  try {
+    const u = new URL(String(url ?? ""));
+    u.search = "";
+    u.hash = "";
+    u.username = "";
+    u.password = "";
+    return u.toString();
+  } catch {
+    return "(invalid-url)";
+  }
+}
+
+/** Remove query/hash de URLs embutidas em mensagens de erro/log. */
+export function sanitizeMediaDetail(detail) {
+  return String(detail ?? "").replace(/https?:\/\/[^\s"'<>]+/g, (m) => maskMediaUrl(m));
+}
+
+/**
  * @typedef {object} MediaUrl
  * @property {'video' | 'audio' | 'image'} tag
  * @property {string} originalSrc
@@ -439,7 +462,7 @@ export function rewriteHtmlMediaUrls(html, mapping) {
  */
 export async function prestageExternalMedia(html, jobDir, options = {}) {
   const urls = extractMediaUrls(html);
-  if (urls.length > (options.maxMediaCount || 128)) return { ok: false, reason: "MEDIA_COUNT_LIMIT", failures: [{ reason: "MEDIA_COUNT_LIMIT", detail: "Media count limit exceeded" }] };
+  if (urls.length > (options.maxMediaCount || 128)) return { ok: false, reason: "MEDIA_COUNT_LIMIT", failures: [{ reason: "MEDIA_COUNT_LIMIT", detail: "Media count limit exceeded" }], outcomes: [] };
   if (urls.length === 0) {
     return { ok: true, html, downloaded: [], skipped: true };
   }
@@ -450,20 +473,28 @@ export async function prestageExternalMedia(html, jobDir, options = {}) {
   const mapping = {};
   const downloaded = [];
   const failures = [];
+  // Opção A (F12-voz): resultados por ficheiro com URL mascarada (sem tokens)
+  // para a evidence — substitui os logs runtime invisíveis no Coolify.
+  const outcomes = [];
 
   for (const { tag, originalSrc } of urls) {
     const hash = urlHash(originalSrc);
+    const masked = maskMediaUrl(originalSrc);
+    const t0 = Date.now();
+    const record = (ok, extra = {}) => outcomes.push({ url: masked, tag, ok, ms: Date.now() - t0, ...extra });
 
     // V4-3f.13: images get content-sniffed handling (SVG -> inline data URI,
     // raster -> correct extension). Leaving them to the CLI would name every
-    // extension-less capture URL `.mp4` and break the render's image probing.
+    // extension-less URL `.mp4` and break the render's image probing.
     if (tag === "image") {
       const result = await downloadAndValidateImage(originalSrc, assetsDir, hash, options);
       if (result.ok) {
         mapping[originalSrc] = result.dataUri ?? `assets/${result.assetName}`;
         downloaded.push(originalSrc);
+        record(true, result.kind ? { kind: result.kind } : {});
       } else {
-        failures.push({ url: originalSrc, reason: result.reason, detail: result.detail });
+        failures.push({ url: masked, reason: result.reason, detail: sanitizeMediaDetail(result.detail) });
+        record(false, { reason: result.reason, detail: sanitizeMediaDetail(result.detail) });
       }
       continue;
     }
@@ -477,8 +508,10 @@ export async function prestageExternalMedia(html, jobDir, options = {}) {
       if (result.ok) {
         mapping[originalSrc] = `assets/${result.assetName}`;
         downloaded.push(originalSrc);
+        record(true, { ...(result.kind ? { kind: result.kind } : {}), ...(typeof result.duration === "number" ? { duration_s: result.duration } : {}) });
       } else {
-        failures.push({ url: originalSrc, reason: result.reason, detail: result.detail });
+        failures.push({ url: masked, reason: result.reason, detail: sanitizeMediaDetail(result.detail) });
+        record(false, { reason: result.reason, detail: sanitizeMediaDetail(result.detail) });
       }
       continue;
     }
@@ -491,6 +524,7 @@ export async function prestageExternalMedia(html, jobDir, options = {}) {
       // Already downloaded in a previous run (e.g. preview -> render reuse).
       mapping[originalSrc] = `assets/${assetName}`;
       downloaded.push(originalSrc);
+      record(true, { cached: true });
       continue;
     }
 
@@ -498,14 +532,16 @@ export async function prestageExternalMedia(html, jobDir, options = {}) {
     if (result.ok) {
       mapping[originalSrc] = `assets/${assetName}`;
       downloaded.push(originalSrc);
+      record(true, {});
     } else {
-      failures.push({ url: originalSrc, reason: result.reason, detail: result.detail });
+      failures.push({ url: masked, reason: result.reason, detail: sanitizeMediaDetail(result.detail) });
+      record(false, { reason: result.reason, detail: sanitizeMediaDetail(result.detail) });
     }
   }
 
   if (failures.length > 0) {
-    return { ok: false, reason: "MEDIA_VALIDATION_FAILED", failures };
+    return { ok: false, reason: "MEDIA_VALIDATION_FAILED", failures, outcomes };
   }
 
-  return { ok: true, html: rewriteHtmlMediaUrls(html, mapping), downloaded, skipped: false };
+  return { ok: true, html: rewriteHtmlMediaUrls(html, mapping), downloaded, skipped: false, outcomes };
 }
