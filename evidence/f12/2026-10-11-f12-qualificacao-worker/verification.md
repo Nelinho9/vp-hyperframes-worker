@@ -20,3 +20,7 @@ worker deployado (imagem/SHA de produção intocados por esta fase).
 N/A (nada alterado, nada deployado). Imagem/SHA em produção intocados.
 
 **STOP parcial; F12 NÃO fechada.**
+
+## F12-voz � 2026-10-12 (append-only)
+
+Fix `d5aa20b` (`main`): `jobMediaOutcomes` declarado em `stageJob` mas consumido em `runRender` (ReferenceError em qualquer render que chegasse a evidence; mascarado por falhas no gate). Ponte via job record (`media_prestage_outcomes`). node --check 0; suite 480/480 PASS. Push `main 4fe8539..d5aa20b`; Coolify redeploy manual do operador, verificado por comportamento (renders seguintes publicam evidence). Rollback = revert do commit + redeploy.
