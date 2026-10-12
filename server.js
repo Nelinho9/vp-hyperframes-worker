@@ -996,6 +996,7 @@ async function stageJob(body) {
     composition_source_kind: compositionSourceKind,
     composition_provenance: compositionProvenance,
     media_validation: jobMediaValidation,
+    media_prestage_outcomes: jobMediaOutcomes,
     window_lint_findings: windowLintFindings,
     window_normalization_warning: windowNormalizationWarning,
     upload_errors: uploadErrors,
@@ -1812,7 +1813,7 @@ export async function runRender(jobId, jobDir) {
           skipped: coverageSchedule.skipped,
           missing: snapEntries.length === 0 ? ["no-snapshots-captured"] : [],
         },
-        mediaPrestage: { outcomes: jobMediaOutcomes },
+        mediaPrestage: { outcomes: job.media_prestage_outcomes ?? [] },
       });
       try {
         const tmp = join(jobDir, "evidence-manifest.json.tmp");
