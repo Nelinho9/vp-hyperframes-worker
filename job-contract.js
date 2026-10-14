@@ -19,7 +19,7 @@ export function canonical(value) {
   return value;
 }
 export function logicalInputHash(body) {
-  return createHash('sha256').update(JSON.stringify(canonical({ inputs: body.inputs, options: body.options, artifact_paths: body.artifact_paths, project_id: body.project_id, step: body.step, mode: body.mode, revision: body.revision }))).digest('hex');
+  return createHash('sha256').update(JSON.stringify(canonical({ inputs: body.inputs, options: body.options, artifact_paths: body.artifact_paths, project_id: body.project_id, step: body.step, mode: body.mode, revision: body.revision, published_content_hash: body.published_content_hash }))).digest('hex');
 }
 function fail(code) { throw new Error(code); }
 function https(value) { try { const u = new URL(value); return u.protocol === 'https:' && !u.username && !u.password; } catch { return false; } }
@@ -75,6 +75,7 @@ export function parseRenderJob(value, workerSecret) {
   // Opcionais para N-1; quando presentes, validados. Tokens/URLs efémeros nunca são identidade.
   if (body.composition_revision !== undefined && (!Number.isSafeInteger(body.composition_revision) || body.composition_revision < 1)) fail('INVALID_REVISION');
   if (body.composition_hash !== undefined && (typeof body.composition_hash !== 'string' || !/^[a-f0-9]{64}$/i.test(body.composition_hash))) fail('INVALID_REVISION');
+  if (body.published_content_hash !== undefined && (typeof body.published_content_hash !== 'string' || !/^[a-f0-9]{64}$/i.test(body.published_content_hash))) fail('INVALID_REVISION');
   if (body.effective_config_revision !== undefined && (!Number.isSafeInteger(body.effective_config_revision) || body.effective_config_revision < 0)) fail('INVALID_REVISION');
   if (body.effective_config_hash !== undefined && (typeof body.effective_config_hash !== 'string' || (body.effective_config_hash !== '' && !/^[a-f0-9]{64}$/i.test(body.effective_config_hash)))) fail('INVALID_REVISION');
   if (body.composition_source !== undefined) {

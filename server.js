@@ -47,6 +47,8 @@ import { prestageExternalMedia } from "./media-preloader.js";
 import { compositionStoragePath, persistCompositionArtifact } from "./composition-persist.js";
 import { captureThumbnails, computeArtifactHash, parseScenePostEntranceTimes, buildRenderSnapshotArgs, renderSnapshotsLegacyFrames } from "./thumbnails.js";
 import { deriveElements, persistElementsArtifact } from "./elements-registry.js";
+import { randomUUID } from "node:crypto";
+import { createCompositionEditor, compositionPreviewOptions, registerCompositionRoutes } from "./composition-editor.js";
 import { persistRenderSnapshots } from "./snapshots-upload.js";
 import { resolveWorkerRenderOptions, persistEffectiveOptions } from "./render-options.js";
 import { buildExportArgv as buildF04ExportArgv, buildLintArgv as buildF04LintArgv, buildCheckArgv as buildF04CheckArgv } from "./render-argv.js";
@@ -536,9 +538,14 @@ app.get("/bgm/:file", runtimeCors, (req, res) => {
 });
 
 // ── Submit job ──────────────────────────────────────────────────────
-async function stageJob(body) {
+async function stageJob(body, { publishPreview = true, resolvePublished = true } = {}) {
   const project_id = body.project_id;
   const step = body.step;
+  // E01: a published head supersedes mutable aliases and stale job inputs.
+  // Activation already read/verified its source and stages in isolation.
+  const publication = resolvePublished && ORCHESTRATOR_PROJECT_ID_RE.test(project_id)
+    ? await compositionEditor.readJobComposition(project_id, body)
+    : null;
   // F04-T02/T03: options efetivas tipadas, guardadas no job durável F01 e
   // recuperadas no restart. Staging usa a mesma effective fps que render.
   // Alias N-1 só pelo adapter definido; unknown/invalid nunca viram defaults silenciosos.
@@ -553,9 +560,9 @@ async function stageJob(body) {
   // autenticado/bounded F01. Nunca passar string URL ao parser como se fosse HTML.
   // Inline: body.index_html ou inputs.index_html (string HTML). Ref: inputs.index_html_url (https).
   // Fixture legacy: inputs.fixture com proveniência explícita.
-  const inlineHtml = typeof body.index_html === "string" && body.index_html.length > 0
+  const inlineHtml = publication?.html || (typeof body.index_html === "string" && body.index_html.length > 0
     ? body.index_html
-    : (body.inputs && typeof body.inputs.index_html === "string" && body.inputs.index_html.length > 0 ? body.inputs.index_html : "");
+    : (body.inputs && typeof body.inputs.index_html === "string" && body.inputs.index_html.length > 0 ? body.inputs.index_html : ""));
   const refUrl = body.inputs && typeof body.inputs.index_html_url === "string" && body.inputs.index_html_url.length > 0
     ? body.inputs.index_html_url : "";
   const fixtureName = body.inputs && typeof body.inputs.fixture === "string" ? body.inputs.fixture : "";
@@ -880,7 +887,7 @@ async function stageJob(body) {
   // V5.24: persist canonicalHtml (pré-prestage) — o index_html reescrito contém
   // `assets/vp-media-*` válidos só dentro deste jobDir; gravá-lo no storage
   // envenenava o próximo job (prestage skipped → lint HYPERFRAMES_LINT_FAILED).
-  const compositionUploadPromise = step !== "preview"
+  const compositionUploadPromise = step !== "preview" && !publication
     ? persistCompositionArtifact(
       supabase,
       project_id,
@@ -895,7 +902,7 @@ async function stageJob(body) {
   // pré-prestage, com URLs https:// originais), logo o inventário reflete o
   // que o editor deve editar. O preview serve o HTML reescrito por jobDir.
   // Mesmo fire-and-forget; o resultado viaja no callback (composition_elements).
-  const elementsUploadPromise = step !== "preview"
+  const elementsUploadPromise = step !== "preview" && !publication
     ? persistElementsArtifact(
       supabase,
       project_id,
@@ -906,7 +913,9 @@ async function stageJob(body) {
     : null;
 
   // V4-3g.3 (B6): marcador para reidratação do registry no boot.
-  writeJobMarker(jobDir, {
+  // Isolated activation candidates have no boot-visible marker until the
+  // verified head is published locally with atomicWriteJob below.
+  if (publishPreview) writeJobMarker(jobDir, {
     job_id: jobId,
     project_id,
     step: step || "render",
@@ -1004,7 +1013,9 @@ async function stageJob(body) {
     elementsUploadPromise,
   });
   // Track by project_id for preview lookup
-  projectJobs.set(project_id, jobId);
+  // Published projects change preview only through serialized activation;
+  // a render that finishes staging late cannot replace a newer preview.
+  if (publishPreview && !publication) projectJobs.set(project_id, jobId);
 
   // mode:'preview' stages the composition only (no HyperFrames CLI run) —
   // used for editor previews and contract tests (V4-3f.3).
@@ -1013,7 +1024,7 @@ async function stageJob(body) {
   } else {
     jobs.get(jobId).status = "staged";
   }
-
+  return jobs.get(jobId);
 }
 app.post('/job', (req, res) => {
   try {
@@ -1100,11 +1111,70 @@ function resolveJobById(id) {
   return jobs.get(id) ?? null;
 }
 
+// E01 endpoints prepare canonical candidates without touching a live preview.
+// Old mutation routes below remain N-1 compatibility only and are blocked for
+// projects with a published head; all new consumers use prepare + DB publisher.
+export const compositionEditor = createCompositionEditor({
+  async readHead(projectId) {
+    // A worker with no database configuration can only serve N-1 jobs.
+    // Activation still refuses without an authoritative published head.
+    if (!supabase) return null;
+    const { data, error } = await supabase.from('video_composition_heads')
+      .select('project_id,revision,composition').eq('project_id', projectId).maybeSingle();
+    if (error) throw Object.assign(new Error('COMPOSITION_HEAD_READ_FAILED'), { code: 'COMPOSITION_HEAD_READ_FAILED', status: 503 });
+    return data;
+  },
+  async readText(path) {
+    if (!supabase) throw Object.assign(new Error('COMPOSITION_STORAGE_UNAVAILABLE'), { code: 'COMPOSITION_STORAGE_UNAVAILABLE', status: 503 });
+    const { data, error } = await supabase.storage.from('video-artifacts').download(path);
+    if (error || !data) throw Object.assign(new Error('COMPOSITION_SOURCE_READ_FAILED'), { code: 'COMPOSITION_SOURCE_READ_FAILED', status: 503 });
+    return data.text();
+  },
+  current(projectId) {
+    const job = resolveJobById(projectId);
+    return Number.isSafeInteger(job?.publication_revision)
+      ? { revision: job.publication_revision, content_hash: job.publication_content_hash }
+      : null;
+  },
+  async stage(projectId, html, head) {
+    const options = compositionPreviewOptions(html, head);
+    return stageJob({
+      job_id: randomUUID(), project_id: projectId, step: 'preview', mode: 'preview',
+      revision: head.revision, composition_revision: head.revision,
+      composition_hash: options.composition_hash, index_html: html,
+      options, outputs: {}, artifact_paths: {},
+    }, { publishPreview: false, resolvePublished: false });
+  },
+  async publish(projectId, candidate, head) {
+    candidate.publication_revision = head.revision;
+    candidate.publication_content_hash = head.content_hash;
+    // Durable identity before swapping the project pointer. Failed staging or
+    // failed disk persistence never replaces the previous preview.
+    atomicWriteJob(candidate);
+    projectJobs.set(projectId, candidate.id);
+  },
+});
+registerCompositionRoutes(app, compositionEditor, authorizedWorkerService);
+
+async function requireLegacyComposition(projectId, res) {
+  try {
+    if (ORCHESTRATOR_PROJECT_ID_RE.test(projectId) && await compositionEditor.readPublished(projectId)) {
+      res.status(409).json({ error: 'COMPOSITION_PREPARE_REQUIRED' });
+      return false;
+    }
+    return true;
+  } catch (error) {
+    res.status(error.status ?? 503).json({ error: error.code ?? 'COMPOSITION_HEAD_READ_FAILED' });
+    return false;
+  }
+}
+
 app.options("/patch/:id", previewCors);
-app.post("/patch/:id", previewCors, (req, res) => {
+app.post("/patch/:id", previewCors, async (req, res) => {
   const projectId = req.params.id;
   const auth = authorizeProjectWrite(req, projectId);
   if (!auth.ok) return res.status(auth.status).json({ error: auth.error });
+  if (!await requireLegacyComposition(projectId, res)) return;
 
   const job = resolveJobById(projectId);
   if (!job) return res.status(404).json({ error: "not found" });
@@ -1149,10 +1219,11 @@ app.post("/patch/:id", previewCors, (req, res) => {
 });
 
 app.options("/restructure/:id", previewCors);
-app.post("/restructure/:id", previewCors, (req, res) => {
+app.post("/restructure/:id", previewCors, async (req, res) => {
   const projectId = req.params.id;
   const auth = authorizeProjectWrite(req, projectId);
   if (!auth.ok) return res.status(auth.status).json({ error: auth.error });
+  if (!await requireLegacyComposition(projectId, res)) return;
 
   const job = resolveJobById(projectId);
   if (!job) return res.status(404).json({ error: "not found" });
@@ -1267,7 +1338,7 @@ function previewCors(req, res, next) {
 }
 app.options("/preview/:id", previewCors);
 app.options("/preview/:id/assets/:file", previewCors);
-app.get("/preview/:id", previewCors, (req, res) => {
+app.get("/preview/:id", previewCors, async (req, res) => {
   // V4-3g.5 (R5): preview nunca público. Com PREVIEW_SECRET definido, o
   // token HMAC é obrigatório — 401 (NÃO 404) para o polling do Studio
   // distinguir "não autorizado" de "ainda não staged". Sem secret, mantém o
@@ -1278,6 +1349,12 @@ app.get("/preview/:id", previewCors, (req, res) => {
     if (!verifyPreviewToken(token, req.params.id, PREVIEW_SECRET)) {
       return res.status(401).json({ error: "invalid_token" });
     }
+  }
+
+  try {
+    if (ORCHESTRATOR_PROJECT_ID_RE.test(req.params.id)) await compositionEditor.ensurePreview(req.params.id);
+  } catch (error) {
+    return res.status(error.status ?? 503).json({ error: error.code ?? 'COMPOSITION_PREVIEW_SYNC_FAILED', preview_sync_pending: true });
   }
 
   // Lookup by project_id first (orchestrator format), then by job_id
@@ -1403,6 +1480,11 @@ app.get("/preview/:id/thumbnails", previewCors, async (req, res) => {
     if (!verifyPreviewToken(token, req.params.id, PREVIEW_SECRET)) {
       return res.status(401).json({ error: "invalid_token" });
     }
+  }
+  try {
+    if (ORCHESTRATOR_PROJECT_ID_RE.test(req.params.id)) await compositionEditor.ensurePreview(req.params.id);
+  } catch (error) {
+    return res.status(error.status ?? 503).json({ error: error.code ?? 'COMPOSITION_PREVIEW_SYNC_FAILED', preview_sync_pending: true });
   }
   let job = null;
   const internalJobId = projectJobs.get(req.params.id);
