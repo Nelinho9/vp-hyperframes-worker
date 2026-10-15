@@ -30,7 +30,7 @@ import { parseRenderJob, publicJob, confinedPath, secureEqual } from "./job-cont
 import { createJobQueue, atomicWriteJob } from "./job-queue.js";
 import { jobEnvironment } from "./job-environment.js";
 import { pathToFileURL, fileURLToPath } from "url";
-import { injectPreviewHelper, injectPreviewRuntime } from "./preview-helper.js";
+import { injectPreviewHelper, injectPreviewRuntime, injectSourceIdentity, resolveServedSourceIdentity } from "./preview-helper.js";
 import { verifyPreviewToken } from "./preview-token.js";
 import { applyPatchesLinkedom, applyTimelineRestructure, normalizeClipWindows } from "./patch-engine.js";
 import { sanitizeCompositionTweens, sanitizeTimelineRegistry, extractLintFindings } from "./composition-sanitizer.js";
@@ -1376,6 +1376,13 @@ app.get("/preview/:id", previewCors, async (req, res) => {
   // V4-3f.3 (A3): inject the click-to-edit helper script before serving so
   // the editor iframe can select elements and receive hot-swap patches.
   let html = readFileSync(indexPath, "utf-8");
+
+  // E01-B C2 R09: attest WHICH canonical source this preview was staged from.
+  // Publication activation candidates carry (publication_revision,
+  // publication_content_hash) durably; legacy job previews stay identity-less —
+  // the editor correlates fail-closed.
+  const sourceIdentity = resolveServedSourceIdentity(job);
+  if (sourceIdentity) html = injectSourceIdentity(html, sourceIdentity);
 
   // V4_04A fix: boot the vendored HyperFrames runtime in previews. The
   // sanitizer strips runtime <script> tags from the staged HTML (the CLI

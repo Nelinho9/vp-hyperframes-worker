@@ -280,6 +280,127 @@ export function applyPatchesLinkedom(html, patches) {
   return { html: outHtml, applied, created };
 }
 
+// ─── E01-B read-set: authored values and scene structure ─────────────────────
+//
+// Durable undo needs the CURRENT value of each write-set target (precondition
+// before applying an inverse) and the value BEFORE an edit (journal delta).
+// Both read the same authored surface the write paths above produce, so the
+// round-trip write→read is value-stable for every supported property kind.
+
+/** Strip a write-path unit so a read-back value matches the patch value form. */
+function stripAuthoredUnit(raw) {
+  if (typeof raw !== "string") return "";
+  const m = /^(-?\d+(?:\.\d+)?)(px|deg)$/.exec(raw.trim());
+  return m ? m[1] : raw.trim();
+}
+
+/**
+ * Read the authored value of each `{selector, property}` patch target.
+ * Mirrors the write path per property kind:
+ *  - textContent/text → textContent; src → attribute;
+ *  - background-image/decl/geom → inline declaration (unit stripped);
+ *  - x/y → delta var + authored left/top baseline recomposed to composition
+ *    coordinates (the inverse of the delta math in applyGeometryPatch);
+ *  - attr → data-* attribute; label/hidden/locked → data-* markers;
+ *  - node ops (property === 'element') are NOT readable: value null.
+ * A missing element yields value null (removed target → precondition conflict).
+ */
+export function readPatchTargetValues(html, patches) {
+  const { document } = parseHTML(html);
+  const out = [];
+  for (const patch of patches) {
+    const selector = String(patch.selector);
+    const property = String(patch.property);
+    let value = null;
+    if (property !== NODE_OP_PROPERTY) {
+      let el = null;
+      try {
+        const id = assertIdSelector(selector);
+        el = document.getElementById(id) || null;
+      } catch {
+        el = null;
+      }
+      if (el) {
+        const style = el.getAttribute("style");
+        if (property === "textContent" || property === "text") value = String(el.textContent ?? "");
+        else if (property === "src") value = el.getAttribute("src") ?? "";
+        else if (property === "background-image") {
+          const raw = parseInlineDecl(style, "background-image") ?? "";
+          const wrapped = /^url\((.*)\)$/.exec(raw.trim());
+          value = wrapped ? wrapped[1] : raw;
+        }
+        else if (property === "label") value = el.getAttribute("data-label") ?? "";
+        else if (property === "hidden") value = el.getAttribute("data-hidden") === "true" ? "true" : "false";
+        else if (property === "locked") value = el.getAttribute("data-locked") === "true" ? "true" : "false";
+        else {
+          const entry = PROP_MAP[property];
+          if (entry?.kind === "geom") {
+            const raw = parseInlineDecl(style, entry.output);
+            if (raw !== null) {
+              if (property === "x" || property === "y") {
+                const delta = parseFloat(stripAuthoredUnit(raw));
+                const baseline = property === "x" ? authoredOffsetPx(style, "left") : authoredOffsetPx(style, "top");
+                value = String(Number.isFinite(delta) ? delta + baseline : NaN);
+              } else {
+                value = stripAuthoredUnit(raw);
+              }
+            } else value = "";
+          } else if (entry?.kind === "attr") value = el.getAttribute(entry.output) ?? "";
+          else if (entry?.kind === "decl") value = stripAuthoredUnit(parseInlineDecl(style, entry.output) ?? "");
+          else value = stripAuthoredUnit(parseInlineDecl(style, property) ?? "");
+        }
+      }
+    }
+    out.push({ selector, property, value });
+  }
+  return out;
+}
+
+/**
+ * Numeric compare with float tolerance: x/y coordinates round-trip through a
+ * delta against the authored baseline, so exact string equality would false-
+ * conflict on representable floats. Non-numeric values compare exactly.
+ */
+export function patchValueMatches(current, expected) {
+  if (typeof current !== "string" || typeof expected !== "string") return current === expected;
+  if (current === expected) return true;
+  const a = Number(current);
+  const b = Number(expected);
+  if (Number.isFinite(a) && Number.isFinite(b)) return Math.abs(a - b) < 1e-6;
+  return false;
+}
+
+/**
+ * Read the current scene structure (root-owned clips) as the restructure
+ * write-set: ordered scenes + boundary transitions. Mirrors the app's
+ * parseCompositionHtml/parseCompositionTransitions semantics on the same
+ * authored attributes applyTimelineRestructure writes.
+ */
+export function readSceneStructure(html) {
+  const { document } = parseHTML(html);
+  const root = document.querySelector("[data-composition-id]");
+  const scenes = [];
+  const transitions = [];
+  for (const clip of Array.from(document.querySelectorAll(".clip"))) {
+    const owner = clip.closest("[data-composition-id]");
+    if (owner !== null && owner !== root) continue;
+    const id = clip.id || clip.getAttribute("data-hf-id");
+    const durationRaw = clip.getAttribute("data-duration");
+    if (!id || durationRaw === null) continue;
+    const durationSec = parseFloat(durationRaw);
+    if (!Number.isFinite(durationSec) || durationSec <= 0) continue;
+    const outgoing = parseTransitionAttr(clip.getAttribute("data-transition-out"));
+    const overlapFrames = outgoing ? Math.round(outgoing.durationMs / 1000 * 30) : 0;
+    scenes.push({ id, durationFrames: Math.max(1, Math.round(durationSec * 30) - overlapFrames) });
+    const rawIn = clip.getAttribute("data-transition-in");
+    if (rawIn) {
+      const m = /^([A-Za-z]\w*)@(\d+(?:\.\d+)?)$/.exec(rawIn);
+      if (m) transitions.push({ id, kind: m[1], durationMs: Number(m[2]) });
+    }
+  }
+  return { scenes, transitions };
+}
+
 /** Remove one declaration from a style attribute (F05 hidden→show). */
 function removeStyleDecl(existing, prop) {
   if (!existing) return "";

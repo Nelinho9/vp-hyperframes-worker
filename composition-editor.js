@@ -1,6 +1,9 @@
 import { createHash } from 'node:crypto';
 import { parseHTML } from 'linkedom';
-import { applyPatchesLinkedom, applyTimelineRestructure } from './patch-engine.js';
+import {
+  applyPatchesLinkedom, applyTimelineRestructure, readPatchTargetValues, readSceneStructure,
+  patchValueMatches, NODE_OP_PROPERTY,
+} from './patch-engine.js';
 import { deriveElements } from './elements-registry.js';
 import { buildCoherentPublication } from './composition-publication.js';
 import { lintClipWindows } from './window-lint.js';
@@ -61,9 +64,33 @@ export function prepareComposition(kind, input) {
   validateHtml(input?.source_html);
   if (!Number.isSafeInteger(input.revision) || input.revision < 1) reject('INVALID_COMPOSITION_REVISION');
   let result;
+  let before = null;
+  let beforeScenes = null;
+  let beforeTransitions = null;
+  let structureUndoable = true;
   if (kind === 'patch') {
     if (!Array.isArray(input.patches) || input.patches.length < 1 || input.patches.length > 100
       || input.patches.some(p => !p || typeof p.selector !== 'string' || typeof p.property !== 'string' || typeof p.value !== 'string')) reject('INVALID_PATCHES');
+    // E01-B read-set: authored values BEFORE the edit feed the journal delta;
+    // the optional `expected` array is the precondition the CURRENT base must
+    // satisfy (undo of an action whose write-set was touched later must 409).
+    before = readPatchTargetValues(input.source_html, input.patches);
+    if (Array.isArray(input.expected) && input.expected.length > 0) {
+      if (input.expected.some(p => !p || typeof p.selector !== 'string' || typeof p.property !== 'string' || typeof p.value !== 'string')) reject('INVALID_EXPECTED_VALUES');
+      const current = readPatchTargetValues(input.source_html, input.expected);
+      const conflicts = [];
+      for (let i = 0; i < input.expected.length; i++) {
+        const target = input.expected[i];
+        if (!patchValueMatches(current[i]?.value ?? null, target.value)) {
+          conflicts.push({ selector: target.selector, property: target.property, observed: current[i]?.value ?? null, expected: target.value });
+        }
+      }
+      if (conflicts.length) {
+        throw Object.assign(new Error('UNDO_PRECONDITION_CONFLICT'), {
+          code: 'UNDO_PRECONDITION_CONFLICT', status: 409, conflicts,
+        });
+      }
+    }
     result = applyPatchesLinkedom(input.source_html, input.patches);
   } else if (kind === 'restructure') {
     if (!Array.isArray(input.scenes) || !input.scenes.length || input.scenes.length > 100
@@ -72,14 +99,61 @@ export function prepareComposition(kind, input) {
     if (input.transitions !== undefined && (!Array.isArray(input.transitions) || input.transitions.some(t => !t || typeof t.id !== 'string' || typeof t.kind !== 'string' || !Number.isFinite(t.durationMs)))) reject('INVALID_TRANSITIONS');
     const replacement = input.replace_scene_html ?? null;
     if (replacement !== null && (typeof replacement.id !== 'string' || typeof replacement.html !== 'string')) reject('INVALID_SCENE_REPLACEMENT');
+    // E01-B read-set: structure before the edit + optional scene precondition.
+    const beforeStructure = readSceneStructure(input.source_html);
+    beforeScenes = beforeStructure.scenes;
+    beforeTransitions = beforeStructure.transitions;
+    // This engine cannot reinsert removed fragments or invert replacements.
+    // Never advertise an ID-only delta as an exact inverse.
+    structureUndoable = replacement === null && beforeScenes.length === input.scenes.length
+      && beforeScenes.every(s => input.scenes.some(next => next.id === s.id));
+    if (Array.isArray(input.expected_scenes) && input.expected_scenes.length > 0) {
+      if (input.expected_scenes.some(s => !s || typeof s.id !== 'string' || !Number.isFinite(s.durationFrames))) reject('INVALID_EXPECTED_SCENES');
+      const current = beforeStructure.scenes.map(s => ({ id: s.id, durationFrames: s.durationFrames }));
+      const expected = input.expected_scenes.map(s => ({ id: String(s.id), durationFrames: s.durationFrames }));
+      const conflicts = [];
+      const max = Math.max(current.length, expected.length);
+      for (let i = 0; i < max; i++) {
+        if (!current[i] || !expected[i] || current[i].id !== expected[i].id || current[i].durationFrames !== expected[i].durationFrames) {
+          conflicts.push({
+            position: i,
+            observed: current[i] ? { id: current[i].id, durationFrames: current[i].durationFrames } : null,
+            expected: expected[i] ? { id: expected[i].id, durationFrames: expected[i].durationFrames } : null,
+          });
+        }
+      }
+      if (conflicts.length) {
+        throw Object.assign(new Error('UNDO_PRECONDITION_CONFLICT'), {
+          code: 'UNDO_PRECONDITION_CONFLICT', status: 409, conflicts,
+        });
+      }
+    }
+    if (input.expected_transitions !== undefined) {
+      if (!Array.isArray(input.expected_transitions)) reject('INVALID_EXPECTED_TRANSITIONS');
+      if (JSON.stringify(beforeTransitions) !== JSON.stringify(input.expected_transitions)) {
+        throw Object.assign(new Error('UNDO_PRECONDITION_CONFLICT'), {
+          code: 'UNDO_PRECONDITION_CONFLICT', status: 409,
+          conflicts: [{ property: 'transitions', observed: beforeTransitions, expected: input.expected_transitions }],
+        });
+      }
+    }
+    if (input.scenes.some(s => !beforeScenes.some(current => current.id === s.id))) reject('SCENE_FRAGMENT_UNAVAILABLE', 409);
     result = applyTimelineRestructure(input.source_html, input.scenes, input.fps ?? 30, input.transitions ?? [], replacement);
   } else reject('INVALID_COMPOSITION_OPERATION');
   const elements = deriveElements(result.html, { revision: input.revision });
   if (elements.conflicts.length) reject('COMPOSITION_ELEMENT_ID_CONFLICT', 409);
   const coherent = buildCoherentPublication({ html: result.html, registry: elements, revision: input.revision });
+  // Node ops and missing before-values have no patch-applicable inverse: the
+  // journal marks such commands undo_unavailable instead of guessing.
+  const undoable = before !== null
+    ? before.every(entry => entry.value !== null && entry.property !== NODE_OP_PROPERTY)
+    : structureUndoable;
   return {
     ok: true, prepared: true, html: coherent.html, elements: coherent.registry,
     applied: result.applied, revision: input.revision, content_hash: compositionHash(coherent.html),
+    ...(before !== null ? { before } : {}),
+    ...(beforeScenes !== null ? { before_scenes: beforeScenes, before_transitions: beforeTransitions } : {}),
+    undoable,
     ...(result.created ? { created: result.created } : {}),
     ...(result.removed ? { removed: result.removed, replaced: result.replaced ?? null, findings: lintClipWindows(result.html, { fps: input.fps ?? 30 }) } : {}),
   };
@@ -182,6 +256,13 @@ export function registerCompositionRoutes(app, editor, authorizeService) {
       const head = await editor.activate(req.params.id, req.body);
       return res.json({ ok: true, activated: true, revision: head.revision, content_hash: head.content_hash, preview_sync_pending: false });
     } catch (error) {
+      // E01-B: the structured precondition conflicts ride the 409 body so the
+      // gateway can show which write-set targets diverged.
+      if (Array.isArray(error?.conflicts)) {
+        return res.status(error.status ?? 409).json({
+          error: error.code ?? 'UNDO_PRECONDITION_CONFLICT', conflicts: error.conflicts,
+        });
+      }
       return res.status(error.status ?? 503).json({ error: error.code ?? 'COMPOSITION_PREPARATION_FAILED',
         ...(kind === 'activate' ? { activated: false, preview_sync_pending: true, publication_changed: false } : {}) });
     }

@@ -89,6 +89,84 @@ export const HELPER_SCRIPT_ID = '__vp-preview-helper__';
 export const RUNTIME_SCRIPT_MARKER = 'data-vp-preview-runtime';
 
 /**
+ * E01-B C2 R09: marker name attribute of the <meta> that attests WHICH
+ * canonical source the served preview was staged from. Only publication
+ * activation candidates carry it; legacy job previews stay identity-less.
+ */
+export const SOURCE_IDENTITY_MARKER = 'data-vp-source-identity';
+
+/**
+ * E01-B C2 R09: inject the publication source identity (published revision +
+ * C5 content hash of the raw HTML bytes) as a <meta> in <head>.
+ *
+ * The runtime handshake reads this marker and reports revision/contentHash in
+ * its `ready` envelope, letting the editor correlate preview readiness with a
+ * committed publication receipt (fail-closed correlation: no marker → the
+ * handshake carries no identity and can never be claimed "publication-synced").
+ * Idempotent; `identity == null` leaves the HTML untouched.
+ *
+ * @param {string} html Composition HTML about to be served.
+ * @param {{revision: number, contentHash: string} | null} identity
+ * @returns {string} HTML with the identity meta injected.
+ */
+export function injectSourceIdentity(html, identity) {
+  if (typeof html !== 'string' || html.length === 0) return html;
+  if (!identity || !Number.isSafeInteger(identity.revision) || identity.revision < 1
+    || typeof identity.contentHash !== 'string' || !/^[a-f0-9]{64}$/.test(identity.contentHash)) return html;
+  if (html.includes(`${SOURCE_IDENTITY_MARKER}=`)) return html;
+  const meta = `<meta ${SOURCE_IDENTITY_MARKER}="1" data-revision="${identity.revision}" data-content-hash="${identity.contentHash}">`;
+  if (/<head[^>]*>/i.test(html)) {
+    return html.replace(/<head[^>]*>/i, (match) => `${match}${meta}`);
+  }
+  return meta + html;
+}
+
+/**
+ * E01-B C2 R09: resolve the identity the preview route should attest for a
+ * staged job record. Publication activation candidates carry
+ * (publication_revision, publication_content_hash) durably; jobs staged with
+ * an explicit published_content_hash + composition_revision carry the same
+ * identity. Anything else is legacy/identity-less (null — fail-closed).
+ *
+ * @param {{publication_revision?: number, publication_content_hash?: string,
+ *          composition_revision?: number, published_content_hash?: string} | null} job
+ * @returns {{revision: number, contentHash: string} | null}
+ */
+export function resolveServedSourceIdentity(job) {
+  if (!job) return null;
+  if (Number.isSafeInteger(job.publication_revision)
+    && typeof job.publication_content_hash === 'string'
+    && /^[a-f0-9]{64}$/.test(job.publication_content_hash)) {
+    return { revision: job.publication_revision, contentHash: job.publication_content_hash };
+  }
+  if (Number.isSafeInteger(job.composition_revision)
+    && typeof job.published_content_hash === 'string'
+    && /^[a-f0-9]{64}$/.test(job.published_content_hash)) {
+    return { revision: job.composition_revision, contentHash: job.published_content_hash };
+  }
+  return null;
+}
+
+/**
+ * E01-B C2 R09: parse the injected source identity back out of a served
+ * preview HTML. Returns null when the marker is absent (identity-less).
+ *
+ * @param {string} html
+ * @returns {{revision: number, contentHash: string} | null}
+ */
+export function parseSourceIdentity(html) {
+  if (typeof html !== 'string' || html.length === 0) return null;
+  const match = html.match(
+    new RegExp(`<meta[^>]*${SOURCE_IDENTITY_MARKER}="1"[^>]*>`),
+  );
+  if (!match) return null;
+  const revision = Number(match[0].match(/data-revision="(\d+)"/)?.[1]);
+  const contentHash = match[0].match(/data-content-hash="([a-f0-9]{64})"/)?.[1];
+  if (!Number.isSafeInteger(revision) || revision < 1 || !contentHash) return null;
+  return { revision, contentHash };
+}
+
+/**
  * V4_04A fix: inject the HyperFrames runtime into a preview response.
  *
  * `sanitizeCompositionForOffline` strips runtime <script src> tags from the
@@ -138,6 +216,24 @@ import { KEYFRAME_APPLY_SOURCE } from "./keyframes-presets.js";
 export const PREVIEW_HELPER_SCRIPT = `(function () {
   if (window.__vpPreviewHelperLoaded) return;
   window.__vpPreviewHelperLoaded = true;
+
+  // ── E01-B C2 R09: attest the served source identity to the parent ──────
+  // The worker injects a source-identity meta element (name data-vp-source-
+  // identity, attrs data-revision/data-content-hash) ONLY for publication-
+  // staged previews. Report it BEFORE the runtime's ready handshake fires
+  // (this inline script runs before DOMContentLoaded); the parent latches it
+  // and merges it into the handshake correlation. A preview without the
+  // marker stays identity-less — never claimed publication-synced.
+  try {
+    var vpSrcMeta = document.querySelector('meta[data-vp-source-identity]');
+    if (vpSrcMeta) {
+      var vpSrcRev = parseInt(vpSrcMeta.getAttribute('data-revision'), 10);
+      var vpSrcHash = vpSrcMeta.getAttribute('data-content-hash');
+      if (isFinite(vpSrcRev) && vpSrcRev > 0 && /^[a-f0-9]{64}$/.test(vpSrcHash)) {
+        parent.postMessage({ source: 'hf-preview', type: 'source-identity', revision: vpSrcRev, contentHash: vpSrcHash }, '*');
+      }
+    }
+  } catch (eSI) { /* identity-less — fail closed in the parent */ }
 
   // V5-P0B canonical table (prop-map.js) — geometry NEVER maps to left/top.
   var PROP_MAP = ${JSON.stringify(PROP_MAP)};
