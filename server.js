@@ -1115,6 +1115,8 @@ function resolveJobById(id) {
 // Old mutation routes below remain N-1 compatibility only and are blocked for
 // projects with a published head; all new consumers use prepare + DB publisher.
 export const compositionEditor = createCompositionEditor({
+  // The same configured store used by readText below; never request authority.
+  storageUrl: SUPABASE_URL,
   async readHead(projectId) {
     // A worker with no database configuration can only serve N-1 jobs.
     // Activation still refuses without an authoritative published head.

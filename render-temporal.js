@@ -10,6 +10,31 @@
 export const EFFECTIVE_FPS_DEFAULT = 30;
 
 /**
+ * §4: só uma medida CONFIÁVEL promove timing. Espelha `decideVoiceFit`
+ * (`secondsTrusted`, `audioMeasure.ts`): `null` (legado sem classificação),
+ * `measured-wav` ou `measured-mp3`. `estimated-*`, `unknown` e qualquer
+ * classificação não medida (wpm/word estimate) recusam. Antes desta correção
+ * (N-J) um regex `/estimate|wpm|word/i` deixava passar `unknown` — que a
+ * decisão única recusa — e o produtor do plano passou a poder transportá-lo.
+ */
+export const TRUSTED_MEASUREMENT_SOURCES = ["measured-wav", "measured-mp3"];
+
+export function measurementSourceTrusted(source) {
+  return source === null || source === undefined || TRUSTED_MEASUREMENT_SOURCES.includes(source);
+}
+
+/**
+ * Mesma quantização de `decideVoiceFit`/`windowFramesFrom` (§4): `floor(s*fps+0,5)`,
+ * recusando entrada não finita/negativa ou fora do intervalo seguro.
+ */
+export function secondsToFrameFloorHalfUp(seconds, fps = EFFECTIVE_FPS_DEFAULT) {
+  if (typeof seconds !== "number" || !Number.isFinite(seconds) || seconds < 0) return null;
+  const scaled = seconds * fps + 0.5;
+  if (!Number.isFinite(scaled) || scaled >= Number.MAX_SAFE_INTEGER) return null;
+  return Math.floor(scaled);
+}
+
+/**
  * @param {{ rootDuration: number|null, windows: Array<{id:string,start:number,duration:number}>, audioSlots?: Array<{frameNumber:number,measuredSec:number|null,measurementSource?:string|null,windowStart:number,windowEnd:number}>, transitionsMs?: number[], fps?: number }} args
  */
 export function validateTemporalAudioPlan(args) {
@@ -42,17 +67,39 @@ export function validateTemporalAudioPlan(args) {
       failures.push({ code: "F04_VO_UNMEASURED", expected: "measured_duration real (WAV/MP3 medido)", observed: `slot ${s.frameNumber}: não medido`, diagnosis: "Sem word estimates como acústica." });
       continue;
     }
-    if (s.measurementSource && /estimate|wpm|word/i.test(s.measurementSource)) {
-      failures.push({ code: "F04_VO_ESTIMATED", expected: "measured (acoustic), nunca estimated", observed: `slot ${s.frameNumber}: ${s.measurementSource}`, diagnosis: "Não usar word estimates como acústica." });
+    if (!measurementSourceTrusted(s.measurementSource)) {
+      failures.push({
+        code: "F04_VO_ESTIMATED",
+        expected: "medida acústica (measured-wav|measured-mp3) ou legado sem classificação — nunca estimated/unknown",
+        observed: `slot ${s.frameNumber}: ${s.measurementSource}`,
+        diagnosis: "Mesma regra da decisão única de fit (§4): estimated/unknown nunca promovem timing.",
+      });
       continue;
     }
-    const slot = s.windowEnd - s.windowStart;
-    if (s.measuredSec > slot + 0.25) {
+    // N-F/N-G (§4): MESMA decisão de fit do contrato — janela e voz quantizadas a
+    // frames como `decideVoiceFit` (`windowFramesFrom` + ramo de segundos), SEM a
+    // tolerância local de +0,25s, e com a mesma guarda de janela inválida. Antes
+    // desta correção o gate do render aceitava uma voz até +0,25s acima da janela
+    // (~7,5 frames a 30 fps) e era fail-open em janelas malformadas.
+    const startFrame = secondsToFrameFloorHalfUp(s.windowStart, fps);
+    const endFrame = secondsToFrameFloorHalfUp(s.windowEnd, fps);
+    if (startFrame === null || endFrame === null || endFrame - startFrame <= 0) {
+      failures.push({
+        code: "F04_VO_WINDOW_INVALID",
+        expected: "janela finita (start/end ≥ 0) e não colapsada",
+        observed: `slot ${s.frameNumber}: start ${s.windowStart} end ${s.windowEnd}`,
+        diagnosis: "Mesma guarda de janela inválida da decisão única de fit (§4).",
+      });
+      continue;
+    }
+    const windowFrames = endFrame - startFrame;
+    const usedFrames = Math.ceil(Number((s.measuredSec * fps).toFixed(6)));
+    if (usedFrames > windowFrames) {
       failures.push({
         code: "F04_VO_WINDOW_OVERFLOW",
-        expected: `voz <= slot ${slot}s (+0,25s tol)`,
-        observed: `slot ${s.frameNumber}: voz ${s.measuredSec}s em janela ${slot}s`,
-        diagnosis: "Fixture 5.92s/3s exige resolução F03 ou falha explícita; nunca truncar VO silenciosamente.",
+        expected: `voz <= janela de ${windowFrames} frames`,
+        observed: `slot ${s.frameNumber}: voz ${s.measuredSec}s (${usedFrames} frames) em janela ${windowFrames} frames`,
+        diagnosis: "Mesma decisão de fit do contrato (§4), sem tolerância local; exige resolução F03 ou falha explícita.",
       });
     }
   }

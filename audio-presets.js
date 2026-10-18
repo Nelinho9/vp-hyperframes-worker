@@ -10,6 +10,12 @@
  * a cada execução (imune a /restructure e re-patches), usa tweens ABSOLUTOS
  * `fromTo(el, {volume}, {volume})` posicionados na janela do próprio clip e
  * killTweensOf próprio — seek-safe por construção (mesma estratégia da S09).
+ *
+ * E02/I4 §8 (mix comum): o applier aplica o ganho EFETIVO — `data-muted`
+ * domina (`el.muted`, como o `applyLiveAudioState` do preview-helper) — e
+ * cobre TODAS as tracks com qualquer atributo de mix, não só as que têm
+ * fades (antes, um clip só com volume/mute não era materializado). O gain
+ * authored em `data-volume` nunca é reescrito.
  */
 
 export const AUDIO_BLOCK_ID = "__vp-audio-materialized__";
@@ -21,20 +27,29 @@ export const AUDIO_APPLY_SOURCE = [
   "  try {",
   '    var tl = (window.__timelines || {})["main"];',
   '    if (!tl || typeof tl.fromTo !== "function" || !window.gsap) return;',
-  '    var nodes = document.querySelectorAll("audio[data-fade-in],audio[data-fade-out]");',
+  '    var nodes = document.querySelectorAll("audio[data-volume],audio[data-muted],audio[data-fade-in],audio[data-fade-out]");',
   "    Array.prototype.forEach.call(nodes, function(el){",
+  '      var vol = parseFloat(el.getAttribute("data-volume")); if (!isFinite(vol)) vol = 1;',
+  // E02/I4 §8: o applier do renderer consome `data-muted` COMO o preview
+  // (preview-helper: el.muted = data-muted === 'true'). O mute DOMINA o
+  // gain e os fades: um clip muted produz zero sem alterar source/gain/fades
+  // authored (`data-volume` nunca é reescrito → unmute restaura o gain).
+  '      var muted = el.getAttribute("data-muted") === "true";',
+  "      var gain = muted ? 0 : Math.max(0, Math.min(1, vol));",
   '      var start = parseFloat(el.getAttribute("data-start")); if (!isFinite(start)) start = 0;',
   '      var dur = parseFloat(el.getAttribute("data-duration"));',
-  '      var vol = parseFloat(el.getAttribute("data-volume")); if (!isFinite(vol)) vol = 1;',
-  "      if (!isFinite(dur) || dur <= 0) return;",
   '      var fIn = (parseFloat(el.getAttribute("data-fade-in")) || 0) / 1000;',
   '      var fOut = (parseFloat(el.getAttribute("data-fade-out")) || 0) / 1000;',
+  "      try { window.gsap.killTweensOf(el, \"volume\"); } catch (e) {}",
+  "      el.muted = muted;",
+  "      el.volume = gain;",
+  "      if (!isFinite(dur) || dur <= 0) return;",
   "      var maxFade = Math.max(0, dur - 0.5);",
   "      if (fIn + fOut > maxFade) { var k = maxFade / (fIn + fOut); fIn *= k; fOut *= k; }",
-  '      try { window.gsap.killTweensOf(el, "volume"); } catch (e) {}',
-  "      el.volume = Math.max(0, Math.min(1, vol));",
-  '      if (fIn > 0) tl.fromTo(el, { volume: 0 }, { volume: vol, duration: fIn, ease: "none" }, start);',
-  '      if (fOut > 0) tl.fromTo(el, { volume: vol }, { volume: 0, duration: fOut, ease: "none" }, start + dur - fOut);',
+  // Envelopes lineares de amplitude, clip-local; um clip muted não gera tweens
+  // (nada para rampar) e mantém-se a zero em qualquer seek.
+  '      if (!muted && fIn > 0) tl.fromTo(el, { volume: 0 }, { volume: gain, duration: fIn, ease: "none" }, start);',
+  '      if (!muted && fOut > 0) tl.fromTo(el, { volume: gain }, { volume: 0, duration: fOut, ease: "none" }, start + dur - fOut);',
   "    });",
   "  } catch (err) { /* nunca quebrar a composição por áudio */ }",
   "}",

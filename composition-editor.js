@@ -5,6 +5,7 @@ import {
   patchValueMatches, NODE_OP_PROPERTY,
 } from './patch-engine.js';
 import { deriveElements } from './elements-registry.js';
+import { replaceAudioTargets } from './audio-prepare.js';
 import { buildCoherentPublication } from './composition-publication.js';
 import { lintClipWindows } from './window-lint.js';
 import { canonical } from './job-contract.js';
@@ -60,13 +61,14 @@ export function validateCompositionHead(row, projectId) {
 }
 
 /** Authenticated Edge prepares from committed canonical HTML, never job_dir. */
-export function prepareComposition(kind, input) {
+export function prepareComposition(kind, input, context = {}) {
   validateHtml(input?.source_html);
   if (!Number.isSafeInteger(input.revision) || input.revision < 1) reject('INVALID_COMPOSITION_REVISION');
   let result;
   let before = null;
   let beforeScenes = null;
   let beforeTransitions = null;
+  let beforeAudio = null;
   let structureUndoable = true;
   if (kind === 'patch') {
     if (!Array.isArray(input.patches) || input.patches.length < 1 || input.patches.length > 100
@@ -139,19 +141,30 @@ export function prepareComposition(kind, input) {
     }
     if (input.scenes.some(s => !beforeScenes.some(current => current.id === s.id))) reject('SCENE_FRAGMENT_UNAVAILABLE', 409);
     result = applyTimelineRestructure(input.source_html, input.scenes, input.fps ?? 30, input.transitions ?? [], replacement);
+  } else if (kind === 'audio') {
+    // E02/I3 §7.4: só o alvo muda. O read-set (`before`) é o `src` publicado
+    // que a revisão nova substitui — o inverso E01 é uma revisão nova com
+    // esse mesmo valor, não um blob apagado. O `expected_src` é a precondição
+    // do undo/redo (409 antes de qualquer mutação quando diverge).
+    const replaced = replaceAudioTargets(input.source_html, input.replacements, input.expected_src, context);
+    beforeAudio = replaced.before;
+    result = { html: replaced.html, applied: replaced.applied };
   } else reject('INVALID_COMPOSITION_OPERATION');
   const elements = deriveElements(result.html, { revision: input.revision });
   if (elements.conflicts.length) reject('COMPOSITION_ELEMENT_ID_CONFLICT', 409);
   const coherent = buildCoherentPublication({ html: result.html, registry: elements, revision: input.revision });
   // Node ops and missing before-values have no patch-applicable inverse: the
   // journal marks such commands undo_unavailable instead of guessing.
-  const undoable = before !== null
-    ? before.every(entry => entry.value !== null && entry.property !== NODE_OP_PROPERTY)
-    : structureUndoable;
+  const undoable = beforeAudio !== null
+    ? true
+    : before !== null
+      ? before.every(entry => entry.value !== null && entry.property !== NODE_OP_PROPERTY)
+      : structureUndoable;
   return {
     ok: true, prepared: true, html: coherent.html, elements: coherent.registry,
     applied: result.applied, revision: input.revision, content_hash: compositionHash(coherent.html),
     ...(before !== null ? { before } : {}),
+    ...(beforeAudio !== null ? { before_audio: beforeAudio } : {}),
     ...(beforeScenes !== null ? { before_scenes: beforeScenes, before_transitions: beforeTransitions } : {}),
     undoable,
     ...(result.created ? { created: result.created } : {}),
@@ -169,7 +182,7 @@ export function compositionPreviewOptions(html, head) {
 }
 
 /** One process-local activation at a time. PostgreSQL remains commit authority. */
-export function createCompositionEditor({ readHead, readText, stage, publish, current }) {
+export function createCompositionEditor({ readHead, readText, stage, publish, current, storageUrl }) {
   const tails = new Map();
   async function serial(projectId, operation) {
     const previous = tails.get(projectId) ?? Promise.resolve();
@@ -220,7 +233,7 @@ export function createCompositionEditor({ readHead, readText, stage, publish, cu
     return sourceFor(projectId, head);
   }
   return {
-    prepare: prepareComposition,
+    prepare: (kind, input) => prepareComposition(kind, input, { storageUrl }),
     activate: (projectId, input) => serial(projectId, () => activateLocked(projectId, input)),
     ensurePreview: projectId => serial(projectId, async () => {
       const head = await headFor(projectId);
@@ -269,5 +282,6 @@ export function registerCompositionRoutes(app, editor, authorizeService) {
   };
   app.post('/prepare-patch/:id', handle('patch'));
   app.post('/prepare-restructure/:id', handle('restructure'));
+  app.post('/prepare-audio/:id', handle('audio'));
   app.post('/activate-composition/:id', handle('activate'));
 }
