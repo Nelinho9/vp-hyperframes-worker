@@ -63,7 +63,26 @@ export function validateTemporalAudioPlan(args) {
     if (!(t >= 0) || !(t <= 2000)) failures.push({ code: "F04_TRANSITION_BOUNDS", expected: "transição em [0,2000]ms", observed: String(t), diagnosis: "Transições/overlaps aprovados respeitados." });
   }
   for (const s of args.audioSlots ?? []) {
-    if (s.measuredSec === null || !Number.isFinite(s.measuredSec)) {
+    let exactFrames = null;
+    const hasSamples = s.sampleCount != null || s.sampleRate != null;
+    if (s.decodeComplete === false || (hasSamples && (s.decodeComplete !== true
+      || !Number.isSafeInteger(s.sampleCount) || s.sampleCount < 0
+      || !Number.isSafeInteger(s.sampleRate) || s.sampleRate <= 0
+      || !Number.isSafeInteger(fps) || fps <= 0))) {
+      failures.push({ code: "F04_VO_UNMEASURED", expected: "complete decoded samples with a valid rate", observed: `slot ${s.frameNumber}: invalid decode/sample certificate`, diagnosis: "Partial or invalid measurement cannot certify render timing." });
+      continue;
+    }
+    if (hasSamples) {
+      const numerator = BigInt(s.sampleCount) * BigInt(fps);
+      const denominator = BigInt(s.sampleRate);
+      exactFrames = Number((numerator + denominator - 1n) / denominator);
+      if (typeof s.measuredSec === "number" && (!Number.isFinite(s.measuredSec)
+        || Math.abs(s.measuredSec - s.sampleCount / s.sampleRate) > 0.000051)) {
+        failures.push({ code: "F04_VO_UNMEASURED", expected: "seconds consistent with exact samples", observed: `slot ${s.frameNumber}: inconsistent certificate`, diagnosis: "Do not combine measurements from different sources." });
+        continue;
+      }
+    }
+    if (exactFrames === null && (s.measuredSec === null || !Number.isFinite(s.measuredSec) || s.measuredSec < 0)) {
       failures.push({ code: "F04_VO_UNMEASURED", expected: "measured_duration real (WAV/MP3 medido)", observed: `slot ${s.frameNumber}: não medido`, diagnosis: "Sem word estimates como acústica." });
       continue;
     }
@@ -93,7 +112,7 @@ export function validateTemporalAudioPlan(args) {
       continue;
     }
     const windowFrames = endFrame - startFrame;
-    const usedFrames = Math.ceil(Number((s.measuredSec * fps).toFixed(6)));
+    const usedFrames = exactFrames ?? Math.ceil(Number((s.measuredSec * fps).toFixed(6)));
     if (usedFrames > windowFrames) {
       failures.push({
         code: "F04_VO_WINDOW_OVERFLOW",

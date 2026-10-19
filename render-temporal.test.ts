@@ -105,3 +105,23 @@ describe("worker validateTemporalAudioPlan (F04-T05) — fit por frames, sem tol
     expect(ok.ok).toBe(true);
   });
 });
+
+
+describe('E02 review: exact decoded sample certificates', () => {
+  const check = (extra: Record<string, unknown>) => validateTemporalAudioPlan({
+    rootDuration: 3, windows: [{ id: 'scene-1', start: 0, duration: 3 }], fps: 30,
+    audioSlots: [{ frameNumber: 1, measuredSec: 3, measurementSource: 'measured-wav',
+      sampleCount: 72000, sampleRate: 24000, decodeComplete: true,
+      windowStart: 0, windowEnd: 3, ...extra }],
+  });
+  it('exact fit passes; one extra sample fails even if seconds round to 3', () => {
+    expect(check({}).ok).toBe(true);
+    expect(check({ sampleCount: 72001 })).toMatchObject({ ok: false, failures: [{ code: 'F04_VO_WINDOW_OVERFLOW' }] });
+  });
+  it.each([
+    { sampleRate: null }, { sampleCount: -1 }, { sampleCount: 1.5 },
+    { decodeComplete: false }, { measuredSec: 1 },
+  ])('invalid or partial certificate fails: %j', (extra) => {
+    expect(check(extra)).toMatchObject({ ok: false, failures: [{ code: 'F04_VO_UNMEASURED' }] });
+  });
+});

@@ -948,6 +948,9 @@ async function stageJob(body, { publishPreview = true, resolvePublished = true }
     } else {
     const audioSlots = Array.isArray(body.audio_plan?.slots) ? body.audio_plan.slots.map((s, i) => ({
       frameNumber: typeof s.frameNumber === "number" ? s.frameNumber : i + 1,
+      sampleCount: s.sampleCount ?? null,
+      sampleRate: s.sampleRate ?? null,
+      decodeComplete: s.decodeComplete ?? null,
       measuredSec: typeof s.measuredSec === "number" ? s.measuredSec : (typeof s.measured_duration === "number" ? s.measured_duration : null),
       measurementSource: typeof s.measurementSource === "string" ? s.measurementSource : (typeof s.measurement_source === "string" ? s.measurement_source : null),
       windowStart: typeof s.windowStart === "number" ? s.windowStart : (typeof s.window_start === "number" ? s.window_start : 0),
