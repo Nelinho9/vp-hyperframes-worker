@@ -43,8 +43,8 @@ describe('PROP_MAP — contrato partilhado V5-P0B (espelho do worker)', () => {
   });
 
   it('consumo geom usa individual transforms / vars auto-contidos', () => {
-    expect(GEOM_CONSUMPTION.x).toBe('translate: var(--el-x, 0px) var(--el-y, 0px)');
-    expect(consumptionFor('y')).toBe(GEOM_CONSUMPTION.x);
+    expect(GEOM_CONSUMPTION.x).toBe('margin-left: calc(var(--el-margin-x, 0px) + var(--el-x, 0px))');
+    expect(consumptionFor('y')).toBe('margin-top: calc(var(--el-margin-y, 0px) + var(--el-y, 0px))');
     expect(consumptionFor('width')).toBe('width: var(--el-w)');
     expect(consumptionFor('height')).toBe('height: var(--el-h)');
     expect(consumptionFor('rotation')).toBe('rotate: var(--el-rotate, 0deg)');

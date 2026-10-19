@@ -37,6 +37,7 @@
  */
 
 import { parseHTML } from "linkedom";
+import { prepareLayoutGeometry, readAuthoredMargin, setGeometryConsumption } from "./geometry-layout.js";
 import { PROP_MAP, UI_ONLY_PROPS, GEOM_CONSUMPTION, computeGeomDelta } from "./prop-map.js";
 import { collectAnimSpecs, upsertAnimBlock } from "./anim-presets.js";
 import { collectKeyframeSpecs, upsertKeyframeBlock, touchesKeyframeProps } from "./keyframes-presets.js";
@@ -115,23 +116,29 @@ function authoredOffsetPx(styleAttr, prop) {
  */
 function applyGeometryPatch(el, property, value) {
   const entry = PROP_MAP[property];
+  if (property === 'x' || property === 'y') prepareLayoutGeometry(el);
   const existing = el.getAttribute("style");
 
   let out = value;
   if (NUMERIC_VALUE_RE.test(value)) {
     let num = Number(value);
-    if (property === "x") num = computeGeomDelta(authoredOffsetPx(existing, "left"), num);
-    if (property === "y") num = computeGeomDelta(authoredOffsetPx(existing, "top"), num);
+    if (property === "x") num = computeGeomDelta(authoredOffsetPx(existing, "left") + (parseFloat(el.style.getPropertyValue('--el-margin-x')) || 0), num);
+    if (property === "y") num = computeGeomDelta(authoredOffsetPx(existing, "top") + (parseFloat(el.style.getPropertyValue('--el-margin-y')) || 0), num);
     out = `${num}${entry.unit}`;
   }
-  el.setAttribute("style", mergeStyle(existing, entry.output, out));
+  if (el.style.getPropertyValue(entry.output) !== out) el.setAttribute("style", mergeStyle(existing, entry.output, out));
 
   const consumption = GEOM_CONSUMPTION[property] || null;
   if (!consumption) return;
+  if (property === 'x' || property === 'y') {
+    setGeometryConsumption(el, property, consumption);
+    return;
+  }
   const sep = consumption.indexOf(":");
   el.setAttribute(
     "style",
-    mergeStyle(el.getAttribute("style"), consumption.slice(0, sep).trim(), consumption.slice(sep + 1).trim()),
+    mergeStyle(el.getAttribute("style"), consumption.slice(0, sep).trim(), consumption.slice(sep + 1).trim()
+      + ((property === 'x' || property === 'y') && el.style.getPropertyValue(`--el-margin-priority-${property}`) === 'important' ? ' !important' : '')),
   );
 }
 
@@ -339,8 +346,12 @@ export function readPatchTargetValues(html, patches) {
             if (raw !== null) {
               if (property === "x" || property === "y") {
                 const delta = parseFloat(stripAuthoredUnit(raw));
-                const baseline = property === "x" ? authoredOffsetPx(style, "left") : authoredOffsetPx(style, "top");
-                value = String(Number.isFinite(delta) ? delta + baseline : NaN);
+                const axis = property === 'x' ? 'x' : 'y';
+                const side = property === 'x' ? 'left' : 'top';
+                const margin = el.style.getPropertyValue(`--el-margin-${axis}`);
+                const pixels = margin ? readAuthoredMargin(`margin-${side}:${margin}`, side).pixels : readAuthoredMargin(style, side).pixels;
+                const baseline = authoredOffsetPx(style, side) + (pixels ?? 0);
+                value = pixels !== null && Number.isFinite(delta) ? String(delta + baseline) : null;
               } else {
                 value = stripAuthoredUnit(raw);
               }

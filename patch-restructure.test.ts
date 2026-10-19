@@ -111,7 +111,7 @@ describe('POST /patch/:id — V4-04C', () => {
     expect(body.html).toContain('url(https://cdn/bg.jpg)');
     // V5-P0B (AD-1): x is a translate DELTA var — no left/top literals.
     expect(body.html).toMatch(/--el-x:\s*120px/);
-    expect(body.html).toContain('translate: var(--el-x, 0px) var(--el-y, 0px)');
+    expect(body.html).toMatch(/margin-left:\s*calc\(var\(--el-margin-x, 0px\) \+ var\(--el-x, 0px\)\)/);
     expect(body.html).not.toContain('left: 120px');
     // …and is persisted (served back on the preview).
     const preview = await fetch(`${base}/preview/ab7dbbde-ee47-3679-2dc9-dbe911e47c30`);
@@ -192,11 +192,11 @@ describe('POST /patch/:id — geometria V5-P0B (AD-1)', () => {
     expect(body.html).toMatch(/--el-x:\s*-240px/);
     expect(body.html).toMatch(/--el-y:\s*-20px/);
     // Individual-transform consumption, exactly once.
-    expect(body.html.match(/translate\s*:/g)?.length).toBe(1);
+    expect(body.html.match(/margin-left\s*:/g)?.length).toBe(1);
     // Authored origin untouched — no NEW layout literals.
-    expect(body.html.match(/\bleft\s*:/g)?.length).toBe(1);
-    expect(body.html).toContain('left: 340px');
-    expect(body.html.match(/\btop\s*:/g)?.length).toBe(1);
+    expect(body.html.match(/(?:^|[;"'])\s*left\s*:/g)?.length).toBe(1);
+    expect(body.html).toMatch(/(?:^|[;"'])\s*left:\s*340px/);
+    expect(body.html.match(/(?:^|[;"'])\s*top\s*:/g)?.length).toBe(1);
 
     // Persisted for the preview/render path.
     const preview = await fetch(`${base}/preview/73288fd9-5d3d-53f3-6422-3ef035f1e1b0`);
@@ -243,7 +243,7 @@ describe('POST /patch/:id — geometria V5-P0B (AD-1)', () => {
     // Second application is byte-identical to the first (fully converged).
     expect(b.replace(/\s+/g, ' ')).toBe(a.replace(/\s+/g, ' '));
     // The authored left/top were never rewritten as deltas.
-    expect(b).toContain('left: 340px');
+    expect(b).toMatch(/(?:^|[;"'])\s*left:\s*340px/);
   });
 
   it('rotation escreve --el-rotate com consumo rotate()', async () => {

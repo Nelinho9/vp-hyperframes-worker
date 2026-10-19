@@ -249,22 +249,15 @@ export const PREVIEW_HELPER_SCRIPT = `(function () {
   }
 
   // ── V5-P0B (AD-1): geometry via --el-* vars + individual transforms ──
-  // x/y arrive as ABSOLUTE composition coordinates; the translate DELTA is
-  // computed against the element rect captured at the FIRST geometry edit of
-  // the session (translate starts unset ⇒ rect == authored visual position).
-  // Accumulated deltas always equal desired_latest − baseline_first, which
-  // converges with the worker's authored-left/top recomputation on persist.
-  var GEOM_BASELINES = (typeof WeakMap === 'function') ? new WeakMap() : null;
-
+  // x/y are absolute authored layout coordinates, independent of the animated
+  // rect. Original margins and manual offsets share the persistence baseline.
   function geomBaseline(el) {
-    if (!GEOM_BASELINES) return { x: 0, y: 0 };
-    var b = GEOM_BASELINES.get(el);
-    if (!b) {
-      var r = el.getBoundingClientRect();
-      b = { x: r.left, y: r.top };
-      GEOM_BASELINES.set(el, b);
+    function origin(axis, side) {
+      var key = '--el-margin-' + axis;
+      var margin = el.style.getPropertyValue(key) || (typeof getComputedStyle === 'function' ? getComputedStyle(el) : el.style).getPropertyValue('margin-' + side);
+      return (parseFloat(el.style.getPropertyValue(side)) || 0) + (parseFloat(margin) || 0);
     }
-    return b;
+    return { x: origin('x', 'left'), y: origin('y', 'top') };
   }
 
   function applyGeometryPatch(el, property, value) {
@@ -274,6 +267,15 @@ export const PREVIEW_HELPER_SCRIPT = `(function () {
     if (NUMERIC_VALUE_RE.test(value)) {
       var num = parseFloat(value);
       if (property === 'x' || property === 'y') {
+        for (var ai = 0; ai < 2; ai++) {
+          var ax = ai === 0 ? 'x' : 'y';
+          var sd = ai === 0 ? 'left' : 'top';
+          var mk = '--el-margin-' + ax;
+          if (!el.style.getPropertyValue(mk)) {
+            el.style.setProperty(mk, (typeof getComputedStyle === 'function' ? getComputedStyle(el) : el.style).getPropertyValue('margin-' + sd) || '0px');
+            if (el.style.getPropertyPriority && (el.style.getPropertyPriority('margin-' + sd) || el.style.getPropertyPriority('margin')) === 'important') el.style.setProperty('--el-margin-priority-' + ax, 'important');
+          }
+        }
         var b = geomBaseline(el);
         num = property === 'x' ? num - b.x : num - b.y;
       }
@@ -283,7 +285,8 @@ export const PREVIEW_HELPER_SCRIPT = `(function () {
     var consumption = GEOM_CONSUMPTION[property] || null;
     if (consumption) {
       var sep = consumption.indexOf(':');
-      el.style.setProperty(consumption.slice(0, sep).trim(), consumption.slice(sep + 1).trim());
+      if (property === 'x' || property === 'y') el.style.removeProperty(consumption.slice(0, sep).trim());
+      el.style.setProperty(consumption.slice(0, sep).trim(), consumption.slice(sep + 1).trim(), (property === 'x' || property === 'y') ? el.style.getPropertyValue('--el-margin-priority-' + property) : '');
     }
     return true;
   }
@@ -315,6 +318,21 @@ export const PREVIEW_HELPER_SCRIPT = `(function () {
     var out = { props: {}, anim: {}, audio: null, keyframes: null, src: null, timing: null, capabilities: {} };
     try {
       var type = inferElementTypeFromId(el.getAttribute('data-hf-id') || el.id);
+      if (type !== 'audio') {
+        var gb = geomBaseline(el);
+        var gx = parseFloat(el.style.getPropertyValue('--el-x')) || 0;
+        var gy = parseFloat(el.style.getPropertyValue('--el-y')) || 0;
+        out.props.x = gb.x + gx;
+        out.props.y = gb.y + gy;
+        if (typeof el.offsetWidth === 'number') out.props.width = el.offsetWidth;
+        if (typeof el.offsetHeight === 'number') out.props.height = el.offsetHeight;
+        if (typeof getComputedStyle === 'function' && typeof DOMMatrixReadOnly === 'function' && el.offsetWidth > 0 && el.offsetHeight > 0) {
+          var gs = getComputedStyle(el);
+          var gm = new DOMMatrixReadOnly(gs.transform === 'none' ? undefined : gs.transform);
+          var go = gs.transformOrigin.split(' ');
+          out.capabilities.layoutGeometry = { axisAligned: gm.is2D && Math.abs(gm.b) < 0.000001 && Math.abs(gm.c) < 0.000001 && gm.a > 0 && gm.d > 0, originX: parseFloat(go[0]) / el.offsetWidth, originY: parseFloat(go[1]) / el.offsetHeight };
+        }
+      }
       // Texto authored (textContent — nunca innerHTML de conteúdo do utilizador).
       if (type === 'text') {
         out.text = el.textContent == null ? '' : el.textContent;
@@ -352,12 +370,14 @@ export const PREVIEW_HELPER_SCRIPT = `(function () {
       } catch (eT) { /* sem timing — unknown no pai */ }
       // Capacidade declarada: trim/speed/ducking UNSUPPORTED até F07/worker
       // os suportarem (UI_ONLY_PROPS); só texto é editável como texto.
+      var layoutGeometry = out.capabilities.layoutGeometry;
       out.capabilities = {
         editableAsText: type === 'text',
         supportsTrim: false,
         supportsSpeed: false,
         supportsDucking: false
       };
+      if (layoutGeometry) out.capabilities.layoutGeometry = layoutGeometry;
     } catch (eR) { /* leitura best-effort — o pai degrada para unknown */ }
     return out;
   }

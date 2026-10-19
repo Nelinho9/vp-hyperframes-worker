@@ -55,3 +55,13 @@ Limits: JSON admission 48 MiB and 30-second body deadline; composition HTML 8 Mi
 Before cutover, verify both target secrets by name/digest, compatible Edge producer, private dispatch migration and preview producer UUID support. Pause dispatch briefly if necessary; configure `WORKER_SECRET` distinct from callback auth, deploy the immutable phase candidate, then enable the V1 producer. Do not rollback to an unauthenticated `/job` or a public private-payload row. Keep the previous safe image and additive schema; if no safe predecessor is available, stop dispatch and roll forward. Health alone does not prove this cutover. This local change has no deployment receipt or live Coolify digest.
 
 Validation: `npm test -- --reporter=dot`, plus `node --check` on changed JS modules. `job-security.test.ts` runs real local HTTP and spawned Node processes for restart/concurrency/callback recovery and a local chunked HTTP server for byte/deadline limits. The queue harness uses deterministic processing; it does not qualify Chromium/media rendering, provider networking, Linux volume durability, remote tenant isolation or production cutover. No provider calls or paid actions are required.
+
+## E02 — correção de geometria, 19/10/2026
+
+O deslocamento manual x/y usa margens de layout com variáveis `--el-*`, preservando `left/top` e o `transform` animado por GSAP. O consumo anterior por `translate` individual era absorvido pelo GSAP 3.14.2. `geometry-layout.js` converte apenas esse consumo legado nas cópias de preview/render, sem alterar os bytes canónicos usados para identificar a publicação.
+
+O helper e a persistência usam a mesma origem de layout. Margens inline de 1–4 valores, precedência de longhands e `!important` são preservadas; expressões sem resolução numérica são recusadas na edição e conservadas na normalização. O helper separa a bbox visual da geometria de layout e fornece a origem da transformação para o resize de escala alinhada aos eixos. Rotação e transformações de ancestrais não foram qualificadas neste incremento.
+
+Revisão independente local: achados fechados. Prova Playwright MCP com GSAP real: offset 51/55 constante nos seeks 0→0,5→1→0→1, movimentos repetidos 177→187 e resize com scale 0,5 mantendo a âncora visual x225, largura 100→120, incluindo margem shorthand importante. A validação natural no Studio requer o deploy deste incremento; não confundir esta fixture com essa prova.
+
+Verificação final do incremento: `npm test`, 45 ficheiros / 577 testes PASS; `node --check` nos quatro módulos de runtime alterados PASS. Os testes de idempotência repetem a aplicação sobre o mesmo HTML e preservam os bytes.

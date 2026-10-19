@@ -123,8 +123,8 @@ describe('PREVIEW_HELPER_SCRIPT — contrato do protocolo', () => {
     expect(PREVIEW_HELPER_SCRIPT).not.toContain('"y":"top"');
     // Delta baseline capture + consumption declarations present.
     expect(PREVIEW_HELPER_SCRIPT).toContain('getBoundingClientRect()');
-    expect(PREVIEW_HELPER_SCRIPT).toContain('GEOM_BASELINES');
-    expect(PREVIEW_HELPER_SCRIPT).toContain('var(--el-x, 0px) var(--el-y, 0px)');
+    expect(PREVIEW_HELPER_SCRIPT).toContain('function geomBaseline');
+    expect(PREVIEW_HELPER_SCRIPT).toContain('margin-left: calc(var(--el-margin-x, 0px) + var(--el-x, 0px))');
     // V5-P1A: animação via atributos data-anim-*; UI-only filtrado.
     expect(PREVIEW_HELPER_SCRIPT).toContain('"animIn":{"output":"data-anim-in"');
     expect(PREVIEW_HELPER_SCRIPT).toContain('UI_ONLY_PROPS');
@@ -323,9 +323,9 @@ describe('PREVIEW_HELPER_SCRIPT — geometria em execução (V5-P0B)', () => {
     expect(style).toMatch(/--el-x:\s*100px/);
     expect(style).toMatch(/--el-y:\s*50px/);
     // linkedom serializes style without separator spacing → whitespace-tolerant.
-    expect(style).toMatch(/translate\s*:\s*var\(--el-x,\s*0px\)\s+var\(--el-y,\s*0px\)/);
+    expect(style).toMatch(/margin-left\s*:\s*calc\(var\(--el-margin-x,\s*0px\) \+ var\(--el-x,\s*0px\)\)/);
     // No layout literals written by the helper.
-    expect(style).not.toMatch(/\bleft\s*:/);
+    expect(style).not.toMatch(/(?:^|;)\s*left\s*:/);
 
     // Second session on the SAME element: baseline is cached, the new
     // absolute target replaces the accumulated delta (fixed point).

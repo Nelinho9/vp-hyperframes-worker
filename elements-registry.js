@@ -40,6 +40,7 @@
  */
 
 import { parseHTML } from "linkedom";
+import { readAuthoredMargin } from './geometry-layout.js';
 
 export const ELEMENTS_VERSION = 2;
 export const ELEMENTS_V1 = 1;
@@ -193,8 +194,10 @@ function bboxAtSceneStart(styleAttr) {
   const dy = geomVarPx(styleAttr, "--el-y");
   if (Number.isFinite(w)) bbox.width = w;
   if (Number.isFinite(h)) bbox.height = h;
-  if (Number.isFinite(left) || Number.isFinite(dx)) bbox.x = (left || 0) + (dx || 0);
-  if (Number.isFinite(top) || Number.isFinite(dy)) bbox.y = (top || 0) + (dy || 0);
+  const mx = geomVarPx(styleAttr, '--el-margin-x') ?? readAuthoredMargin(styleAttr, 'left').pixels;
+  const my = geomVarPx(styleAttr, '--el-margin-y') ?? readAuthoredMargin(styleAttr, 'top').pixels;
+  if (mx !== null && (Number.isFinite(left) || Number.isFinite(dx))) bbox.x = (left || 0) + (dx || 0) + mx;
+  if (my !== null && (Number.isFinite(top) || Number.isFinite(dy))) bbox.y = (top || 0) + (dy || 0) + my;
   return Object.keys(bbox).length > 0 ? bbox : null;
 }
 

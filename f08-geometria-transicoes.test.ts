@@ -137,15 +137,15 @@ describe('F08.01 -- geometria --el-* em tres formatos (drag/resize baseline)', (
     expect(html).toMatch(/--el-rotate:\s*15deg/);
     expect(html).toMatch(/--el-w:\s*420px/);
     expect(html).toMatch(/--el-h:\s*280px/);
-    expect(html).toContain('translate: var(--el-x, 0px) var(--el-y, 0px)');
+    expect(html).toMatch(/margin-left:\s*calc\(var\(--el-margin-x, 0px\) \+ var\(--el-x, 0px\)\)/);
     expect(html).toContain('rotate: var(--el-rotate, 0deg)');
     expect(html).toContain('width: var(--el-w)');
     expect(html).toContain('height: var(--el-h)');
-    expect(html.match(/\bleft\s*:/g)?.length).toBe(1);
-    expect(html).toContain('left: 340px');
+    expect(html.match(/(?:^|[;"'])\s*left\s*:/g)?.length).toBe(1);
+    expect(html).toMatch(/(?:^|[;"'])\s*left:\s*340px/);
     expect(html).toContain('data-width="' + w + '"');
     expect(html).toContain('data-height="' + h + '"');
-    expect(html.match(/\btop\s*:/g)?.length).toBe(1);
+    expect(html.match(/(?:^|[;"'])\s*top\s*:/g)?.length).toBe(1);
     expect(html).toContain('data-anim-in="riseIn"');
   });
 
@@ -418,7 +418,7 @@ describe('F08.10 -- helper hot-swap sem transicoes (estrutural via reload)', () 
     expect(PREVIEW_HELPER_SCRIPT).toContain('function __vpApplyKeyframes');
     expect(PREVIEW_HELPER_SCRIPT).toContain('function __vpApplyAudioProps');
     expect(PREVIEW_HELPER_SCRIPT).toContain('--el-x');
-    expect(PREVIEW_HELPER_SCRIPT).toContain('GEOM_BASELINES');
+    expect(PREVIEW_HELPER_SCRIPT).toContain('function geomBaseline');
     expect(PREVIEW_HELPER_SCRIPT).not.toContain('__vpApplyTransitions');
     expect(PREVIEW_HELPER_SCRIPT).not.toContain('data-transition-in');
     expect(PREVIEW_HELPER_SCRIPT).not.toContain('data-transition-out');

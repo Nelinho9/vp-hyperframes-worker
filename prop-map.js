@@ -68,10 +68,10 @@ export const UI_ONLY_PROPS = new Set([
   "speed",
 ]);
 
-/** Declarações de consumo, por prop de geometria (x/y partilham translate). */
+/** Declarações de consumo, por prop de geometria (x/y usam margens de layout independentes do GSAP). */
 export const GEOM_CONSUMPTION = {
-  x: "translate: var(--el-x, 0px) var(--el-y, 0px)",
-  y: "translate: var(--el-x, 0px) var(--el-y, 0px)",
+  x: "margin-left: calc(var(--el-margin-x, 0px) + var(--el-x, 0px))",
+  y: "margin-top: calc(var(--el-margin-y, 0px) + var(--el-y, 0px))",
   width: "width: var(--el-w)",
   height: "height: var(--el-h)",
   rotation: "rotate: var(--el-rotate, 0deg)",

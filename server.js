@@ -31,6 +31,7 @@ import { createJobQueue, atomicWriteJob } from "./job-queue.js";
 import { jobEnvironment } from "./job-environment.js";
 import { pathToFileURL, fileURLToPath } from "url";
 import { injectPreviewHelper, injectPreviewRuntime, injectSourceIdentity, resolveServedSourceIdentity } from "./preview-helper.js";
+import { normalizeManualGeometry } from "./geometry-layout.js";
 import { verifyPreviewToken } from "./preview-token.js";
 import { applyPatchesLinkedom, applyTimelineRestructure, normalizeClipWindows } from "./patch-engine.js";
 import { sanitizeCompositionTweens, sanitizeTimelineRegistry, extractLintFindings } from "./composition-sanitizer.js";
@@ -821,6 +822,7 @@ async function stageJob(body, { publishPreview = true, resolvePublished = true }
   }
 
   // Write the composition HTML
+  index_html = normalizeManualGeometry(index_html);
   writeFileSync(join(jobDir, "index.html"), index_html);
 
   // V5-P0C §2.1 + V5_16.2 B1: quantize rounding drift onto the fps grid before
@@ -1411,7 +1413,7 @@ app.get("/preview/:id", previewCors, async (req, res) => {
     html = baseTag + html;
   }
 
-  res.type("html").send(injectPreviewHelper(html));
+  res.type("html").send(injectPreviewHelper(normalizeManualGeometry(html)));
 });
 
 // Serve static assets from job dirs.
