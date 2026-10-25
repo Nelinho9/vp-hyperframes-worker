@@ -386,7 +386,11 @@ export function deriveElements(html, opts = {}) {
 
     const start = parseFiniteNumber(el.getAttribute("data-start"));
     const duration = parseFiniteNumber(el.getAttribute("data-duration"));
-    const mediaOffset = parseFiniteNumber(el.getAttribute("data-media-offset"));
+    // E04: `data-media-start` é o trim point consumido pelo runtime 0.7.109;
+    // o legado `data-media-offset` fica como fallback de leitura (N-1).
+    const mediaStart = parseFiniteNumber(el.getAttribute("data-media-start"));
+    const legacyMediaOffset = parseFiniteNumber(el.getAttribute("data-media-offset"));
+    const mediaOffset = mediaStart !== null ? mediaStart : legacyMediaOffset;
     if (start !== null) entry.start = start;
     if (duration !== null) entry.duration = duration;
     if (mediaOffset !== null) entry.mediaOffset = mediaOffset;

@@ -112,3 +112,16 @@ describe('F05-T01 — registry v2 hierarchy/ordem/capabilities', () => {
     expect(adaptV1RegistryToV2(v1).revision).toBeNull();
   });
 });
+
+describe('E04 — timing de áudio no registry (data-media-start)', () => {
+  it('data-media-start vence; data-media-offset é fallback legado', () => {
+    const html = `<div data-composition-id="main" data-duration="12">
+      <audio id="vo1" src="a.wav" data-start="0.5" data-duration="2" data-media-start="0.25" data-media-offset="9"></audio>
+      <audio id="vo2" src="b.wav" data-start="3" data-duration="2" data-media-offset="1.5"></audio>
+    </div>`;
+    const reg = deriveElements(html);
+    const byId = new Map(reg.elements.map((e) => [e.id, e]));
+    expect(byId.get('vo1')).toMatchObject({ start: 0.5, duration: 2, mediaOffset: 0.25 });
+    expect(byId.get('vo2')).toMatchObject({ start: 3, duration: 2, mediaOffset: 1.5 });
+  });
+});

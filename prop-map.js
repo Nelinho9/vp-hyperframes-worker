@@ -54,6 +54,7 @@ export const PROP_MAP = {
   start: { output: "data-start", kind: "attr", unit: "" },
   duration: { output: "data-duration", kind: "attr", unit: "" },
   mediaStart: { output: "data-media-start", kind: "attr", unit: "" },
+  mediaOffset: { output: "data-media-offset", kind: "attr", unit: "" },
 };
 
 /** Serialização canónica — espelhada num teste do frontend (paridade CI). */
