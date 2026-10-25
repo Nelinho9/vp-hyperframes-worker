@@ -49,6 +49,11 @@ export const PROP_MAP = {
   fadeIn: { output: "data-fade-in", kind: "attr", unit: "" },
   fadeOut: { output: "data-fade-out", kind: "attr", unit: "" },
   keyframes: { output: "data-kf", kind: "attr", unit: "" },
+  // E04: timing de clips — atributos consumidos pelo runtime 0.7.109
+  // (data-media-start = playback offset/trim point; docs bundled).
+  start: { output: "data-start", kind: "attr", unit: "" },
+  duration: { output: "data-duration", kind: "attr", unit: "" },
+  mediaStart: { output: "data-media-start", kind: "attr", unit: "" },
 };
 
 /** Serialização canónica — espelhada num teste do frontend (paridade CI). */

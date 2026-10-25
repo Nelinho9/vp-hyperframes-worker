@@ -20,10 +20,11 @@ import {
   computeGeomDelta,
   UI_ONLY_PROPS,
 } from './prop-map.js';
+import { applyPatchesLinkedom } from './patch-engine.js';
 
 /** String-canónica do contrato — IDÊNTICA à copia no frontend. */
 const CANONICAL_JSON =
-  '{"font":{"output":"font-family","kind":"decl","unit":""},"size":{"output":"font-size","kind":"decl","unit":"px"},"weight":{"output":"font-weight","kind":"decl","unit":""},"color":{"output":"color","kind":"decl","unit":""},"opacity":{"output":"opacity","kind":"decl","unit":""},"x":{"output":"--el-x","kind":"geom","unit":"px"},"y":{"output":"--el-y","kind":"geom","unit":"px"},"width":{"output":"--el-w","kind":"geom","unit":"px"},"height":{"output":"--el-h","kind":"geom","unit":"px"},"rotation":{"output":"--el-rotate","kind":"geom","unit":"deg"},"align":{"output":"text-align","kind":"decl","unit":""},"letterSpacing":{"output":"letter-spacing","kind":"decl","unit":"px"},"lineHeight":{"output":"line-height","kind":"decl","unit":""},"z":{"output":"z-index","kind":"decl","unit":""},"fit":{"output":"object-fit","kind":"decl","unit":""},"radius":{"output":"border-radius","kind":"decl","unit":"px"},"borderWidth":{"output":"border-width","kind":"decl","unit":"px"},"borderColor":{"output":"border-color","kind":"decl","unit":""},"animIn":{"output":"data-anim-in","kind":"attr","unit":""},"animOut":{"output":"data-anim-out","kind":"attr","unit":""},"animDurMs":{"output":"data-anim-dur-ms","kind":"attr","unit":""},"animDelayMs":{"output":"data-anim-delay-ms","kind":"attr","unit":""},"volume":{"output":"data-volume","kind":"attr","unit":""},"muted":{"output":"data-muted","kind":"attr","unit":""},"fadeIn":{"output":"data-fade-in","kind":"attr","unit":""},"fadeOut":{"output":"data-fade-out","kind":"attr","unit":""},"keyframes":{"output":"data-kf","kind":"attr","unit":""}}';
+  '{"font":{"output":"font-family","kind":"decl","unit":""},"size":{"output":"font-size","kind":"decl","unit":"px"},"weight":{"output":"font-weight","kind":"decl","unit":""},"color":{"output":"color","kind":"decl","unit":""},"opacity":{"output":"opacity","kind":"decl","unit":""},"x":{"output":"--el-x","kind":"geom","unit":"px"},"y":{"output":"--el-y","kind":"geom","unit":"px"},"width":{"output":"--el-w","kind":"geom","unit":"px"},"height":{"output":"--el-h","kind":"geom","unit":"px"},"rotation":{"output":"--el-rotate","kind":"geom","unit":"deg"},"align":{"output":"text-align","kind":"decl","unit":""},"letterSpacing":{"output":"letter-spacing","kind":"decl","unit":"px"},"lineHeight":{"output":"line-height","kind":"decl","unit":""},"z":{"output":"z-index","kind":"decl","unit":""},"fit":{"output":"object-fit","kind":"decl","unit":""},"radius":{"output":"border-radius","kind":"decl","unit":"px"},"borderWidth":{"output":"border-width","kind":"decl","unit":"px"},"borderColor":{"output":"border-color","kind":"decl","unit":""},"animIn":{"output":"data-anim-in","kind":"attr","unit":""},"animOut":{"output":"data-anim-out","kind":"attr","unit":""},"animDurMs":{"output":"data-anim-dur-ms","kind":"attr","unit":""},"animDelayMs":{"output":"data-anim-delay-ms","kind":"attr","unit":""},"volume":{"output":"data-volume","kind":"attr","unit":""},"muted":{"output":"data-muted","kind":"attr","unit":""},"fadeIn":{"output":"data-fade-in","kind":"attr","unit":""},"fadeOut":{"output":"data-fade-out","kind":"attr","unit":""},"keyframes":{"output":"data-kf","kind":"attr","unit":""},"start":{"output":"data-start","kind":"attr","unit":""},"duration":{"output":"data-duration","kind":"attr","unit":""},"mediaStart":{"output":"data-media-start","kind":"attr","unit":""}}';
 
 describe('PROP_MAP — contrato partilhado V5-P0B (espelho do worker)', () => {
   it('coincide byte-a-byte com o contrato cross-repo', () => {
@@ -107,5 +108,33 @@ describe('PROP_MAP — extensão V5-P1A (espelho do worker)', () => {
 
   it('V5-P8B §2.1: keyframes é canal attr REAL (S30)', () => {
     expect(PROP_MAP.keyframes).toEqual({ output: 'data-kf', kind: 'attr', unit: '' });
+  });
+});
+
+// ─── E04: timing de clips no canal attr (data-start/duration/media-start) ────
+
+describe('E04 — clip timing no motor de patches do worker', () => {
+  const HTML = `<div data-composition-id="main"><div id="s1" class="clip" data-start="0" data-duration="4"></div><audio id="vo1" src="a.wav" data-start="0.5" data-duration="2" data-media-start="0.25"></audio></div>`;
+
+  it('a tabela mapeia os três atributos como kind attr', () => {
+    expect(PROP_MAP.start).toEqual({ output: 'data-start', kind: 'attr', unit: '' });
+    expect(PROP_MAP.duration).toEqual({ output: 'data-duration', kind: 'attr', unit: '' });
+    expect(PROP_MAP.mediaStart).toEqual({ output: 'data-media-start', kind: 'attr', unit: '' });
+  });
+
+  it('applyPatchesLinkedom escreve e é idempotente (trim-in move/duração/source)', () => {
+    const patches = [
+      { selector: '#vo1', property: 'start', value: '1.5' },
+      { selector: '#vo1', property: 'duration', value: '1' },
+      { selector: '#vo1', property: 'mediaStart', value: '0.5' },
+    ];
+    const { html } = applyPatchesLinkedom(HTML, patches);
+    expect(html).toContain('data-start="1.5"');
+    expect(html).toContain('data-duration="1"');
+    expect(html).toContain('data-media-start="0.5"');
+    // A cena não foi tocada.
+    expect(html).toContain('id="s1" class="clip" data-start="0" data-duration="4"');
+    const twice = applyPatchesLinkedom(html, patches).html;
+    expect(twice).toBe(html);
   });
 });
