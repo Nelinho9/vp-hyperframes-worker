@@ -71,11 +71,14 @@ export const NODE_OP_PROPERTY = "element";
 export const NODE_INSERT_POSITIONS = Object.freeze(["before", "after", "first"]);
 
 /**
- * Parse + validação estrutural de um fragmento de inserção. Nunca aceita
- * scripts, .clip (estrutura de cenas) nem composition roots; exige um único
- * root com id e o id tem de estar livre no documento base.
+ * Estrutura de um fragmento de inserção + todos os ids que introduz (root e
+ * descendentes). `null` quando o fragmento é inválido POR SI SÓ (script, .clip,
+ * composition root, id ausente ou id repetido dentro do próprio fragmento) —
+ * casos em que nenhum conjunto de ids do documento decide a classificação.
+ * Partilhado por `parseInsertFragment` e pelas precondições para que a
+ * validação e a auditoria da recusa nunca divirjam.
  */
-export function parseInsertFragment(document, fragment) {
+function insertFragmentShape(document, fragment) {
   if (typeof fragment !== "string" || fragment.trim() === "") return null;
   const holder = document.createElement("div");
   holder.innerHTML = fragment;
@@ -91,18 +94,29 @@ export function parseInsertFragment(document, fragment) {
     isSceneClip = false;
   }
   if (isSceneClip) return null;
-  const id = node.getAttribute("id");
-  if (!id) return null;
+  if (!node.getAttribute("id")) return null;
+  const ids = [];
+  for (const candidate of [node, ...Array.from(node.querySelectorAll("[id]"))]) {
+    const candidateId = candidate.getAttribute("id");
+    if (!candidateId) continue;
+    if (ids.includes(candidateId)) return null;
+    ids.push(candidateId);
+  }
+  return { node, ids };
+}
+
+/**
+ * Parse + validação estrutural de um fragmento de inserção. Nunca aceita
+ * scripts, .clip (estrutura de cenas) nem composition roots; exige um único
+ * root com id e nenhum id (root ou descendente) ocupado no documento base.
+ */
+export function parseInsertFragment(document, fragment) {
+  const shape = insertFragmentShape(document, fragment);
+  if (!shape) return null;
   // O read-set de id vale para o root E para descendentes: um fragmento não
   // pode introduzir ids duplicados em lado nenhum do documento.
-  const ids = [node, ...Array.from(node.querySelectorAll("[id]"))];
-  const seen = new Set();
-  for (const candidate of ids) {
-    const candidateId = candidate.getAttribute("id");
-    if (!candidateId || seen.has(candidateId) || document.getElementById(candidateId)) return null;
-    seen.add(candidateId);
-  }
-  return node;
+  for (const id of shape.ids) if (document.getElementById(id)) return null;
+  return shape.node;
 }
 
 /** Normaliza/valida as posições de inserção (default 'after'). */
@@ -448,6 +462,10 @@ export function readPatchTargetValues(html, patches) {
 export function assertInsertPreconditions(html, patches) {
   if (!Array.isArray(patches)) return;
   const { document } = parseHTML(html);
+  // O read-set de id é do LOTE, não do patch: o catálogo de tools do chat pode
+  // enviar vários inserts e dois deles não podem reivindicar o mesmo id — o
+  // segundo seria ignorado em silêncio (`applied` menor que o declarado).
+  const claimed = new Set();
   for (const patch of patches) {
     if (!patch || String(patch.property) !== NODE_OP_PROPERTY || String(patch.value) !== "insert") continue;
     const anchorId = assertIdSelector(String(patch.selector));
@@ -461,18 +479,16 @@ export function assertInsertPreconditions(html, patches) {
     if (position === null) {
       throw Object.assign(new Error("INVALID_INSERT_POSITION"), { code: "INVALID_INSERT_POSITION", status: 400 });
     }
-    const node = parseInsertFragment(document, patch.fragment);
-    if (!node) {
-      // Diferencia estrutura inválida de colisão de id (auditoria honesta).
-      const holder = document.createElement("div");
-      if (typeof patch.fragment === "string") holder.innerHTML = patch.fragment;
-      const candidate = holder.firstElementChild;
-      const candidateId = candidate ? candidate.getAttribute("id") : null;
-      const collision = Boolean(candidateId && document.getElementById(candidateId));
-      throw Object.assign(new Error(collision ? "INSERT_ID_CONFLICT" : "INVALID_INSERT_FRAGMENT"), {
-        code: collision ? "INSERT_ID_CONFLICT" : "INVALID_INSERT_FRAGMENT", status: collision ? 409 : 400,
-      });
+    // Estrutura inválida (por si só) vs colisão de id (auditoria honesta): a
+    // colisão vale para ids do documento E para ids já reivindicados no lote.
+    const shape = insertFragmentShape(document, patch.fragment);
+    if (!shape) {
+      throw Object.assign(new Error("INVALID_INSERT_FRAGMENT"), { code: "INVALID_INSERT_FRAGMENT", status: 400 });
     }
+    if (shape.ids.some((id) => document.getElementById(id) || claimed.has(id))) {
+      throw Object.assign(new Error("INSERT_ID_CONFLICT"), { code: "INSERT_ID_CONFLICT", status: 409 });
+    }
+    for (const id of shape.ids) claimed.add(id);
   }
 }
 

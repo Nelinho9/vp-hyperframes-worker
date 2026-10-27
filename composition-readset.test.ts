@@ -213,10 +213,11 @@ describe('E04 — element:insert read-set and prepare preconditions', () => {
     expect(restored.previousElementSibling?.getAttribute('id')).toBe('pic');
   });
 
+  const codeOf = (run: () => unknown): string | undefined => {
+    try { run(); return undefined; } catch (err) { return (err as { code?: string }).code; }
+  };
+
   it('rejects insert without fragment, with an occupied id, or without anchor', () => {
-    const codeOf = (run: () => unknown): string | undefined => {
-      try { run(); return undefined; } catch (err) { return (err as { code?: string }).code; }
-    };
     expect(codeOf(() => prepareComposition('patch', {
       source_html: afterRemove, revision: 3,
       patches: [{ selector: '#pic', property: 'element', value: 'insert' }],
@@ -233,5 +234,48 @@ describe('E04 — element:insert read-set and prepare preconditions', () => {
       source_html: afterRemove, revision: 3,
       patches: [{ selector: '#pic', property: 'element', value: 'insert', fragment: '<script id="x"></script>', position: 'after' }],
     }))).toBe('INVALID_INSERT_FRAGMENT');
+  });
+
+  it('classifies a descendant id collision as a conflict, not an invalid fragment', () => {
+    // Root id is free; the nested id collides with a document id. The refusal
+    // must audit as INSERT_ID_CONFLICT (409), never as a malformed fragment.
+    expect(codeOf(() => prepareComposition('patch', {
+      source_html: afterRemove, revision: 3,
+      patches: [{
+        selector: '#pic', property: 'element', value: 'insert',
+        fragment: '<div id="fresh"><span id="s2">x</span></div>', position: 'after',
+      }],
+    }))).toBe('INSERT_ID_CONFLICT');
+  });
+
+  it('rejects two inserts that claim the same id inside one batch', () => {
+    // The chat tool catalog can emit several inserts per batch: the id read-set
+    // is a batch-wide set, so a later insert can never duplicate an earlier one.
+    expect(codeOf(() => prepareComposition('patch', {
+      source_html: afterRemove, revision: 3,
+      patches: [
+        { selector: '#pic', property: 'element', value: 'insert', fragment: titleFragment, position: 'after' },
+        { selector: '#pic', property: 'element', value: 'insert', fragment: titleFragment, position: 'after' },
+      ],
+    }))).toBe('INSERT_ID_CONFLICT');
+    // Descendant ids introduced by an earlier insert are claimed too.
+    expect(codeOf(() => prepareComposition('patch', {
+      source_html: afterRemove, revision: 3,
+      patches: [
+        { selector: '#pic', property: 'element', value: 'insert', fragment: '<div id="a"><span id="shared"></span></div>', position: 'after' },
+        { selector: '#pic', property: 'element', value: 'insert', fragment: '<div id="b"><span id="shared"></span></div>', position: 'after' },
+      ],
+    }))).toBe('INSERT_ID_CONFLICT');
+  });
+
+  it('applies a batch of inserts with distinct ids', () => {
+    const result = prepareComposition('patch', {
+      source_html: afterRemove, revision: 3,
+      patches: [
+        { selector: '#pic', property: 'element', value: 'insert', fragment: titleFragment, position: 'after' },
+        { selector: '#pic', property: 'element', value: 'insert', fragment: '<div id="second">y</div>', position: 'after' },
+      ],
+    });
+    expect(result.applied).toBe(2);
   });
 });
