@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { parseHTML } from 'linkedom';
 import { readPatchTargetValues, patchValueMatches, readSceneStructure, applyPatchesLinkedom } from './patch-engine.js';
 import { prepareComposition } from './composition-editor.js';
 
@@ -168,5 +169,69 @@ describe('E01-B prepareComposition preconditions and journal read-set', () => {
     } catch (err) { error = err as typeof error; }
     expect(error?.status).toBe(409);
     expect(error?.code).toBe('UNDO_PRECONDITION_CONFLICT');
+  });
+});
+
+describe('E04 — element:insert read-set and prepare preconditions', () => {
+  const titleFragment = (() => {
+    const { document } = parseHTML(HTML);
+    return document.getElementById('title').outerHTML;
+  })();
+  const afterRemove = applyPatchesLinkedom(HTML, [
+    { selector: '#title', property: 'element', value: 'remove' },
+  ]).html;
+
+  it('reads absent only when anchor exists and fragment id is free', () => {
+    const free = readPatchTargetValues(afterRemove, [
+      { selector: '#pic', property: 'element', value: 'insert', fragment: titleFragment, position: 'after' },
+    ]);
+    expect(free[0].value).toBe('absent');
+    const occupied = readPatchTargetValues(HTML, [
+      { selector: '#pic', property: 'element', value: 'insert', fragment: titleFragment, position: 'after' },
+    ]);
+    expect(occupied[0].value).toBeNull();
+    const missingAnchor = readPatchTargetValues(afterRemove, [
+      { selector: '#gone', property: 'element', value: 'insert', fragment: titleFragment, position: 'after' },
+    ]);
+    expect(missingAnchor[0].value).toBeNull();
+    expect(readPatchTargetValues(HTML, [{ selector: '#title', property: 'element' }])[0].value).toBeNull();
+  });
+
+  it('prepare restores the serialized node and reports the insert read-set', () => {
+    const result = prepareComposition('patch', {
+      source_html: afterRemove, revision: 3,
+      patches: [{ selector: '#pic', property: 'element', value: 'insert', fragment: titleFragment, position: 'after' }],
+    });
+    expect(result.prepared).toBe(true);
+    expect(result.before).toEqual([{ selector: '#pic', property: 'element', value: 'absent' }]);
+    // Node ops stay journal-uninvertible; the composed unit carries the inverse.
+    expect(result.undoable).toBe(false);
+    const { document } = parseHTML(result.html);
+    const restored = document.getElementById('title');
+    expect(restored).toBeTruthy();
+    expect(restored.textContent).toBe('Hello');
+    expect(restored.previousElementSibling?.getAttribute('id')).toBe('pic');
+  });
+
+  it('rejects insert without fragment, with an occupied id, or without anchor', () => {
+    const codeOf = (run: () => unknown): string | undefined => {
+      try { run(); return undefined; } catch (err) { return (err as { code?: string }).code; }
+    };
+    expect(codeOf(() => prepareComposition('patch', {
+      source_html: afterRemove, revision: 3,
+      patches: [{ selector: '#pic', property: 'element', value: 'insert' }],
+    }))).toBe('INVALID_PATCHES');
+    expect(codeOf(() => prepareComposition('patch', {
+      source_html: HTML, revision: 3,
+      patches: [{ selector: '#pic', property: 'element', value: 'insert', fragment: titleFragment, position: 'after' }],
+    }))).toBe('INSERT_ID_CONFLICT');
+    expect(codeOf(() => prepareComposition('patch', {
+      source_html: afterRemove, revision: 3,
+      patches: [{ selector: '#gone', property: 'element', value: 'insert', fragment: titleFragment, position: 'after' }],
+    }))).toBe('INSERT_ANCHOR_MISSING');
+    expect(codeOf(() => prepareComposition('patch', {
+      source_html: afterRemove, revision: 3,
+      patches: [{ selector: '#pic', property: 'element', value: 'insert', fragment: '<script id="x"></script>', position: 'after' }],
+    }))).toBe('INVALID_INSERT_FRAGMENT');
   });
 });

@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import { parseHTML } from 'linkedom';
 import {
   applyPatchesLinkedom, applyTimelineRestructure, readPatchTargetValues, readSceneStructure,
-  patchValueMatches, NODE_OP_PROPERTY,
+  patchValueMatches, assertInsertPreconditions, NODE_OP_PROPERTY, NODE_INSERT_POSITIONS,
 } from './patch-engine.js';
 import { deriveElements } from './elements-registry.js';
 import { replaceAudioTargets } from './audio-prepare.js';
@@ -72,10 +72,16 @@ export function prepareComposition(kind, input, context = {}) {
   let structureUndoable = true;
   if (kind === 'patch') {
     if (!Array.isArray(input.patches) || input.patches.length < 1 || input.patches.length > 100
-      || input.patches.some(p => !p || typeof p.selector !== 'string' || typeof p.property !== 'string' || typeof p.value !== 'string')) reject('INVALID_PATCHES');
+      || input.patches.some(p => !p || typeof p.selector !== 'string' || typeof p.property !== 'string' || typeof p.value !== 'string'
+        || (p.fragment !== undefined && typeof p.fragment !== 'string')
+        || (p.position !== undefined && !NODE_INSERT_POSITIONS.includes(p.position))
+        || (String(p.value) === 'insert' && (String(p.property) !== NODE_OP_PROPERTY || typeof p.fragment !== 'string')))) reject('INVALID_PATCHES');
     // E01-B read-set: authored values BEFORE the edit feed the journal delta;
     // the optional `expected` array is the precondition the CURRENT base must
     // satisfy (undo of an action whose write-set was touched later must 409).
+    // E04: the insert op carries a SERIALIZED fragment and its own precondition
+    // (anchor present, fragment id absent) — checked before any mutation.
+    assertInsertPreconditions(input.source_html, input.patches);
     before = readPatchTargetValues(input.source_html, input.patches);
     if (Array.isArray(input.expected) && input.expected.length > 0) {
       if (input.expected.some(p => !p || typeof p.selector !== 'string' || typeof p.property !== 'string' || typeof p.value !== 'string')) reject('INVALID_EXPECTED_VALUES');

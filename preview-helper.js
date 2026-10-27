@@ -655,12 +655,14 @@ export const PREVIEW_HELPER_SCRIPT = `(function () {
     return out;
   }
 
-  // ── V5-P1E §6.5: operações de nó no recetor patch ─────────────────────
-  // Propriedade RESERVADA 'element' ('remove' | 'duplicate') — mesma
-  // semântica dos motores de persistência (patchHtml.ts / patch-engine.js):
-  // id determinístico base + '-copy-N' com N = menor inteiro livre, clone
-  // inserido como irmão seguinte (mesma janela timed), autostamp limpo e
-  // CENAS (.clip dono-da-raiz) recusadas — estruturais, via /restructure.
+  // ── V5-P1E §6.5 + E04: operações de nó no recetor patch ────────────────
+  // Propriedade RESERVADA 'element' ('remove' | 'duplicate' | 'insert') —
+  // mesma semântica dos motores de persistência (patchHtml.ts /
+  // patch-engine.js): id determinístico base + '-copy-N' com N = menor
+  // inteiro livre, clone inserido como irmão seguinte (mesma janela timed),
+  // autostamp limpo, CENAS (.clip dono-da-raiz) recusadas — estruturais,
+  // via /restructure. 'insert' restaura um fragmento serializado (inverso
+  // de 'remove') com read-set: âncora presente e id do fragmento ausente.
   function nextCopyId(doc, baseId) {
     for (var n = 1; ; n++) {
       var candidate = baseId + '-copy-' + n;
@@ -676,6 +678,35 @@ export const PREVIEW_HELPER_SCRIPT = `(function () {
     if (!rootEl) return false;
     var ownerEl = el.closest ? el.closest('[data-composition-id]') : null;
     return ownerEl === null || ownerEl === rootEl;
+  }
+
+  /** Parse + validação de fragmento (paridade com os outros dois motores). */
+  function parseInsertFragmentDoc(doc, fragment) {
+    if (typeof fragment !== 'string' || fragment.trim() === '') return null;
+    var holder = doc.createElement('div');
+    holder.innerHTML = fragment;
+    var node = holder.firstElementChild;
+    if (!node) return null;
+    if (String(node.tagName || '').toUpperCase() === 'SCRIPT' || node.querySelector('script')) return null;
+    if (node.getAttribute('data-composition-id') || node.querySelector('[data-composition-id]')) return null;
+    var isClip = false;
+    try { isClip = Boolean(node.classList && node.classList.contains('clip')) || Boolean(node.querySelector('.clip')); } catch (eC) { isClip = false; }
+    if (isClip) return null;
+    var id = node.getAttribute('id');
+    if (!id) return null;
+    var fragmentIds = [id].concat(Array.prototype.map.call(node.querySelectorAll('[id]'), function (el) { return el.getAttribute('id'); }));
+    var seenIds = {};
+    for (var i = 0; i < fragmentIds.length; i++) {
+      var candidateId = fragmentIds[i];
+      if (!candidateId || seenIds[candidateId] || doc.getElementById(candidateId)) return null;
+      seenIds[candidateId] = true;
+    }
+    return node;
+  }
+
+  function normalizeInsertPosition(value) {
+    if (value === undefined || value === null) return 'after';
+    return (value === 'before' || value === 'after' || value === 'first') ? value : null;
   }
 
   // ── parent → iframe: hot-swap receiver (patch / seek / playpause) ────
@@ -728,6 +759,20 @@ export const PREVIEW_HELPER_SCRIPT = `(function () {
                 bbox: { x: Math.round(r2.left), y: Math.round(r2.top), w: Math.round(r2.width), h: Math.round(r2.height) }
               });
               nodeOpTouched = true;
+            }
+          } else if (value === 'insert') {
+            // E04: inverso de 'remove' — restaura o fragmento no anchor.
+            var insertPos = normalizeInsertPosition(p.position);
+            var restored = insertPos === null ? null : parseInsertFragmentDoc(document, p.fragment);
+            if (restored) {
+              if (insertPos === 'first') {
+                el.insertBefore(restored, el.firstChild);
+                nodeOpTouched = true;
+              } else if (el.parentNode) {
+                if (insertPos === 'before') el.parentNode.insertBefore(restored, el);
+                else el.parentNode.insertBefore(restored, el.nextSibling);
+                nodeOpTouched = true;
+              }
             }
           } else if (value === 'move-up' || value === 'move-down' || value === 'move-top' || value === 'move-bottom') {
             // F05.06: reorder dentro do MESMO parent na página viva.

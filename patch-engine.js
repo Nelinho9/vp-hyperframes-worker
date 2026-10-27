@@ -57,11 +57,59 @@ const ANIM_PROP_RE = /^anim(In|Out|DurMs|DelayMs)$/;
 
 /**
  * V5-P1E (§6.5): propriedade RESERVADA para operações de nó no canal de
- * patches — valores 'remove' | 'duplicate'. Caso especial ao nível de
- * textContent/src (NÃO entra na PROP_MAP); espelhada nos três motores
+ * patches — valores 'remove' | 'duplicate' | 'insert'. Caso especial ao nível
+ * de textContent/src (NÃO entra na PROP_MAP); espelhada nos três motores
  * (app patchHtml.ts, helper do preview, aqui) com paridade por marcadores.
+ *
+ * E04/remanescente (§ruling 1): 'insert' restaura um fragmento serializado.
+ * O read-set é explícito: a âncora existe e o id do fragmento está AUSENTE.
+ * Serve de inverso de 'remove' para a unidade COMPOSTA de delete (o journal
+ * E01 continua a marcar node-ops como undoable:false).
  */
 export const NODE_OP_PROPERTY = "element";
+
+export const NODE_INSERT_POSITIONS = Object.freeze(["before", "after", "first"]);
+
+/**
+ * Parse + validação estrutural de um fragmento de inserção. Nunca aceita
+ * scripts, .clip (estrutura de cenas) nem composition roots; exige um único
+ * root com id e o id tem de estar livre no documento base.
+ */
+export function parseInsertFragment(document, fragment) {
+  if (typeof fragment !== "string" || fragment.trim() === "") return null;
+  const holder = document.createElement("div");
+  holder.innerHTML = fragment;
+  const node = holder.firstElementChild;
+  if (!node) return null;
+  const tag = String(node.tagName || "").toUpperCase();
+  if (tag === "SCRIPT" || node.querySelector("script")) return null;
+  if (node.getAttribute("data-composition-id") || node.querySelector("[data-composition-id]")) return null;
+  let isSceneClip = false;
+  try {
+    isSceneClip = Boolean(node.classList && node.classList.contains("clip")) || Boolean(node.querySelector(".clip"));
+  } catch {
+    isSceneClip = false;
+  }
+  if (isSceneClip) return null;
+  const id = node.getAttribute("id");
+  if (!id) return null;
+  // O read-set de id vale para o root E para descendentes: um fragmento não
+  // pode introduzir ids duplicados em lado nenhum do documento.
+  const ids = [node, ...Array.from(node.querySelectorAll("[id]"))];
+  const seen = new Set();
+  for (const candidate of ids) {
+    const candidateId = candidate.getAttribute("id");
+    if (!candidateId || seen.has(candidateId) || document.getElementById(candidateId)) return null;
+    seen.add(candidateId);
+  }
+  return node;
+}
+
+/** Normaliza/valida as posições de inserção (default 'after'). */
+export function normalizeInsertPosition(value) {
+  if (value === undefined || value === null) return "after";
+  return NODE_INSERT_POSITIONS.includes(value) ? value : null;
+}
 
 /** Menor sufixo `-copy-N` livre para o id base (determinístico nos 3 motores). */
 function nextCopyId(doc, baseId) {
@@ -172,8 +220,8 @@ export function applyPatchesLinkedom(html, patches) {
     if (property === "textContent" || property === "text") {
       el.textContent = value;
     } else if (property === NODE_OP_PROPERTY) {
-      // V5-P1E §6.5 + F05: operações de nó — remove/duplicate/move-*.
-      // Cenas recusadas e valores desconhecidos fazem `continue`.
+      // V5-P1E §6.5 + F05 + E04: operações de nó — remove/duplicate/insert/
+      // move-*. Cenas recusadas e valores desconhecidos fazem `continue`.
       if (isRootOwnedSceneClip(el, document)) continue;
       if (value === "remove") {
         if (el.parentNode) el.parentNode.removeChild(el);
@@ -190,6 +238,22 @@ export function applyPatchesLinkedom(html, patches) {
         if (el.parentNode) el.parentNode.insertBefore(clone, el.nextSibling);
         created.push(newId);
         touchedNode = true;
+      } else if (value === "insert") {
+        // E04: inverso durável de `remove` (compensação da unidade composta).
+        // Precondições do read-set: âncora existe (el), id do fragmento livre.
+        const position = normalizeInsertPosition(patch.position);
+        const node = position === null ? null : parseInsertFragment(document, patch.fragment);
+        if (!node) continue;
+        if (position === "first") {
+          el.insertBefore(node, el.firstChild);
+          touchedNode = true;
+        } else {
+          const parent = el.parentNode;
+          if (!parent) continue;
+          if (position === "before") parent.insertBefore(node, el);
+          else parent.insertBefore(node, el.nextSibling);
+          touchedNode = true;
+        }
       } else if (value === "move-up" || value === "move-down" || value === "move-top" || value === "move-bottom") {
         // F05.06: reorder dentro do MESMO parent; recusa cross-container
         // (só move dentro do parent atual) e cenas (já recusadas acima).
@@ -309,7 +373,9 @@ function stripAuthoredUnit(raw) {
  *  - x/y → delta var + authored left/top baseline recomposed to composition
  *    coordinates (the inverse of the delta math in applyGeometryPatch);
  *  - attr → data-* attribute; label/hidden/locked → data-* markers;
- *  - node ops (property === 'element') are NOT readable: value null.
+ *  - node ops (property === 'element') are NOT invertible by attributes:
+ *    value null, EXCETO `insert`, cujo read-set é a ausência do id
+ *    ('absent' quando a precondição se verifica; null quando conflitua).
  * A missing element yields value null (removed target → precondition conflict).
  */
 export function readPatchTargetValues(html, patches) {
@@ -319,7 +385,14 @@ export function readPatchTargetValues(html, patches) {
     const selector = String(patch.selector);
     const property = String(patch.property);
     let value = null;
-    if (property !== NODE_OP_PROPERTY) {
+    if (property === NODE_OP_PROPERTY && String(patch.value) === "insert") {
+      // Read-set da inserção: âncora presente + id do fragmento ausente.
+      let anchor = null;
+      try { anchor = document.getElementById(assertIdSelector(selector)); } catch { anchor = null; }
+      const position = normalizeInsertPosition(patch.position);
+      const node = anchor && position !== null ? parseInsertFragment(document, patch.fragment) : null;
+      value = node ? "absent" : null;
+    } else if (property !== NODE_OP_PROPERTY) {
       let el = null;
       try {
         const id = assertIdSelector(selector);
@@ -365,6 +438,42 @@ export function readPatchTargetValues(html, patches) {
     out.push({ selector, property, value });
   }
   return out;
+}
+
+/**
+ * Precondições EXPLÍCITAS das inserções antes de qualquer mutação
+ * (`/prepare-patch`). Falha com 409/400 determinístico em vez de deixar o
+ * lote aplicar parcialmente (o `expectedApplied` do publisher também recusa).
+ */
+export function assertInsertPreconditions(html, patches) {
+  if (!Array.isArray(patches)) return;
+  const { document } = parseHTML(html);
+  for (const patch of patches) {
+    if (!patch || String(patch.property) !== NODE_OP_PROPERTY || String(patch.value) !== "insert") continue;
+    const anchorId = assertIdSelector(String(patch.selector));
+    const anchor = document.getElementById(anchorId);
+    if (!anchor) {
+      throw Object.assign(new Error("INSERT_ANCHOR_MISSING"), {
+        code: "INSERT_ANCHOR_MISSING", status: 409,
+      });
+    }
+    const position = normalizeInsertPosition(patch.position);
+    if (position === null) {
+      throw Object.assign(new Error("INVALID_INSERT_POSITION"), { code: "INVALID_INSERT_POSITION", status: 400 });
+    }
+    const node = parseInsertFragment(document, patch.fragment);
+    if (!node) {
+      // Diferencia estrutura inválida de colisão de id (auditoria honesta).
+      const holder = document.createElement("div");
+      if (typeof patch.fragment === "string") holder.innerHTML = patch.fragment;
+      const candidate = holder.firstElementChild;
+      const candidateId = candidate ? candidate.getAttribute("id") : null;
+      const collision = Boolean(candidateId && document.getElementById(candidateId));
+      throw Object.assign(new Error(collision ? "INSERT_ID_CONFLICT" : "INVALID_INSERT_FRAGMENT"), {
+        code: collision ? "INSERT_ID_CONFLICT" : "INVALID_INSERT_FRAGMENT", status: collision ? 409 : 400,
+      });
+    }
+  }
 }
 
 /**
