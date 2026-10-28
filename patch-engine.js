@@ -41,6 +41,7 @@ import { prepareLayoutGeometry, readAuthoredMargin, setGeometryConsumption } fro
 import { PROP_MAP, UI_ONLY_PROPS, GEOM_CONSUMPTION, computeGeomDelta } from "./prop-map.js";
 import { collectAnimSpecs, upsertAnimBlock } from "./anim-presets.js";
 import { collectKeyframeSpecs, upsertKeyframeBlock, touchesKeyframeProps } from "./keyframes-presets.js";
+import { touchesChartProps, upsertChartBlock } from "./chart-presets.js";
 import { touchesAudioProps, upsertAudioBlock } from "./audio-presets.js";
 import {
   TRANSITION_TWEENS,
@@ -362,6 +363,10 @@ export function applyPatchesLinkedom(html, patches) {
   } catch {}
   if (touchedKf || touchedNode) outHtml = upsertKeyframeBlock(outHtml, collectKeyframeSpecs(document));
   if (touchesAudioProps(patches)) outHtml = upsertAudioBlock(outHtml);
+  // E06: charts are static DOM derived from `data-vp-chart`; a node op can
+  // insert/remove a host and a chart prop changes it. Refresh/remove the single
+  // block accordingly (no timeline work).
+  if (touchedNode || touchesChartProps(patches)) outHtml = upsertChartBlock(outHtml);
   return { html: outHtml, applied, created };
 }
 

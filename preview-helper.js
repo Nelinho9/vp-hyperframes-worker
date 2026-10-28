@@ -208,6 +208,7 @@ import { PROP_MAP, GEOM_CONSUMPTION, UI_ONLY_PROPS } from "./prop-map.js";
 import { AUDIO_APPLY_SOURCE } from "./audio-presets.js";
 import { ANIM_APPLY_SOURCE } from "./anim-presets.js";
 import { KEYFRAME_APPLY_SOURCE } from "./keyframes-presets.js";
+import { CHART_APPLY_SOURCE } from "./chart-presets.js";
 
 /**
  * The inline helper script body (browser-only, ES5-compatible, no imports).
@@ -353,6 +354,10 @@ export const PREVIEW_HELPER_SCRIPT = `(function () {
       // Keyframes authored (data-kf JSON).
       var kfRaw = typeof el.getAttribute === 'function' ? el.getAttribute('data-kf') : null;
       if (kfRaw) out.keyframes = kfRaw;
+      // E06: chart authored JSON (a single root prop; the materializer derives
+      // the static visual children from it).
+      var chartRaw = typeof el.getAttribute === 'function' ? el.getAttribute('data-vp-chart') : null;
+      if (chartRaw) out.props.chart = chartRaw;
       // Src vivo (media) — fora das props editáveis no pai.
       var liveSrc = typeof el.getAttribute === 'function' ? el.getAttribute('src') : null;
       if (liveSrc) out.src = liveSrc;
@@ -597,6 +602,7 @@ export const PREVIEW_HELPER_SCRIPT = `(function () {
   ${ANIM_APPLY_SOURCE}
   // ── V5-P8B §2.2: keyframes leves — mesma via S09/S23 ─────────────────
   ${KEYFRAME_APPLY_SOURCE}
+  ${CHART_APPLY_SOURCE}
   // ── V5-P5C/P5B §10.3: materialização local de volume/fades de áudio ──
   // Fonte partilhada com o bloco persistido (audio-presets.js) — mesma
   // estratégia da S09: hot-swap re-corre o applier na timeline já bindada,
@@ -624,6 +630,15 @@ export const PREVIEW_HELPER_SCRIPT = `(function () {
     for (var i = 0; i < patches.length; i++) {
       var pr2 = patches[i] && patches[i].property;
       if (pr2 === 'keyframes') return true;
+    }
+    return false;
+  }
+
+  // E06: lote tocou o transporte do gráfico?
+  function patchTouchesChart(patches) {
+    for (var i = 0; i < patches.length; i++) {
+      var prC = patches[i] && patches[i].property;
+      if (prC === 'chart') return true;
     }
     return false;
   }
@@ -835,6 +850,11 @@ export const PREVIEW_HELPER_SCRIPT = `(function () {
       if (nodeOpTouched || patchTouchesKeyframes(data.patches)) {
         try { __vpApplyKeyframes(); } catch (eKf) { /* nunca quebrar o preview */ }
       }
+      // E06: gráfico estático (sem timeline) — re-materializa após insert/remove
+      // ou mudança do JSON authored.
+      if (nodeOpTouched || patchTouchesChart(data.patches)) {
+        try { __vpApplyCharts(); } catch (eChart) { /* nunca quebrar o preview */ }
+      }
       // V5-P5C §10.3: lote tocou áudio → estado vivo imediato + fades.
       var audioTouched = patchTouchesAudio(data.patches);
       if (audioTouched) {
@@ -909,6 +929,9 @@ export const PREVIEW_HELPER_SCRIPT = `(function () {
       } catch (eB) { /* never break the preview */ }
     }
   });
+
+  // E06: chart hosts are static; render them once at boot (idempotent).
+  try { __vpApplyCharts(); } catch (eChartBoot) { /* nunca quebrar o preview */ }
 })();`;
 
 /**

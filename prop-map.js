@@ -49,6 +49,9 @@ export const PROP_MAP = {
   fadeIn: { output: "data-fade-in", kind: "attr", unit: "" },
   fadeOut: { output: "data-fade-out", kind: "attr", unit: "" },
   keyframes: { output: "data-kf", kind: "attr", unit: "" },
+  // E06: gráfico declarativo (JSON completo num só atributo) — materialização
+  // estática __vp-chart-materialized__; um único alvo #id, duplicate-safe.
+  chart: { output: "data-vp-chart", kind: "attr", unit: "" },
   // E04: timing de clips — atributos consumidos pelo runtime 0.7.109
   // (data-media-start = playback offset/trim point; docs bundled).
   start: { output: "data-start", kind: "attr", unit: "" },
