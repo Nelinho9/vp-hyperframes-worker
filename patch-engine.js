@@ -242,6 +242,14 @@ export function applyPatchesLinkedom(html, patches) {
         if (el.parentNode) el.parentNode.removeChild(el);
         touchedNode = true;
       } else if (value === "duplicate") {
+        // E06: catalog roots carry child ids / authored chart JSON; the
+        // generic duplicate only rekeys the root. Refuse (the UI offers the
+        // catalog insertion path instead).
+        const isCatalogRoot =
+          (typeof el.hasAttribute === "function" &&
+            (el.hasAttribute("data-vp-template") || el.hasAttribute("data-vp-chart"))) ||
+          (el.id && el.id.indexOf("gfx-") === 0);
+        if (isCatalogRoot) continue;
         const newId = nextCopyId(document, id);
         const clone = el.cloneNode(true);
         clone.setAttribute("id", newId);

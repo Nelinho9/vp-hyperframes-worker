@@ -81,14 +81,27 @@ describe('chart-materialized (E06)', () => {
     expect(host.children.length).toBe(firstCount);
   });
 
-  it('upserts/removes exactly one static block', () => {
+  it('upserts/removes exactly one static block and is byte-idempotent', () => {
     const withChart = '<html><body><div id="gfx-bar-chart-1" data-vp-chart="{}"></div></body></html>';
     const once = upsertChartBlock(withChart);
     expect(once).toContain('id="__vp-chart-materialized__"');
     const twice = upsertChartBlock(once);
     expect((twice.match(/__vp-chart-materialized__/g) ?? [])).toHaveLength(1);
+    expect(twice).toBe(once);
     const without = upsertChartBlock('<html><body><div id="x"></div></body></html>');
     expect(without).not.toContain('__vp-chart-materialized__');
+  });
+
+  it('rejects CSS injection in authored colors (fallback, no url())', () => {
+    const { host } = render({
+      ...SPEC,
+      accent: 'red;background:url(https://evil.example/x)',
+      background: 'transparent;background-image:url(https://evil.example/y)',
+      textColor: '#fff;position:fixed',
+    } as typeof SPEC);
+    const bar = host.querySelector('.gfx-chart-bar');
+    expect(bar?.getAttribute('style')).toContain('#c8ff3d');
+    expect(host.getAttribute('style') ?? '').not.toContain('evil.example');
   });
 
   it('detects chart prop patches', () => {

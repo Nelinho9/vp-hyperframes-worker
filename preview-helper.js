@@ -318,8 +318,14 @@ export const PREVIEW_HELPER_SCRIPT = `(function () {
   function readAuthoredAttrs(el) {
     var out = { props: {}, anim: {}, audio: null, keyframes: null, src: null, timing: null, capabilities: {} };
     try {
-      var type = inferElementTypeFromId(el.getAttribute('data-hf-id') || el.id);
-      if (type !== 'audio') {
+      // E06: honor the explicit composition type first (catalog group roots
+      // must never be treated as text or enter contenteditable).
+      var explicitType = typeof el.getAttribute === 'function' ? el.getAttribute('data-element-type') : null;
+      var type = (explicitType && /^(text|image|video|audio|group|shape)$/.test(explicitType))
+        ? explicitType
+        : inferElementTypeFromId(el.getAttribute('data-hf-id') || el.id);
+      out.type = type;
+      if (type !== 'audio' && type !== 'group' && type !== 'shape') {
         var gb = geomBaseline(el);
         var gx = parseFloat(el.style.getPropertyValue('--el-x')) || 0;
         var gy = parseFloat(el.style.getPropertyValue('--el-y')) || 0;
@@ -756,6 +762,11 @@ export const PREVIEW_HELPER_SCRIPT = `(function () {
             if (el.parentNode) el.parentNode.removeChild(el);
             nodeOpTouched = true;
           } else if (value === 'duplicate') {
+            // E06: mirror the worker refusal for catalog roots.
+            var isCatalogRootH =
+              typeof el.getAttribute === 'function' &&
+              (el.getAttribute('data-vp-template') || el.getAttribute('data-vp-chart'));
+            if (isCatalogRootH || (el.id && el.id.indexOf('gfx-') === 0)) continue;
             var dupBase = el.id;
             if (dupBase) {
               var newId = nextCopyId(document, dupBase);

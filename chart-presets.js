@@ -39,20 +39,25 @@ export const CHART_APPLY_SOURCE = [
   "    if (!host || !host.getAttribute) continue;",
   "    var raw = host.getAttribute('data-vp-chart') || '';",
   "    if (host.__vpChartRaw === raw) continue;",
+  "    function clearHost(h) { while (h.firstChild) h.removeChild(h.firstChild); }",
+  "    function safeColor(v, fallback) {",
+  "      var s = String(v == null ? '' : v);",
+  "      return /^(#[0-9a-f]{3,8}|rgba?\\([0-9.,%\\s]+\\))$/i.test(s) ? s : fallback;",
+  "    }",
   "    var spec;",
-  "    try { spec = JSON.parse(raw); } catch (eParse) { continue; }",
-  "    if (!spec || typeof spec !== 'object') continue;",
+  "    try { spec = JSON.parse(raw); } catch (eParse) { clearHost(host); host.__vpChartRaw = raw; continue; }",
+  "    if (!spec || typeof spec !== 'object') { clearHost(host); host.__vpChartRaw = raw; continue; }",
   "    var labels = Array.isArray(spec.labels) ? spec.labels : [];",
   "    var values = Array.isArray(spec.values) ? spec.values : [];",
-  "    if (labels.length !== " + CHART_BARS + " || values.length !== " + CHART_BARS + ") continue;",
+  "    if (labels.length !== " + CHART_BARS + " || values.length !== " + CHART_BARS + ") { clearHost(host); host.__vpChartRaw = raw; continue; }",
   "    var unit = typeof spec.unit === 'string' ? spec.unit : '';",
   "    var unitText = unit ? '(' + unit + ')' : '';",
   "    var title = typeof spec.title === 'string' ? spec.title : '';",
   "    var series = typeof spec.series === 'string' ? spec.series : '';",
   "    var source = typeof spec.source === 'string' ? spec.source : '';",
-  "    var accent = typeof spec.accent === 'string' ? spec.accent : '#c8ff3d';",
-  "    var textColor = typeof spec.textColor === 'string' ? spec.textColor : '#ffffff';",
-  "    var background = typeof spec.background === 'string' ? spec.background : 'rgba(12,12,16,0.88)';",
+  "    var accent = safeColor(spec.accent, '#c8ff3d');",
+  "    var textColor = safeColor(spec.textColor, '#ffffff');",
+  "    var background = safeColor(spec.background, 'rgba(12,12,16,0.88)');",
   "    var maxValue = 0;",
   "    var nums = [];",
   "    for (var vi = 0; vi < " + CHART_BARS + "; vi++) {",
@@ -63,7 +68,7 @@ export const CHART_APPLY_SOURCE = [
   "    }",
   "    host.style.background = background;",
   "    host.style.color = textColor;",
-  "    while (host.firstChild) host.removeChild(host.firstChild);",
+  "    clearHost(host);",
   "    function mk(tag, cls, style, text) {",
   "      var node = doc.createElement(tag);",
   "      if (cls) node.className = cls;",
@@ -123,6 +128,8 @@ export function upsertChartBlock(html) {
   if (!/\sdata-vp-chart\s*=/.test(without)) return without;
   const tag = `<script id="${CHART_BLOCK_ID}">(${CHART_APPLY_SOURCE})();</script>`;
   const bodyClose = without.search(/<\/body>/i);
-  if (bodyClose === -1) return `${without}\n${tag}`;
-  return `${without.slice(0, bodyClose)}${tag}\n${without.slice(bodyClose)}`;
+  if (bodyClose === -1) return `${without}${tag}`;
+  // No newline decoration: upsert must be byte-idempotent (the anim block
+  // follows the same rule), otherwise every chart patch grows the document.
+  return `${without.slice(0, bodyClose)}${tag}${without.slice(bodyClose)}`;
 }

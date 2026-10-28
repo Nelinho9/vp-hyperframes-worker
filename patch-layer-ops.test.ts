@@ -138,3 +138,13 @@ describe('E04 worker — element:insert (inverso de remove)', () => {
     expect(badPosition.applied).toBe(0);
   });
 });
+
+describe('E06 worker - catalog roots are not duplicated by the node op', () => {
+  it('refuses duplicate on a data-vp-template root (nested ids would collide)', () => {
+    const html = '<html><body><div id="scene-1" class="clip"><div id="gfx-lower-third-1" data-vp-template="lower-third@1"><div id="gfx-lower-third-1__title">T</div></div></div></body></html>';
+    const result = applyPatchesLinkedom(html, [{ selector: '#gfx-lower-third-1', property: 'element', value: 'duplicate' }]);
+    const doc2 = doc(result.html);
+    expect(result.applied).toBe(0);
+    expect(doc2.getElementById('gfx-lower-third-1-copy-1')).toBeNull();
+  });
+});
