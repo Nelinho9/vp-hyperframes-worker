@@ -73,6 +73,10 @@ function srcMatches(expected, observed, storageUrl) {
   return identity !== null && identity === storageIdentity(observed, storageUrl);
 }
 
+// E07 (§7.7): a operação de REMOÇÃO do alvo criado usa a MESMA identidade de
+// Storage; exportar evita uma segunda cópia da regra (governança 02.5).
+export { storageIdentity, srcMatches };
+
 function validateReplacementList(replacements) {
   return Array.isArray(replacements) && replacements.length >= 1 && replacements.length <= MAX_REPLACEMENTS
     && replacements.every(r => r && typeof r.target_id === 'string' && TARGET_ID.test(r.target_id)

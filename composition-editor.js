@@ -6,6 +6,7 @@ import {
 } from './patch-engine.js';
 import { deriveElements } from './elements-registry.js';
 import { replaceAudioTargets } from './audio-prepare.js';
+import { insertAudioTargets, removeAudioTargets } from './audio-insert.js';
 import { buildCoherentPublication } from './composition-publication.js';
 import { lintClipWindows } from './window-lint.js';
 import { canonical } from './job-contract.js';
@@ -69,6 +70,8 @@ export function prepareComposition(kind, input, context = {}) {
   let beforeScenes = null;
   let beforeTransitions = null;
   let beforeAudio = null;
+  let insertedAudio = null;
+  let removedAudio = null;
   let structureUndoable = true;
   if (kind === 'patch') {
     if (!Array.isArray(input.patches) || input.patches.length < 1 || input.patches.length > 100
@@ -152,9 +155,27 @@ export function prepareComposition(kind, input, context = {}) {
     // que a revisão nova substitui — o inverso E01 é uma revisão nova com
     // esse mesmo valor, não um blob apagado. O `expected_src` é a precondição
     // do undo/redo (409 antes de qualquer mutação quando diverge).
-    const replaced = replaceAudioTargets(input.source_html, input.replacements, input.expected_src, context);
-    beforeAudio = replaced.before;
-    result = { html: replaced.html, applied: replaced.applied };
+    // E07 §7.7: exatamente UM modo por prepare — substituir, criar (voz
+    // omitida) ou remover (inverso do insert). Dois modos na mesma revisão
+    // seriam duas verdades sobre o mesmo alvo.
+    const modes = [input.replacements, input.insertions, input.removals]
+      .filter((value) => value !== undefined).length;
+    if (modes !== 1) reject('INVALID_AUDIO_OPERATION');
+    if (input.insertions !== undefined) {
+      const created = insertAudioTargets(input.source_html, input.insertions);
+      beforeAudio = created.before;
+      insertedAudio = created.inserted.length;
+      result = { html: created.html, applied: created.applied };
+    } else if (input.removals !== undefined) {
+      const removed = removeAudioTargets(input.source_html, input.removals, input.expected_src, context);
+      beforeAudio = removed.before;
+      removedAudio = removed.removed;
+      result = { html: removed.html, applied: removed.applied };
+    } else {
+      const replaced = replaceAudioTargets(input.source_html, input.replacements, input.expected_src, context);
+      beforeAudio = replaced.before;
+      result = { html: replaced.html, applied: replaced.applied };
+    }
   } else reject('INVALID_COMPOSITION_OPERATION');
   const elements = deriveElements(result.html, { revision: input.revision });
   if (elements.conflicts.length) reject('COMPOSITION_ELEMENT_ID_CONFLICT', 409);
@@ -171,6 +192,8 @@ export function prepareComposition(kind, input, context = {}) {
     applied: result.applied, revision: input.revision, content_hash: compositionHash(coherent.html),
     ...(before !== null ? { before } : {}),
     ...(beforeAudio !== null ? { before_audio: beforeAudio } : {}),
+    ...(insertedAudio !== null ? { inserted_audio: insertedAudio } : {}),
+    ...(removedAudio !== null ? { removed_audio: removedAudio } : {}),
     ...(beforeScenes !== null ? { before_scenes: beforeScenes, before_transitions: beforeTransitions } : {}),
     undoable,
     ...(result.created ? { created: result.created } : {}),
