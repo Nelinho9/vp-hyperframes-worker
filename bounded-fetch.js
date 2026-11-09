@@ -335,6 +335,13 @@ function requestOnce({
           settle(reject, fail('INVALID_RESPONSE'));
           return;
         }
+        // Redirects and error responses are abandoned immediately: never
+        // stream a body the caller will not consume (AUD-I19).
+        if (status >= 300 || !consumeBody || method === 'HEAD' || status === 204 || status === 205 || status === 304) {
+          res.destroy();
+          settle(resolve, new Response(null, { status, headers: responseHeaders }));
+          return;
+        }
         collectResponse(res, { method, status, headers: responseHeaders, maxBytes, maxChunks, consumeBody })
           .then((response) => settle(resolve, response), (error) => settle(reject, error));
       });
