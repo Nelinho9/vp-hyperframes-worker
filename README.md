@@ -21,6 +21,8 @@ uploads outputs via signed PUT URLs, and calls back the orchestrator.
 | `WORK_DIR` | `/tmp/hyperframes-worker` | Scratch directory for job staging |
 | `CHROME_PATH` | `/usr/bin/chromium` | System Chromium path |
 | `HYPERFRAMES_BIN` | unset | Trusted executable path; unset invokes `npx` with argument arrays. CLI stays pinned at 0.7.109. |
+| `WORKER_CONTROL_PLANE_ORIGINS` | unset | Optional comma-separated origin allowlist for control-plane destinations (callbacks, signed uploads, composition refs). Without it those destinations are public-HTTPS only. Media URLs never use this allowance. |
+| `VP_ALLOW_TEST_LOOPBACK` | unset | Test-only: allows loopback fixtures outside production. Ignored when `NODE_ENV=production`. |
 
 Docker and per-job CLI environments force `HYPERFRAMES_NO_UPDATE_CHECK=1` and `HYPERFRAMES_NO_AUTO_INSTALL=1`. Version 0.7.109 otherwise schedules a detached global npm upgrade during ordinary commands, including build-time browser installation. This runtime must retain the approved pin.
 
@@ -65,3 +67,17 @@ O helper e a persistência usam a mesma origem de layout. Margens inline de 1–
 Revisão independente local: achados fechados. Prova Playwright MCP com GSAP real: offset 51/55 constante nos seeks 0→0,5→1→0→1, movimentos repetidos 177→187 e resize com scale 0,5 mantendo a âncora visual x225, largura 100→120, incluindo margem shorthand importante. A validação natural no Studio requer o deploy deste incremento; não confundir esta fixture com essa prova.
 
 Verificação final do incremento: `npm test`, 45 ficheiros / 577 testes PASS; `node --check` nos quatro módulos de runtime alterados PASS. Os testes de idempotência repetem a aplicação sobre o mesmo HTML e preservam os bytes.
+
+
+## C03 remediation — egress pinning and resource graph (09/11/2026)
+
+Local branch `fix/c03-remediation` (from `f8761a2`; not pushed/deployed):
+
+- **Media/control-plane split (ADJ-01).** `fetchBounded` defaults to media policy (public targets, loopback blocked). Callbacks, signed uploads and composition references pass `policy: "control-plane"` and may use `WORKER_CONTROL_PLANE_ORIGINS`; without an allowlist they remain public-HTTPS only.
+- **DNS→socket pinning (AUD-B02).** Real transports use `node:http(s)` with a `lookup` that returns only the validated A/AAAA set; Host/SNI keep the original hostname. Redirects are walked manually and repinned per hop.
+- **Resource graph (AUD-B03).** A real attribute tokenizer replaces the `\bsrc` regex (`data-src` is not `src`). Inventory covers `srcset`, `poster`, `source`/`picture`, SVG `href`, CSS `url(...)` and tracks; unsupported network elements are stripped; remaining remote resources fail the job; a deny-by-default CSP is injected (media/fonts/scripts local or data:/blob:, `connect-src 'none'`).
+- **Budgets (ADJ-03).** Aggregate byte/time budget per job plus an `ffprobe` timeout; per-file cap remains 500 MiB.
+- **Production policy (ADJ-02).** HTTPS-only in production; the test-loopback flag is ignored when `NODE_ENV=production`.
+- **Composition ref (ADJ-04).** `fetchCompositionRef` reads the bounded transport `buffer` (the previous destructuring read `body`, which never existed).
+
+Validation: `npm test` 48 files / 637 tests (worker) and `node --check` on changed modules during the remediation session. The suite must be run isolated; under heavy CPU contention two unrelated 5s fixtures timed out. Runtime/Coolify rebuild is not qualified by this record.
