@@ -165,14 +165,25 @@ export async function postCallback(url, secret, payload, options = {}) {
   let last = { ok: false, attempts: 0 };
   for (let attempt = 1; attempt <= attempts; attempt += 1) {
     try {
-      const { response: res } = await fetchBounded(url, { fetchImpl, timeoutMs: 15_000, maxBytes: 16_384, consumeBody: false, init: {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "X-Worker-Secret": secret || "",
+      const { response: res } = await fetchBounded(url, {
+        fetchImpl,
+        timeoutMs: 15_000,
+        maxBytes: 16_384,
+        consumeBody: false,
+        policy: "control-plane",
+        trustedOrigins: (process.env.WORKER_CONTROL_PLANE_ORIGINS ?? "")
+          .split(",")
+          .map((origin) => origin.trim())
+          .filter(Boolean),
+        init: {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "X-Worker-Secret": secret || "",
+          },
+          body: JSON.stringify(payload),
         },
-        body: JSON.stringify(payload),
-      } });
+      });
       if (res.ok) {
         return { ok: true, status: res.status, attempts: attempt, at: new Date().toISOString() };
       }
@@ -377,13 +388,50 @@ export function formatExecError(err, { limit = 4000 } = {}) {
   return `${full.slice(0, headSize)}${marker}${full.slice(-tailSize)}`;
 }
 
+/**
+ * Downloads a composition reference through the bounded transport. Control-
+ * plane destinations are explicit (ADJ-01); the former destructuring read
+ * `body` while fetchBounded returns `buffer` (ADJ-04).
+ */
+export async function fetchCompositionRef(refUrl, options = {}) {
+  const {
+    fetchImpl,
+    timeoutMs = 30_000,
+    maxBytes = 8 * 1024 * 1024,
+  } = options;
+  const { response, buffer } = await fetchBounded(refUrl, {
+    fetchImpl,
+    timeoutMs,
+    consumeBody: true,
+    maxBytes,
+    policy: "control-plane",
+    trustedOrigins: (process.env.WORKER_CONTROL_PLANE_ORIGINS ?? "")
+      .split(",")
+      .map((origin) => origin.trim())
+      .filter(Boolean),
+  });
+  if (!response.ok) {
+    throw new Error(`ref fetch ${response.status}`);
+  }
+  return Buffer.from(buffer).toString("utf-8");
+}
+
 /** Upload an artifact using the signed PUT URL supplied by the orchestrator. */
 export async function uploadToSignedUrl(url, body, contentType) {
-  const { response } = await fetchBounded(url, { timeoutMs: 60_000, consumeBody: false, init: {
-    method: "PUT",
-    headers: { "Content-Type": contentType },
-    body,
-  } });
+  const { response } = await fetchBounded(url, {
+    timeoutMs: 60_000,
+    consumeBody: false,
+    policy: "control-plane",
+    trustedOrigins: (process.env.WORKER_CONTROL_PLANE_ORIGINS ?? "")
+      .split(",")
+      .map((origin) => origin.trim())
+      .filter(Boolean),
+    init: {
+      method: "PUT",
+      headers: { "Content-Type": contentType },
+      body,
+    },
+  });
   if (!response.ok) {
     throw new Error(`signed upload failed (${response.status})`);
   }
@@ -583,9 +631,7 @@ async function stageJob(body, { publishPreview = true, resolvePublished = true }
     if (!refOk) throw new Error("INVALID_COMPOSITION_SOURCE");
     // Não confundir URL com HTML: descarregar pelo transporte bounded F01.
     try {
-      const { response, body: refBody } = await fetchBounded(refUrl, { timeoutMs: 30_000, consumeBody: true, maxBytes: 8 * 1024 * 1024, init: {} });
-      if (!response.ok) throw new Error(`ref fetch ${response.status}`);
-      index_html = Buffer.from(refBody).toString("utf-8");
+      index_html = await fetchCompositionRef(refUrl);
       compositionSourceKind = "ref";
     } catch (err) {
       throw new Error(`COMPOSITION_REF_FETCH_FAILED: ${err?.message ?? err}`);
@@ -763,9 +809,10 @@ async function stageJob(body, { publishPreview = true, resolvePublished = true }
   // render pipeline only sees valid local MP4 files.
   if (typeof index_html === "string") {
     const mediaResult = await prestageExternalMedia(index_html, jobDir, {
-      fetchImpl: fetch,
       ffprobePath: "ffprobe",
       timeoutMs: 60_000,
+      maxTotalBytes: 1024 * 1024 * 1024,
+      maxTotalTimeMs: 10 * 60_000,
       log: console.log,
     });
     if (Array.isArray(mediaResult.outcomes)) jobMediaOutcomes = mediaResult.outcomes;
@@ -799,6 +846,10 @@ async function stageJob(body, { publishPreview = true, resolvePublished = true }
     }
     if (!mediaResult.skipped) {
       console.log(`[worker] pre-staged ${mediaResult.downloaded.length} external media file(s)`);
+    }
+    // Even a "skipped" result carries the hardened HTML (CSP + stripped
+    // unsupported network resources); the canonical form is always rewritten.
+    if (typeof mediaResult.html === "string") {
       index_html = mediaResult.html;
     } else if (typeof index_html === "string" && /src\s*=\s*["']assets\/vp-media-/i.test(index_html)) {
       // V5.24: poisoned re-dispatch signature — HTML already carries job-local

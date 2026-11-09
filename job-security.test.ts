@@ -10,6 +10,8 @@ import { fetchBounded } from './bounded-fetch.js';
 import { jobEnvironment } from './job-environment.js';
 import { createJobQueue, atomicWriteJob } from './job-queue.js';
 vi.setConfig({ testTimeout: 30_000 });
+// Loopback fixtures are an explicit test transport, never a production default.
+process.env.VP_ALLOW_TEST_LOOPBACK ||= '1';
 const fixture = JSON.parse(readFileSync(new URL('./fixtures/render-job-v1.json', import.meta.url), 'utf8'));
 const newJob = (digit: number) => ({ job_id: `10000000-0000-4000-a000-${String(digit).padStart(12, '0')}`, project_id: fixture.project_id, step: 'preview', mode: 'preview', index_html: '<html><body>local fixture</body></html>' });
 async function boot(root: string, env: Record<string, string> = {}) {

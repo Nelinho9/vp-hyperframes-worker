@@ -62,13 +62,144 @@ export function sanitizeMediaDetail(detail) {
 
 /**
  * @typedef {object} MediaUrl
- * @property {'video' | 'audio' | 'image'} tag
+ * @property {'video' | 'audio' | 'image' | 'track' | 'css' | 'unsupported'} tag
  * @property {string} originalSrc
  * @property {string} normalizedUrl
+ * @property {string} attribute
+ * @property {string} kind
+ * @property {string} [descriptor]
  */
 
+const RESOURCE_ATTRIBUTES = {
+  img: ['src', 'srcset'],
+  source: ['src', 'srcset'],
+  video: ['src', 'poster'],
+  audio: ['src'],
+  track: ['src'],
+  image: ['href', 'xlink:href'],
+  use: ['href', 'xlink:href'],
+  body: ['background'],
+  table: ['background'],
+  td: ['background'],
+  th: ['background'],
+  script: ['src'],
+  link: ['href'],
+  iframe: ['src'],
+  embed: ['src'],
+  object: ['data'],
+  base: ['href'],
+};
+
+const CONTAINER_TAGS = new Set(['video', 'audio', 'picture', 'svg']);
+const VOID_TAGS = new Set([
+  'area', 'base', 'br', 'col', 'embed', 'hr', 'img', 'input', 'link', 'meta',
+  'param', 'source', 'track', 'wbr',
+]);
+
+// Quotes are part of the tag match so an attribute value containing `>` does
+// not terminate the tag early (the old regex truncated such tags).
+const TAG_PATTERN = /<!--[\s\S]*?-->|<![^>]*>|<\s*(\/?)\s*([a-zA-Z][\w:-]*)((?:"[^"]*"|'[^']*'|[^>"'])*)>/g;
+const CSS_URL_RE = /url\(\s*(['"]?)(https?:\/\/[^)'"\s]+)\1\s*\)/gi;
+
 /**
- * Extract external media URLs from composition HTML.
+ * Tokenizes a raw attribute string without confusing `data-src` with `src`.
+ * @param {string} attrsText
+ */
+function tokenizeAttributes(attrsText) {
+  const tokens = [];
+  const re = /([^\s=/>]+)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'=<>`]+)))?/g;
+  let lastIndex = 0;
+  let match;
+  while ((match = re.exec(attrsText)) !== null) {
+    if (match.index === re.lastIndex) {
+      re.lastIndex += 1;
+      continue;
+    }
+    const hasValue = match[2] !== undefined || match[3] !== undefined || match[4] !== undefined;
+    tokens.push({
+      name: match[1],
+      lower: match[1].toLowerCase(),
+      value: hasValue ? (match[2] ?? match[3] ?? match[4]) : null,
+      hasValue,
+      raw: match[0],
+      leading: attrsText.slice(lastIndex, match.index),
+    });
+    lastIndex = re.lastIndex;
+  }
+  return { tokens, trailing: attrsText.slice(lastIndex) };
+}
+
+/** Walks opening/closing tags with a container stack (video/audio/picture/svg). */
+function walkTags(html, visitor) {
+  const stack = [];
+  TAG_PATTERN.lastIndex = 0;
+  let match;
+  while ((match = TAG_PATTERN.exec(html)) !== null) {
+    if (match[2] === undefined) continue; // comment or doctype
+    const closing = match[1] === '/';
+    const tag = match[2].toLowerCase();
+    if (closing) {
+      const index = stack.lastIndexOf(tag);
+      if (index >= 0) stack.length = index;
+      continue;
+    }
+    const attrs = match[3] ?? '';
+    const selfClosing = /\/\s*$/.test(attrs);
+    visitor({ tag, attrs, full: match[0], parent: stack[stack.length - 1] });
+    if (selfClosing || VOID_TAGS.has(tag)) continue;
+    if (CONTAINER_TAGS.has(tag)) stack.push(tag);
+  }
+}
+
+function attrValue(attrsText, name) {
+  const { tokens } = tokenizeAttributes(attrsText);
+  const wanted = String(name).toLowerCase();
+  const token = tokens.find((entry) => entry.lower === wanted && entry.hasValue);
+  return token ? token.value : null;
+}
+
+/** Splits a srcset value into URL + descriptor pairs (data: kept as-is). */
+function parseSrcset(value) {
+  const out = [];
+  const re = /(?:^|,)\s*([^\s,]+)(?:\s+([^,]+))?/g;
+  let match;
+  while ((match = re.exec(String(value ?? ''))) !== null) {
+    const url = match[1];
+    if (!url) continue;
+    out.push({ url, descriptor: (match[2] ?? '').trim() });
+  }
+  return out;
+}
+
+function resourceKind(tag, attribute, parent) {
+  if (tag === 'img' || tag === 'image' || attribute === 'poster' || attribute === 'background') {
+    return 'image';
+  }
+  if (tag === 'source') {
+    if (parent === 'picture') return 'image';
+    if (parent === 'audio') return 'audio';
+    return 'video';
+  }
+  if (tag === 'video') return 'video';
+  if (tag === 'audio') return 'audio';
+  if (tag === 'track') return 'track';
+  if (tag === 'css') return 'image';
+  return 'unsupported';
+}
+
+function collectCssUrls(cssText, add) {
+  const re = new RegExp(CSS_URL_RE.source, CSS_URL_RE.flags);
+  let match;
+  while ((match = re.exec(String(cssText ?? ''))) !== null) {
+    add(match[2], 'css', 'style', 'image');
+  }
+}
+
+/**
+ * Extract external resource URLs from composition HTML with real attribute
+ * parsing: `data-src` is not `src`; `srcset`, `poster`, `<source>` (picture vs
+ * video), SVG `href`, CSS `url(...)` and unsupported network elements are all
+ * inventoried (AUD-B03).
  *
  * @param {string} html
  * @returns {MediaUrl[]}
@@ -78,24 +209,262 @@ export function extractMediaUrls(html) {
   const results = [];
   const seen = new Set();
 
-  // Match <video|audio|img ... src="..." ...>. This regex is intentionally
-  // strict: it only catches src attributes inside media open tags. It does not
-  // handle malformed HTML, but the LLM output is expected to be well-formed.
-  const tagRe = /<(video|audio|img)\b([^>]*)>/gis;
-  let m;
-  while ((m = tagRe.exec(html)) !== null) {
-    const rawTag = m[1].toLowerCase();
-    const tag = rawTag === "img" ? "image" : rawTag;
-    const attrs = m[2];
-    const srcMatch = attrs.match(/\bsrc\s*=\s*["']([^"']+)["']/i);
-    if (!srcMatch) continue;
-    const originalSrc = srcMatch[1].trim();
-    if (!/^https?:\/\//i.test(originalSrc)) continue; // skip local/relative/data/blob
-    if (seen.has(originalSrc)) continue;
+  const add = (rawUrl, tag, attribute, kind, descriptor) => {
+    const originalSrc = String(rawUrl ?? '').trim();
+    if (!/^https?:\/\//i.test(originalSrc)) return; // local/relative/data/blob
+    if (seen.has(originalSrc)) return;
     seen.add(originalSrc);
-    results.push({ tag, originalSrc, normalizedUrl: originalSrc });
+    results.push({
+      tag,
+      originalSrc,
+      normalizedUrl: originalSrc,
+      attribute,
+      kind,
+      ...(descriptor ? { descriptor } : {}),
+    });
+  };
+
+  walkTags(html, ({ tag, attrs, parent }) => {
+    const defs = RESOURCE_ATTRIBUTES[tag];
+    if (!defs) return;
+    const publicTag = tag === 'img' ? 'image' : tag;
+    const { tokens } = tokenizeAttributes(attrs);
+    for (const token of tokens) {
+      if (!defs.includes(token.lower) || !token.hasValue) continue;
+      const kind = resourceKind(tag, token.lower, parent);
+      if (token.lower === 'srcset') {
+        for (const candidate of parseSrcset(token.value)) {
+          add(candidate.url, publicTag, 'srcset', kind, candidate.descriptor);
+        }
+      } else {
+        add(token.value, publicTag, token.lower, kind);
+      }
+    }
+  });
+
+  for (const match of html.matchAll(/<style\b[^>]*>([\s\S]*?)<\/style\s*>/gi)) {
+    collectCssUrls(match[1], add);
   }
+  for (const match of html.matchAll(/\bstyle\s*=\s*(?:"([^"]*)"|'([^']*)')/gi)) {
+    collectCssUrls(match[1] ?? match[2], add);
+  }
+
   return results;
+}
+
+function rewriteResourceValue(attribute, value, mapping, onChange) {
+  if (attribute === 'srcset') {
+    let changed = false;
+    const rewritten = parseSrcset(value).map((candidate) => {
+      const local = mapping[candidate.url];
+      if (!local) return candidate.descriptor ? `${candidate.url} ${candidate.descriptor}` : candidate.url;
+      changed = true;
+      return candidate.descriptor ? `${local} ${candidate.descriptor}` : local;
+    }).join(', ');
+    if (changed) onChange();
+    return changed ? rewritten : value;
+  }
+  if (attribute === 'style') {
+    let changed = false;
+    const rewritten = String(value).replace(CSS_URL_RE, (full, quote, url) => {
+      const local = mapping[url];
+      if (!local) return full;
+      changed = true;
+      return `url(${quote}${local}${quote})`;
+    });
+    if (changed) onChange();
+    return changed ? rewritten : value;
+  }
+  const local = mapping[String(value).trim()];
+  if (!local) return value;
+  onChange();
+  return local;
+}
+
+function escapeAttribute(value) {
+  return String(value).replace(/&/g, '&amp;').replace(/"/g, '&quot;');
+}
+
+/**
+ * Rewrite HTML so external media src/srcset/poster/CSS url values point to
+ * local files (or inline data URIs for SVG images).
+ *
+ * @param {string} html
+ * @param {Record<string, string>} mapping originalUrl -> localRelativePath|dataUri
+ * @returns {string}
+ */
+export function rewriteHtmlMediaUrls(html, mapping) {
+  if (typeof html !== "string") return html;
+  if (!mapping || Object.keys(mapping).length === 0) return html;
+
+  let changed = false;
+  const onChange = () => { changed = true; };
+  const rewritten = html.replace(TAG_PATTERN, (fullTag, closing, tagName, attrs) => {
+    if (!tagName || closing) return fullTag;
+    const tag = tagName.toLowerCase();
+    const defs = RESOURCE_ATTRIBUTES[tag];
+    if (!defs) return fullTag;
+    const { tokens, trailing } = tokenizeAttributes(attrs);
+    let rebuilt = '';
+    for (const token of tokens) {
+      let emitted = token.raw;
+      if (token.hasValue && defs.includes(token.lower)) {
+        const next = rewriteResourceValue(token.lower, token.value, mapping, onChange);
+        if (next !== token.value) {
+          emitted = `${token.name}="${escapeAttribute(next)}"`;
+        }
+      }
+      rebuilt += token.leading + emitted;
+    }
+    return changed ? `<${tagName}${rebuilt}${trailing}>` : fullTag;
+  });
+
+  if (!changed) return html;
+  return rewritten.replace(
+    /<style\b([^>]*)>([\s\S]*?)<\/style\s*>/gi,
+    (_full, attrs, css) => {
+      const nextCss = css.replace(CSS_URL_RE, (full, quote, url) => {
+        const local = mapping[url];
+        return local ? `url(${quote}${local}${quote})` : full;
+      });
+      return `<style${attrs}>${nextCss}</style>`;
+    },
+  );
+}
+
+/**
+ * Removes network resources the worker cannot stage (external scripts,
+ * stylesheets, frames, plugins, remote <base>) and remote CSS @import rules.
+ * Known runtimes/fonts were already handled by runtime-vendor.js.
+ */
+export function stripUnsupportedRemoteResources(html) {
+  if (typeof html !== 'string') return { html, stripped: [] };
+  const stripped = [];
+  const record = (tag, url) => stripped.push({ tag, url: maskMediaUrl(url) });
+
+  let out = html.replace(/<script\b[^>]*>[\s\S]*?<\/script\s*>/gi, (fullTag) => {
+    const attrs = /^<script\b([^>]*)>/i.exec(fullTag)?.[1] ?? '';
+    const src = attrValue(attrs, 'src');
+    if (src && /^https?:\/\//i.test(src)) {
+      record('script', src);
+      return '';
+    }
+    return fullTag;
+  });
+
+  out = out.replace(/<link\b[^>]*>/gi, (fullTag) => {
+    const attrs = /^<link\b([^>]*)>/i.exec(fullTag)?.[1] ?? '';
+    const href = attrValue(attrs, 'href');
+    if (href && /^https?:\/\//i.test(href)) {
+      record('link', href);
+      return '';
+    }
+    return fullTag;
+  });
+
+  out = out.replace(/<base\b[^>]*>/gi, (fullTag) => {
+    const attrs = /^<base\b([^>]*)>/i.exec(fullTag)?.[1] ?? '';
+    const href = attrValue(attrs, 'href');
+    if (href && /^https?:\/\//i.test(href)) {
+      record('base', href);
+      return '';
+    }
+    return fullTag;
+  });
+
+  out = out.replace(/<iframe\b[^>]*>[\s\S]*?<\/iframe\s*>/gi, (fullTag) => {
+    const attrs = /^<iframe\b([^>]*)>/i.exec(fullTag)?.[1] ?? '';
+    const src = attrValue(attrs, 'src');
+    if (src && /^https?:\/\//i.test(src)) {
+      record('iframe', src);
+      return '';
+    }
+    return fullTag;
+  });
+
+  out = out.replace(/<object\b[^>]*>[\s\S]*?<\/object\s*>/gi, (fullTag) => {
+    const attrs = /^<object\b([^>]*)>/i.exec(fullTag)?.[1] ?? '';
+    const src = attrValue(attrs, 'data');
+    if (src && /^https?:\/\//i.test(src)) {
+      record('object', src);
+      return '';
+    }
+    return fullTag;
+  });
+
+  out = out.replace(/<embed\b[^>]*>/gi, (fullTag) => {
+    const attrs = /^<embed\b([^>]*)>/i.exec(fullTag)?.[1] ?? '';
+    const src = attrValue(attrs, 'src');
+    if (src && /^https?:\/\//i.test(src)) {
+      record('embed', src);
+      return '';
+    }
+    return fullTag;
+  });
+
+  out = out.replace(
+    /@import\s+(?:url\(\s*)?["']?https?:\/\/[^;\n)"']+["']?\s*\)?\s*;?/gi,
+    (fullRule) => {
+      record('css', fullRule);
+      return '';
+    },
+  );
+
+  return { html: out, stripped };
+}
+
+/** Throws unless every remaining absolute resource URL is allowlisted. */
+export function assertNoRemoteResources(html, { allowedOrigins = [] } = {}) {
+  const allowed = new Set((allowedOrigins ?? []).map((origin) => String(origin).replace(/\/$/, '')));
+  for (const entry of extractMediaUrls(html)) {
+    const origin = new URL(entry.originalSrc).origin;
+    if (allowed.has(origin)) continue;
+    throw new Error(
+      `UNSTAGED_REMOTE_RESOURCE:${entry.tag}:${entry.attribute}:${maskMediaUrl(entry.originalSrc)}`,
+    );
+  }
+  if (/<meta[^>]+http-equiv\s*=\s*["']?refresh/i.test(html)) {
+    throw new Error('UNSTAGED_REMOTE_RESOURCE:meta:refresh');
+  }
+  if (/@import\s+(?:url\(\s*)?["']?https?:/i.test(html)) {
+    throw new Error('UNSTAGED_REMOTE_RESOURCE:css:import');
+  }
+}
+
+const COMPOSITION_CSP = [
+  "default-src 'none'",
+  "img-src 'self' data: blob:",
+  "media-src 'self' data: blob:",
+  "font-src 'self' data:",
+  "style-src 'self' 'unsafe-inline'",
+  "script-src 'self' 'unsafe-inline' data: blob:",
+  "connect-src 'none'",
+  "frame-src 'none'",
+  "object-src 'none'",
+  "base-uri 'none'",
+  "form-action 'none'",
+  "worker-src 'self' blob:",
+].join('; ');
+
+/**
+ * Deny-by-default network policy for the compiler/browser: media, fonts,
+ * scripts and styles stay local (or data:/blob:), while fetch/XHR, frames and
+ * plugins are blocked. The CLI-injected runtime is same-origin ('self').
+ */
+export function hardenCompositionNetwork(html) {
+  if (typeof html !== 'string') return html;
+  const meta = `<meta http-equiv="Content-Security-Policy" content="${COMPOSITION_CSP}">`;
+  const withoutExisting = html.replace(
+    /<meta\b[^>]*http-equiv\s*=\s*["']?Content-Security-Policy["']?[^>]*>/gi,
+    '',
+  );
+  if (/<head\b[^>]*>/i.test(withoutExisting)) {
+    return withoutExisting.replace(/<head\b[^>]*>/i, (head) => `${head}${meta}`);
+  }
+  if (/<html\b[^>]*>/i.test(withoutExisting)) {
+    return withoutExisting.replace(/<html\b[^>]*>/i, (root) => `${root}<head>${meta}</head>`);
+  }
+  return `${meta}${withoutExisting}`;
 }
 
 function urlHash(url) {
@@ -110,17 +479,17 @@ function hasMp4Magic(buffer) {
 }
 
 export async function fetchMediaBuffer(url, options = {}) {
-  const disallowLoopback =
-    options.disallowLoopback ?? (process.env.VP_ALLOW_TEST_LOOPBACK !== '1');
   try {
     const { buffer } = await fetchBounded(url, {
       ...options,
-      disallowLoopback,
+      // Undefined lets fetchBounded apply the media policy: loopback is only
+      // allowed by the test flag outside production (ADJ-02).
+      disallowLoopback: options.disallowLoopback,
     });
     return { ok: true, buffer };
   } catch (error) {
     const msg = error?.message ?? String(error);
-    if (msg.startsWith('SSRF_')) {
+    if (msg.startsWith('SSRF_') || msg === 'UNTRUSTED_CONTROL_PLANE_ORIGIN') {
       return { ok: false, reason: 'ssrf_blocked', detail: msg };
     }
     return { ok: false, reason: 'download_failed', detail: msg };
@@ -194,7 +563,7 @@ export async function downloadAndValidateImage(url, assetsDir, hash, {
     // spliced straight into an src="..." attribute.
     const dataUri = `data:image/svg+xml;base64,${buffer.toString("base64")}`;
     log(`[media-preloader] inlining SVG as data URI (${buffer.length} bytes)`);
-    return { ok: true, dataUri, kind };
+    return { ok: true, dataUri, kind, bytes: buffer.length };
   }
 
   const extByKind = { png: ".png", jpeg: ".jpg", gif: ".gif", webp: ".webp" };
@@ -213,7 +582,7 @@ export async function downloadAndValidateImage(url, assetsDir, hash, {
   const destPath = join(assetsDir, assetName);
   writeFileSync(destPath, buffer);
   log(`[media-preloader] staged image ${assetName} (${buffer.length} bytes, ${kind})`);
-  return { ok: true, path: destPath, assetName, kind };
+  return { ok: true, path: destPath, assetName, kind, bytes: buffer.length };
 }
 
 /**
@@ -236,6 +605,7 @@ export async function downloadAndValidateMedia(
   {
     fetchImpl = globalThis.fetch,
     ffprobePath = "ffprobe",
+    ffprobeTimeoutMs = 30_000,
     timeoutMs = DEFAULT_MEDIA_TIMEOUT_MS,
     maxBytes = DEFAULT_MAX_BYTES,
     log = () => {},
@@ -266,14 +636,14 @@ export async function downloadAndValidateMedia(
     }
 
     // ffprobe validation.
-    const probe = await runFfprobe(ffprobePath, tempPath, spawnImpl);
+    const probe = await runFfprobe(ffprobePath, tempPath, spawnImpl, ffprobeTimeoutMs);
     if (!probe.ok) {
       return { ok: false, reason: "ffprobe_failed", detail: probe.error };
     }
 
     renameSync(tempPath, destPath);
     log(`[media-preloader] validated ${basename(destPath)} (${probe.duration?.toFixed(2) ?? "?"}s)`);
-    return { ok: true, path: destPath, ...probe };
+    return { ok: true, path: destPath, bytes: buffer.length, ...probe };
   } catch (err) {
     return { ok: false, reason: "download_failed", detail: err?.message ?? String(err) };
   } finally {
@@ -285,7 +655,7 @@ export async function downloadAndValidateMedia(
   }
 }
 
-function runFfprobe(ffprobePath, filePath, spawnImpl = defaultSpawn) {
+function runFfprobe(ffprobePath, filePath, spawnImpl = defaultSpawn, timeoutMs = 30_000) {
   return new Promise((resolve) => {
     const child = spawnImpl(ffprobePath, [
       "-v", "error",
@@ -296,24 +666,35 @@ function runFfprobe(ffprobePath, filePath, spawnImpl = defaultSpawn) {
     ]);
     let stdout = "";
     let stderr = "";
+    let settled = false;
+    const settle = (value) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      resolve(value);
+    };
+    const timer = setTimeout(() => {
+      try { child.kill("SIGKILL"); } catch { /* already exited */ }
+      settle({ ok: false, error: `ffprobe timeout after ${timeoutMs}ms` });
+    }, timeoutMs);
     child.stdout.on("data", (c) => (stdout += c.toString()));
     child.stderr.on("data", (c) => (stderr += c.toString()));
     child.on("close", (code) => {
       if (code !== 0) {
-        resolve({ ok: false, error: stderr.trim() || `ffprobe exited ${code}` });
+        settle({ ok: false, error: stderr.trim() || `ffprobe exited ${code}` });
         return;
       }
       let parsed;
       try {
         parsed = JSON.parse(stdout);
       } catch {
-        resolve({ ok: true });
+        settle({ ok: true });
         return;
       }
       const format = parsed?.format ?? {};
       const videoStream = (parsed?.streams ?? []).find((s) => s.codec_type === "video");
       const audioStream = (parsed?.streams ?? []).find((s) => s.codec_type === "audio");
-      resolve({
+      settle({
         ok: true,
         duration: format.duration ? Number(format.duration) : undefined,
         width: videoStream?.width,
@@ -323,6 +704,9 @@ function runFfprobe(ffprobePath, filePath, spawnImpl = defaultSpawn) {
         hasAudioStream: Boolean(audioStream),
         audioCodec: audioStream?.codec_name,
       });
+    });
+    child.on?.("error", (error) => {
+      settle({ ok: false, error: error?.message ?? String(error) });
     });
   });
 }
@@ -380,6 +764,7 @@ export function sniffAudioKind(buffer) {
 export async function downloadAndValidateAudio(url, assetsDir, hash, {
   fetchImpl = globalThis.fetch,
   ffprobePath = "ffprobe",
+  ffprobeTimeoutMs = 30_000,
   timeoutMs = DEFAULT_MEDIA_TIMEOUT_MS,
   maxBytes = DEFAULT_MAX_BYTES,
   log = () => {},
@@ -412,7 +797,7 @@ export async function downloadAndValidateAudio(url, assetsDir, hash, {
     writeFileSync(tempPath, buffer);
 
     // ffprobe validation — MUST contain an audio stream.
-    const probe = await runFfprobe(ffprobePath, tempPath, spawnImpl);
+    const probe = await runFfprobe(ffprobePath, tempPath, spawnImpl, ffprobeTimeoutMs);
     if (!probe.ok) {
       return { ok: false, reason: "ffprobe_failed", detail: probe.error };
     }
@@ -426,7 +811,7 @@ export async function downloadAndValidateAudio(url, assetsDir, hash, {
 
     renameSync(tempPath, destPath);
     log(`[media-preloader] staged audio ${assetName} (${probe.duration?.toFixed(2) ?? "?"}s)`);
-    return { ok: true, path: destPath, assetName, kind, duration: probe.duration };
+    return { ok: true, path: destPath, assetName, kind, duration: probe.duration, bytes: buffer.length };
   } catch (err) {
     return { ok: false, reason: "download_failed", detail: err?.message ?? String(err) };
   } finally {
@@ -436,32 +821,6 @@ export async function downloadAndValidateAudio(url, assetsDir, hash, {
       // ignore cleanup errors
     }
   }
-}
-
-/**
- * Rewrite HTML so external video/audio/img src attributes point to local
- * files (or inline data URIs for SVG images).
- *
- * @param {string} html
- * @param {Record<string, string>} mapping originalUrl -> localRelativePath|dataUri
- * @returns {string}
- */
-export function rewriteHtmlMediaUrls(html, mapping) {
-  if (typeof html !== "string") return html;
-  if (!mapping || Object.keys(mapping).length === 0) return html;
-
-  // Replace only src values that exactly match a known original URL and that
-  // live inside a video/audio/img tag. This avoids touching unrelated elements.
-  const tagRe = /<(video|audio|img)\b([^>]*)>/gis;
-  return html.replace(tagRe, (fullTag, tagName, attrs) => {
-    const srcMatch = attrs.match(/(\bsrc\s*=\s*["'])([^"']+)(["'])/i);
-    if (!srcMatch) return fullTag;
-    const originalSrc = srcMatch[2];
-    const localSrc = mapping[originalSrc];
-    if (!localSrc) return fullTag;
-    const newAttrs = `${attrs.slice(0, srcMatch.index)}${srcMatch[1]}${localSrc}${srcMatch[3]}${attrs.slice(srcMatch.index + srcMatch[0].length)}`;
-    return `<${tagName}${newAttrs}>`;
-  });
 }
 
 /**
@@ -479,15 +838,76 @@ export function rewriteHtmlMediaUrls(html, mapping) {
  * @param {(command: string, args: string[]) => import('child_process').ChildProcess} [options.spawnImpl]
  * @returns {Promise<{ ok: true, html: string, downloaded: string[], skipped: boolean } | { ok: false, reason: string, failures: Array<{ url: string, reason: string, detail: string }> }>}
  */
+async function downloadRawAsset(url, destPath, options = {}) {
+  const fetched = await fetchMediaBuffer(url, options);
+  if (!fetched.ok) return fetched;
+  mkdirSync(dirname(destPath), { recursive: true });
+  writeFileSync(destPath, fetched.buffer);
+  return { ok: true, path: destPath, bytes: fetched.buffer.length };
+}
+
+/**
+ * Convenience: given an HTML string and a job directory, download and validate
+ * all external media, rewrite the HTML, and return diagnostics.
+ *
+ * Enforces AUD-B03: real attribute parsing, complete resource inventory,
+ * unsupported network resources stripped, remaining remote URLs rejected, and
+ * a deny-by-default CSP injected. Aggregate byte and time budgets bound the
+ * job (ADJ-03).
+ *
+ * @param {string} html
+ * @param {string} jobDir
+ * @param {object} [options]
+ * @param {typeof fetch} [options.fetchImpl]
+ * @param {string} [options.ffprobePath]
+ * @param {number} [options.timeoutMs]
+ * @param {number} [options.maxBytes]
+ * @param {number} [options.maxTotalBytes]
+ * @param {number} [options.maxTotalTimeMs]
+ * @param {string[]} [options.allowedOrigins]
+ * @param {(msg: string) => void} [options.log]
+ * @param {(command: string, args: string[]) => import('child_process').ChildProcess} [options.spawnImpl]
+ * @returns {Promise<{ ok: true, html: string, downloaded: string[], skipped: boolean } | { ok: false, reason: string, failures: Array<{ url: string, reason: string, detail: string }> }>}
+ */
 export async function prestageExternalMedia(html, jobDir, options = {}) {
-  const urls = extractMediaUrls(html);
-  if (urls.length > (options.maxMediaCount || 128)) return { ok: false, reason: "MEDIA_COUNT_LIMIT", failures: [{ reason: "MEDIA_COUNT_LIMIT", detail: "Media count limit exceeded" }], outcomes: [] };
-  if (urls.length === 0) {
-    return { ok: true, html, downloaded: [], skipped: true };
+  const maxMediaCount = options.maxMediaCount || 128;
+  const maxTotalBytes = options.maxTotalBytes ?? 1024 * 1024 * 1024;
+  const maxTotalTimeMs = options.maxTotalTimeMs ?? 10 * 60_000;
+  const deadline = Date.now() + maxTotalTimeMs;
+
+  const stripped = stripUnsupportedRemoteResources(html);
+  const workingHtml = stripped.html;
+  const urls = extractMediaUrls(workingHtml);
+  if (urls.length > maxMediaCount) {
+    return {
+      ok: false,
+      reason: "MEDIA_COUNT_LIMIT",
+      failures: [{ reason: "MEDIA_COUNT_LIMIT", detail: "Media count limit exceeded" }],
+      outcomes: [],
+    };
+  }
+
+  const unsupported = urls.filter((entry) => entry.kind === "unsupported");
+  if (unsupported.length > 0) {
+    return {
+      ok: false,
+      reason: "MEDIA_VALIDATION_FAILED",
+      failures: unsupported.map((entry) => ({
+        url: maskMediaUrl(entry.originalSrc),
+        reason: "unsupported_resource",
+        detail: `UNSTAGED_REMOTE_RESOURCE:${entry.tag}:${entry.attribute}`,
+      })),
+      outcomes: unsupported.map((entry) => ({
+        url: maskMediaUrl(entry.originalSrc),
+        tag: entry.tag,
+        ok: false,
+        reason: "unsupported_resource",
+      })),
+    };
   }
 
   const assetsDir = join(jobDir, "assets");
-  mkdirSync(assetsDir, { recursive: true });
+  if (urls.length > 0) mkdirSync(assetsDir, { recursive: true });
 
   const mapping = {};
   const downloaded = [];
@@ -495,72 +915,124 @@ export async function prestageExternalMedia(html, jobDir, options = {}) {
   // Opção A (F12-voz): resultados por ficheiro com URL mascarada (sem tokens)
   // para a evidence — substitui os logs runtime invisíveis no Coolify.
   const outcomes = [];
+  let totalBytes = 0;
+  let budgetExceeded = false;
 
-  for (const { tag, originalSrc } of urls) {
+  for (const { tag, originalSrc, kind } of urls) {
     const hash = urlHash(originalSrc);
     const masked = maskMediaUrl(originalSrc);
     const t0 = Date.now();
     const record = (ok, extra = {}) => outcomes.push({ url: masked, tag, ok, ms: Date.now() - t0, ...extra });
 
-    // V4-3f.13: images get content-sniffed handling (SVG -> inline data URI,
-    // raster -> correct extension). Leaving them to the CLI would name every
-    // extension-less URL `.mp4` and break the render's image probing.
-    if (tag === "image") {
-      const result = await downloadAndValidateImage(originalSrc, assetsDir, hash, options);
+    const remainingTime = deadline - Date.now();
+    if (remainingTime <= 0) {
+      budgetExceeded = true;
+      failures.push({ url: masked, reason: "MEDIA_TIME_BUDGET_EXCEEDED", detail: "aggregate time budget exhausted" });
+      record(false, { reason: "MEDIA_TIME_BUDGET_EXCEEDED" });
+      break;
+    }
+    const remainingBytes = maxTotalBytes - totalBytes;
+    if (remainingBytes <= 0) {
+      budgetExceeded = true;
+      failures.push({ url: masked, reason: "MEDIA_BUDGET_EXCEEDED", detail: "aggregate byte budget exhausted" });
+      record(false, { reason: "MEDIA_BUDGET_EXCEEDED" });
+      break;
+    }
+    const perFileOptions = {
+      ...options,
+      timeoutMs: Math.max(1, Math.min(options.timeoutMs ?? DEFAULT_MEDIA_TIMEOUT_MS, remainingTime)),
+      maxBytes: Math.max(1, Math.min(options.maxBytes ?? DEFAULT_MAX_BYTES, remainingBytes)),
+    };
+
+    const failFromResult = (result) => {
+      const overBudget = /DOWNLOAD_BYTES_LIMIT/.test(result.detail ?? "")
+        && (options.maxBytes ?? DEFAULT_MAX_BYTES) > remainingBytes;
+      if (overBudget) budgetExceeded = true;
+      const reason = overBudget ? "MEDIA_BUDGET_EXCEEDED" : result.reason;
+      failures.push({ url: masked, reason, detail: sanitizeMediaDetail(result.detail) });
+      record(false, { reason, detail: sanitizeMediaDetail(result.detail) });
+    };
+
+    let result;
+    if (kind === "image") {
+      // V4-3f.13: images get content-sniffed handling (SVG -> inline data URI,
+      // raster -> correct extension).
+      result = await downloadAndValidateImage(originalSrc, assetsDir, hash, perFileOptions);
+    } else if (kind === "audio") {
+      result = await downloadAndValidateAudio(originalSrc, assetsDir, hash, perFileOptions);
+    } else if (kind === "track") {
+      const ext = /\.vtt$/i.test(originalSrc) ? ".vtt" : /\.srt$/i.test(originalSrc) ? ".srt" : ".txt";
+      const assetName = `vp-media-${hash}${ext}`;
+      result = await downloadRawAsset(originalSrc, join(assetsDir, assetName), perFileOptions);
       if (result.ok) {
+        mapping[originalSrc] = `assets/${assetName}`;
+        downloaded.push(originalSrc);
+        record(true, { kind: "track" });
+      }
+    } else {
+      const ext = ".mp4"; // we only accept validated mp4 containers
+      const assetName = `vp-media-${hash}${ext}`;
+      const destPath = join(assetsDir, assetName);
+      if (existsSync(destPath)) {
+        // Already downloaded in a previous run (e.g. preview -> render reuse).
+        mapping[originalSrc] = `assets/${assetName}`;
+        downloaded.push(originalSrc);
+        record(true, { cached: true });
+        continue;
+      }
+      result = await downloadAndValidateMedia(originalSrc, destPath, perFileOptions);
+      if (result.ok) {
+        mapping[originalSrc] = `assets/${assetName}`;
+        downloaded.push(originalSrc);
+        record(true, {});
+      }
+    }
+
+    if (result?.ok) {
+      totalBytes += result.bytes ?? 0;
+      if (kind !== "track" && kind !== "video") {
         mapping[originalSrc] = result.dataUri ?? `assets/${result.assetName}`;
         downloaded.push(originalSrc);
         record(true, result.kind ? { kind: result.kind } : {});
-      } else {
-        failures.push({ url: masked, reason: result.reason, detail: sanitizeMediaDetail(result.detail) });
-        record(false, { reason: result.reason, detail: sanitizeMediaDetail(result.detail) });
       }
-      continue;
-    }
-
-    // V5-P5A: <audio> (real TTS voice / BGM) gets container sniffing + an
-    // ffprobe audio-stream requirement and is saved with the CORRECT
-    // extension — the old hardcoded `.mp4` path rejected every mp3/wav with
-    // `not_mp4`, killing the whole job at staging.
-    if (tag === "audio") {
-      const result = await downloadAndValidateAudio(originalSrc, assetsDir, hash, options);
-      if (result.ok) {
-        mapping[originalSrc] = `assets/${result.assetName}`;
-        downloaded.push(originalSrc);
-        record(true, { ...(result.kind ? { kind: result.kind } : {}), ...(typeof result.duration === "number" ? { duration_s: result.duration } : {}) });
-      } else {
-        failures.push({ url: masked, reason: result.reason, detail: sanitizeMediaDetail(result.detail) });
-        record(false, { reason: result.reason, detail: sanitizeMediaDetail(result.detail) });
+      if (totalBytes > maxTotalBytes) {
+        budgetExceeded = true;
+        failures.push({ url: masked, reason: "MEDIA_BUDGET_EXCEEDED", detail: "aggregate byte budget exceeded" });
+        record(false, { reason: "MEDIA_BUDGET_EXCEEDED" });
+        break;
       }
-      continue;
-    }
-
-    const ext = ".mp4"; // we only accept validated mp4 containers
-    const assetName = `vp-media-${hash}${ext}`;
-    const destPath = join(assetsDir, assetName);
-
-    if (existsSync(destPath)) {
-      // Already downloaded in a previous run (e.g. preview -> render reuse).
-      mapping[originalSrc] = `assets/${assetName}`;
-      downloaded.push(originalSrc);
-      record(true, { cached: true });
-      continue;
-    }
-
-    const result = await downloadAndValidateMedia(originalSrc, destPath, options);
-    if (result.ok) {
-      mapping[originalSrc] = `assets/${assetName}`;
-      downloaded.push(originalSrc);
-      record(true, {});
-    } else {
-      failures.push({ url: masked, reason: result.reason, detail: sanitizeMediaDetail(result.detail) });
-      record(false, { reason: result.reason, detail: sanitizeMediaDetail(result.detail) });
+    } else if (result && !result.ok) {
+      failFromResult(result);
     }
   }
 
   if (failures.length > 0) {
-    return { ok: false, reason: "MEDIA_VALIDATION_FAILED", failures, outcomes };
+    return {
+      ok: false,
+      reason: budgetExceeded ? "MEDIA_BUDGET_EXCEEDED" : "MEDIA_VALIDATION_FAILED",
+      failures,
+      outcomes,
+    };
   }
 
-  return { ok: true, html: rewriteHtmlMediaUrls(html, mapping), downloaded, skipped: false, outcomes };
+  const rewritten = rewriteHtmlMediaUrls(workingHtml, mapping);
+  try {
+    assertNoRemoteResources(rewritten, { allowedOrigins: options.allowedOrigins ?? [] });
+  } catch (error) {
+    return {
+      ok: false,
+      reason: "MEDIA_VALIDATION_FAILED",
+      failures: [{ url: "(html)", reason: "remote_resource", detail: error.message }],
+      outcomes,
+    };
+  }
+
+  return {
+    ok: true,
+    html: hardenCompositionNetwork(rewritten),
+    downloaded,
+    skipped: urls.length === 0 && stripped.stripped.length === 0,
+    outcomes,
+    stripped: stripped.stripped,
+  };
 }

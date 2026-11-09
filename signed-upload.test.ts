@@ -3,6 +3,9 @@ import { createServer } from 'node:http';
 import { afterEach, describe, expect, it } from 'vitest';
 import { uploadToSignedUrl } from './server.js';
 
+// The local storage fixture is an explicit test destination.
+process.env.VP_ALLOW_TEST_LOOPBACK ||= '1';
+
 const servers: Array<ReturnType<typeof createServer>> = [];
 
 afterEach(async () => {
