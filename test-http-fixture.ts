@@ -4,6 +4,7 @@ import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 process.env.WORKER_SECRET ||= 'test-worker-secret';
+process.env.VP_ALLOW_TEST_LOOPBACK ||= '1';
 process.env.WORK_DIR = mkdtempSync(join(tmpdir(), 'worker-http-f01-'));
 export function fixtureId(value: string) {
   const h = createHash('sha256').update(value).digest('hex');

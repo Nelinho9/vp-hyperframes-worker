@@ -110,8 +110,21 @@ function hasMp4Magic(buffer) {
 }
 
 export async function fetchMediaBuffer(url, options = {}) {
-  try { const { buffer } = await fetchBounded(url, options); return { ok: true, buffer }; }
-  catch (error) { return { ok: false, reason: 'download_failed', detail: error.message }; }
+  const disallowLoopback =
+    options.disallowLoopback ?? (process.env.VP_ALLOW_TEST_LOOPBACK !== '1');
+  try {
+    const { buffer } = await fetchBounded(url, {
+      ...options,
+      disallowLoopback,
+    });
+    return { ok: true, buffer };
+  } catch (error) {
+    const msg = error?.message ?? String(error);
+    if (msg.startsWith('SSRF_')) {
+      return { ok: false, reason: 'ssrf_blocked', detail: msg };
+    }
+    return { ok: false, reason: 'download_failed', detail: msg };
+  }
 }
 
 /**
@@ -167,9 +180,11 @@ export async function downloadAndValidateImage(url, assetsDir, hash, {
   timeoutMs = DEFAULT_MEDIA_TIMEOUT_MS,
   maxBytes = DEFAULT_MAX_BYTES,
   log = () => {},
+  lookupImpl,
+  disallowLoopback,
 } = {}) {
   log(`[media-preloader] downloading image ${urlHash(url)}...`);
-  const fetched = await fetchMediaBuffer(url, { fetchImpl, timeoutMs, maxBytes });
+  const fetched = await fetchMediaBuffer(url, { fetchImpl, timeoutMs, maxBytes, lookupImpl, disallowLoopback });
   if (!fetched.ok) return fetched;
   const buffer = fetched.buffer;
   const kind = sniffImageKind(buffer);
@@ -225,12 +240,14 @@ export async function downloadAndValidateMedia(
     maxBytes = DEFAULT_MAX_BYTES,
     log = () => {},
     spawnImpl = defaultSpawn,
+    lookupImpl,
+    disallowLoopback,
   } = {}
 ) {
   mkdirSync(dirname(destPath), { recursive: true });
 
   log(`[media-preloader] downloading ${urlHash(url)}...`);
-  const fetched = await fetchMediaBuffer(url, { fetchImpl, timeoutMs, maxBytes });
+  const fetched = await fetchMediaBuffer(url, { fetchImpl, timeoutMs, maxBytes, lookupImpl, disallowLoopback });
   if (!fetched.ok) return fetched;
   const buffer = fetched.buffer;
 
@@ -367,9 +384,11 @@ export async function downloadAndValidateAudio(url, assetsDir, hash, {
   maxBytes = DEFAULT_MAX_BYTES,
   log = () => {},
   spawnImpl = defaultSpawn,
+  lookupImpl,
+  disallowLoopback,
 } = {}) {
   log(`[media-preloader] downloading audio ${urlHash(url)}...`);
-  const fetched = await fetchMediaBuffer(url, { fetchImpl, timeoutMs, maxBytes });
+  const fetched = await fetchMediaBuffer(url, { fetchImpl, timeoutMs, maxBytes, lookupImpl, disallowLoopback });
   if (!fetched.ok) return fetched;
   const buffer = fetched.buffer;
 

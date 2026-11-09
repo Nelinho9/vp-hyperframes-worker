@@ -623,8 +623,77 @@ describe('opção A F12-voz — URLs mascaradas na evidence (sem tokens)', () =>
     if (result.ok) return;
     expect(result.failures[0].url).toBe('https://cdn.example.com/intro.mp4');
     const urls = result.outcomes.map((o) => o.url);
-    expect(urls).toEqual(['https://cdn.example.com/intro.mp4']);
+    expect( urls).toEqual(['https://cdn.example.com/intro.mp4']);
     expect(result.outcomes[0].ok).toBe(false);
     expect(typeof result.outcomes[0].ms).toBe('number');
+  });
+});
+
+describe('SSRF protection in worker media pre-staging (P7 / F01)', () => {
+  it('rejeita URLs privadas, loopback, metadata cloud e credenciais com reason ssrf_blocked sem chamar fetchImpl', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'vp-ssrf-'));
+    const fetchImpl = vi.fn();
+
+    const blockedUrls = [
+      'http://169.254.169.254/latest/meta-data/iam/security-credentials/',
+      'http://127.0.0.1/secret.mp4',
+      'http://10.0.0.1/internal.png',
+      'http://192.168.1.10/router.jpg',
+      'http://172.16.5.4/private.mp3',
+      'http://localhost:8080/admin.png',
+      'http://[::1]/loopback.png',
+      'https://user:pass@cdn.example.com/image.png',
+    ];
+
+    for (const url of blockedUrls) {
+      const res = await downloadAndValidateImage(url, dir, 'hashssrf', { fetchImpl });
+      expect(res.ok).toBe(false);
+      if (!res.ok) {
+        expect(res.reason).toBe('ssrf_blocked');
+      }
+    }
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  it('rejeita hostname público cujo DNS resolve para IP privado (DNS rebinding) sem chamar fetchImpl', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'vp-ssrf-dns-'));
+    const fetchImpl = vi.fn();
+    const lookupImpl = vi.fn().mockResolvedValue([{ address: '169.254.169.254', family: 4 }]);
+
+    const res = await prestageExternalMedia(
+      '<img id="img-rebind" src="https://evil-rebind.example.com/logo.png">',
+      dir,
+      { fetchImpl, lookupImpl } as Record<string, unknown>,
+    );
+
+    expect(res.ok).toBe(false);
+    if (!res.ok) {
+      expect(res.reason).toBe('MEDIA_VALIDATION_FAILED');
+      expect(res.failures[0].reason).toBe('ssrf_blocked');
+    }
+    expect(lookupImpl).toHaveBeenCalledWith('evil-rebind.example.com', { all: true, verbatim: true });
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  it('rejeita redirect 302 de host público para IP privado/metadata antes de seguir o hop', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'vp-ssrf-redir-'));
+    const redirectHeaders = new Map<string, string>([
+      ['location', 'http://169.254.169.254/latest/meta-data/'],
+    ]);
+    const fetchImpl = vi.fn().mockResolvedValueOnce({
+      ok: false,
+      status: 302,
+      headers: redirectHeaders as unknown as Headers,
+    } as unknown as Response);
+
+    const res = await downloadAndValidateImage('https://cdn.example.com/redirect-to-meta', dir, 'hashredir', {
+      fetchImpl,
+    });
+
+    expect(res.ok).toBe(false);
+    if (!res.ok) {
+      expect(res.reason).toBe('ssrf_blocked');
+    }
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
   });
 });
