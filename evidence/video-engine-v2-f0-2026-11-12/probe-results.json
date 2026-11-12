@@ -1,0 +1,43 @@
+{
+  "started_at": "2026-11-12T14:33:17.010Z",
+  "tts": {
+    "ok": true,
+    "task_id": "6f7964c30ad6ed6e387e3a8c3cc7c222",
+    "state": "success",
+    "fail_code": null,
+    "fail_msg": null,
+    "elapsed_ms": 10661,
+    "result_url_count": 1,
+    "model": "google/gemini-3-8-flash-tts"
+  },
+  "stt": {
+    "ok": true,
+    "task_id": "8db5d25ee5de146422f8176ad2d05fe2",
+    "audio_path": "projects/3e7992ac-2d61-40ae-ab5d-7577fb099863/audio/vo-1.wav",
+    "audio_bytes": 155564,
+    "elapsed_ms": 5442,
+    "word_count": 6,
+    "sample": [
+      {
+        "word": "Comida",
+        "start": 0.24,
+        "end": 1.027,
+        "speaker": "0"
+      },
+      {
+        "word": "como",
+        "start": 1.027,
+        "end": 1.264,
+        "speaker": "0"
+      },
+      {
+        "word": "em",
+        "start": 1.264,
+        "end": 1.422,
+        "speaker": "0"
+      }
+    ],
+    "result_shape": "resultObject.url"
+  },
+  "finished_at": "2026-11-12T14:33:37.252Z"
+}
