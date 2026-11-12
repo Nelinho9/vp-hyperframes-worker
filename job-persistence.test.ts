@@ -84,9 +84,15 @@ describe('boot rehydration (V4-3g.3)', () => {
     expect(await res.text()).toContain('placeholder-rehydrated');
   });
 
-  it('skips dirs whose marker has no index.html', async () => {
+  it('skips dirs whose marker has no index.html (F3: cai no placeholder, nunca serve o dir partido)', async () => {
     const res = await fetch(`${base}/preview/48b338d7-f533-e3b4-94ab-91c0f2895539`);
-    expect(res.status).toBe(404);
+    // F3 (plano v2, emenda A): ids de projeto sem job local válido seguem a
+    // cadeia de fallback (Storage → placeholder). O dir partido NUNCA é
+    // servido; sem Storage configurada no teste, o último recurso é o
+    // placeholder neutro (200 + X-Preview-Source), não o 404 histórico.
+    expect(res.status).toBe(200);
+    expect(res.headers.get('x-preview-source')).toBe('placeholder');
+    expect(await res.text()).toContain('A preparar o preview');
   });
 
   it('latest created_at wins when multiple jobs share a project_id', async () => {

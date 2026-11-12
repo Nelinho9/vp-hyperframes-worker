@@ -115,6 +115,48 @@ export function createSupabaseStorageClient(url, key, factory = createClient, wa
 const supabaseConfig = createSupabaseStorageClient(SUPABASE_URL, SUPABASE_KEY);
 const supabase = supabaseConfig.client;
 
+/**
+ * F3 (plano v2, emenda A): fallback de preview PRÉ-publicação — lê o
+ * build-input.html persistido na Storage pelo job build-html (F1). Qualquer
+ * worker pode servir qualquer projeto (o volume local é cache, não estado).
+ * Best-effort: sem cliente/objeto/bytes → null (a rota cai no placeholder).
+ * Exportado para teste com um cliente de storage injetado.
+ */
+export async function readPreviewBuildInput(storageClient, projectId) {
+  if (!storageClient || !ORCHESTRATOR_PROJECT_ID_RE.test(projectId)) return null;
+  try {
+    const { data, error } = await storageClient.storage
+      .from("video-artifacts")
+      .download(`projects/${projectId}/compositions/build-input.html`);
+    if (error || !data) return null;
+    const text = await data.text();
+    return typeof text === "string" && text.trim() ? text : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * F3: último recurso da cadeia de fallback — placeholder neutro com refresh
+ * (espelho do PREVIEW_PLACEHOLDER_HTML do orchestrator). Nunca revela conteúdo
+ * nem existência de projeto; o Studio continua o polling até o build aparecer.
+ */
+export const PREVIEW_PLACEHOLDER_HTML = `<!doctype html>
+<html lang="pt">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="refresh" content="5">
+<title>A preparar o preview…</title>
+<style>
+  html, body { margin: 0; width: 100%; height: 100%; background: #0b0b10; color: #e8e8f0;
+    font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; }
+  body { display: flex; align-items: center; justify-content: center; text-align: center; }
+</style>
+</head>
+<body><p>A preparar o preview…</p></body>
+</html>`;
+
 export function recordUploadFailure(uploadErrors, channel, error, warn = console.warn) {
   const message = error?.message ?? String(error);
   if (!(channel in uploadErrors)) uploadErrors[channel] = message;
@@ -1617,23 +1659,41 @@ app.get("/preview/:id", previewCors, async (req, res) => {
   if (!job) {
     job = jobs.get(req.params.id);
   }
-  if (!job) return res.status(404).json({ error: "not found" });
 
-  const indexPath = join(job.job_dir, "index.html");
-  if (!existsSync(indexPath)) {
-    return res.status(404).json({ error: "index.html not found" });
+  // F3 (plano v2, emenda A): cadeia de fallback do preview PRÉ-publicação —
+  // head publicado (ensurePreview acima) → job local → build-input.html da
+  // Storage (persistido pelo build-html do F1) → placeholder neutro. Qualquer
+  // worker pode servir qualquer projeto: o estado crítico vive na Supabase,
+  // o disco local é só cache. Só para ids de projeto (o lookup legacy por
+  // job_id mantém o 404 histórico).
+  const isProjectId = ORCHESTRATOR_PROJECT_ID_RE.test(req.params.id);
+  const indexPath = job ? join(job.job_dir, "index.html") : null;
+  let html = null;
+  let servedSource = null;
+  if (job && indexPath && existsSync(indexPath)) {
+    html = readFileSync(indexPath, "utf-8");
+    servedSource = "local-job";
+  } else if (isProjectId) {
+    html = await readPreviewBuildInput(supabase, req.params.id);
+    if (html !== null) servedSource = "storage-build-input";
   }
-
-  // V4-3f.3 (A3): inject the click-to-edit helper script before serving so
-  // the editor iframe can select elements and receive hot-swap patches.
-  let html = readFileSync(indexPath, "utf-8");
+  if (html === null) {
+    if (isProjectId) {
+      return res.status(200).set("X-Preview-Source", "placeholder").type("html").send(PREVIEW_PLACEHOLDER_HTML);
+    }
+    return res.status(404).json({ error: "not found" });
+  }
+  res.set("X-Preview-Source", servedSource);
 
   // E01-B C2 R09: attest WHICH canonical source this preview was staged from.
   // Publication activation candidates carry (publication_revision,
   // publication_content_hash) durably; legacy job previews stay identity-less —
-  // the editor correlates fail-closed.
-  const sourceIdentity = resolveServedSourceIdentity(job);
-  if (sourceIdentity) html = injectSourceIdentity(html, sourceIdentity);
+  // the editor correlates fail-closed. O fallback de Storage é pré-publicação:
+  // NUNCA recebe identidade (não há revisão publicada para atestar).
+  if (servedSource === "local-job") {
+    const sourceIdentity = resolveServedSourceIdentity(job);
+    if (sourceIdentity) html = injectSourceIdentity(html, sourceIdentity);
+  }
 
   // V4_04A fix: boot the vendored HyperFrames runtime in previews. The
   // sanitizer strips runtime <script> tags from the staged HTML (the CLI
