@@ -157,26 +157,24 @@ describe('runLlmStepJob — happy path (motor runStep vendado)', () => {
     expect(llmCalls[0].max_tokens).toBe(4096);
   });
 
-  it('storyboard e visual têm configs espelho das edges; audio usa o pipeline próprio', () => {
-    expect(LLM_STEP_SUPPORTED).toEqual(['design', 'storyboard', 'audio', 'visual']);
+  it('storyboard e visual têm configs espelho das edges; audio/quality usam pipelines próprios', () => {
+    expect(LLM_STEP_SUPPORTED).toEqual(['design', 'storyboard', 'audio', 'visual', 'quality']);
     const sb = stepConfigFor('storyboard');
     expect(sb?.inputPaths).toEqual(['capture/extracted/tokens.json', 'frame.md']);
     const vs = stepConfigFor('visual');
     expect(vs?.inputPaths).toEqual(['capture/extracted/tokens.json', 'STORYBOARD.md', 'frame.md', 'audio_meta.json']);
     expect(stepConfigFor('audio')).toBeNull(); // runAudioPipeline, não runStep
-    expect(stepConfigFor('quality')).toBeNull();
+    expect(stepConfigFor('quality')).toBeNull(); // runQualityPipeline, não runStep
   });
 });
 
 describe('runLlmStepJob — guardas e falhas honestas', () => {
-  it('quality/build (não portados) → LLM_STEP_UNSUPPORTED, sem rede', async () => {
+  it('build (não portado como llm-step) → LLM_STEP_UNSUPPORTED, sem rede', async () => {
     const { supabase } = makeSupabase();
     const { fetchImpl } = makeFetch();
-    for (const step of ['quality', 'build']) {
-      const result = await runLlmStepJob({ body: jobBody(step), supabase, workerSecret: 'ws', fetchImpl, log: () => {} });
-      expect(result.ok).toBe(false);
-      expect((result as { error: string }).error).toBe(`LLM_STEP_UNSUPPORTED:${step}`);
-    }
+    const result = await runLlmStepJob({ body: jobBody('build'), supabase, workerSecret: 'ws', fetchImpl, log: () => {} });
+    expect(result.ok).toBe(false);
+    expect((result as { error: string }).error).toBe('LLM_STEP_UNSUPPORTED:build');
     expect(fetchImpl).not.toHaveBeenCalled();
   });
 
@@ -282,6 +280,64 @@ describe('runLlmStepJob — áudio (pipeline vendado, env JIT)', () => {
     const result = await runLlmStepJob({ body: jobBody('audio'), supabase, workerSecret: 'ws', fetchImpl, audioPipelineImpl, log: () => {} });
     expect(result.ok).toBe(false);
     expect((result as { error: string }).error).toContain('TTS_ALL_SEGMENTS_FAILED');
+  });
+});
+
+describe('runLlmStepJob — quality (gate vendado, env VLM JIT)', () => {
+  const QUALITY_ENV_BLOCK = {
+    vision_api_url: 'https://openrouter.ai/api/v1',
+    vision_gate_model: 'vision/model',
+    vision_reasoning_effort: 'high',
+    fallback_api_url: 'https://api.kie.ai/codex/v1',
+    fallback_model: 'gpt-5-6-luna',
+    fallback_effort: 'high',
+    vision_timeout_ms: 60_000,
+    primary_api_key: 'vision-key-1',
+    fallback_api_key: 'kie-key-1',
+  };
+
+  it('mapeia o env JIT para runQualityPipeline e transporta score/needs_attention', async () => {
+    const { supabase } = makeSupabase();
+    const { fetchImpl } = makeFetch({ creds: { ...credentialsResponse(), quality: QUALITY_ENV_BLOCK } });
+    const qualityPipelineImpl = vi.fn(async () => ({
+      ok: true, artifacts: ['quality_report.json'], score: 8.5, needs_attention: false,
+      report_id: 'r1', status: 'approved', revision: 3,
+    }));
+    const body = { ...jobBody('quality'), inputs: { credentials_url: CREDS_URL, step: 'quality', expected_revision: 3 } };
+    const result = await runLlmStepJob({ body, supabase, workerSecret: 'ws', fetchImpl, qualityPipelineImpl, log: () => {} });
+    expect(result.ok).toBe(true);
+    expect(qualityPipelineImpl).toHaveBeenCalledTimes(1);
+    const [storage, projectId, opts, env] = qualityPipelineImpl.mock.calls[0];
+    expect(projectId).toBe(PROJECT_ID);
+    expect(opts).toEqual({ expectedRevision: 3, requestJobId: body.job_id });
+    expect(env).toMatchObject({
+      visionApiUrl: 'https://openrouter.ai/api/v1', visionGateModel: 'vision/model',
+      fallbackApiUrl: 'https://api.kie.ai/codex/v1', fallbackModel: 'gpt-5-6-luna',
+      primaryApiKey: 'vision-key-1', fallbackApiKey: 'kie-key-1', visionTimeoutMs: 60_000,
+    });
+    expect(typeof storage.readRegistry).toBe('function');
+    expect(typeof storage.readBinary).toBe('function');
+    const sr = (result as { step_result: Record<string, unknown> }).step_result;
+    expect(sr.artifacts).toEqual(['quality_report.json']);
+    expect(sr.score).toBe(8.5);
+    expect(typeof sr.duration_seconds).toBe('number');
+  });
+
+  it('sem bloco quality nas credenciais → LLM_STEP_QUALITY_ENV_MISSING', async () => {
+    const { supabase } = makeSupabase();
+    const { fetchImpl } = makeFetch();
+    const result = await runLlmStepJob({ body: jobBody('quality'), supabase, workerSecret: 'ws', fetchImpl, log: () => {} });
+    expect(result.ok).toBe(false);
+    expect((result as { error: string }).error).toBe('LLM_STEP_QUALITY_ENV_MISSING');
+  });
+
+  it('falha estruturada do gate → LLM_STEP_FAILED com o código fiel (sem score fabricado)', async () => {
+    const { supabase } = makeSupabase();
+    const { fetchImpl } = makeFetch({ creds: { ...credentialsResponse(), quality: QUALITY_ENV_BLOCK } });
+    const qualityPipelineImpl = vi.fn(async () => ({ ok: false, error: 'QUALITY_SNAPSHOTS_MISSING', detail: 'no snapshots' }));
+    const result = await runLlmStepJob({ body: jobBody('quality'), supabase, workerSecret: 'ws', fetchImpl, qualityPipelineImpl, log: () => {} });
+    expect(result.ok).toBe(false);
+    expect((result as { error: string }).error).toContain('QUALITY_SNAPSHOTS_MISSING');
   });
 });
 

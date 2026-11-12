@@ -44,17 +44,29 @@ function llmStepPayload(step = 'design') {
 }
 
 describe('parseRenderJob — modo llm-step', () => {
-  it('aceita design/storyboard/audio/visual sem HTML, com credentials_url https', () => {
-    for (const step of ['design', 'storyboard', 'audio', 'visual']) {
+  it('aceita design/storyboard/audio/visual/quality sem HTML, com credentials_url https', () => {
+    for (const step of ['design', 'storyboard', 'audio', 'visual', 'quality']) {
       const { body } = parseRenderJob(llmStepPayload(step), 'worker-secret');
       expect(body.mode).toBe('llm-step');
       expect(body.step).toBe(step);
     }
   });
 
-  it('recusa steps não portados (quality/build) no modo llm-step', () => {
-    for (const step of ['quality', 'build']) {
-      expect(() => parseRenderJob(llmStepPayload(step), 'worker-secret')).toThrow('INVALID_STEP_MODE');
+  it('recusa steps não portados (build) no modo llm-step', () => {
+    expect(() => parseRenderJob(llmStepPayload('build'), 'worker-secret')).toThrow('INVALID_STEP_MODE');
+  });
+
+  it('quality aceita expected_revision inteira >= 1; recusa valores inválidos', () => {
+    const ok = llmStepPayload('quality');
+    (ok.inputs as Record<string, unknown>).expected_revision = 3;
+    ok.input_hash = logicalInputHash(ok);
+    expect(parseRenderJob(ok, 'worker-secret').body.inputs.expected_revision).toBe(3);
+
+    for (const bad of [0, -1, 1.5, '3']) {
+      const p = llmStepPayload('quality');
+      (p.inputs as Record<string, unknown>).expected_revision = bad;
+      p.input_hash = logicalInputHash(p);
+      expect(() => parseRenderJob(p, 'worker-secret')).toThrow('INVALID_LLM_STEP_INPUTS');
     }
   });
 

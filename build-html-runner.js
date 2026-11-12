@@ -89,6 +89,8 @@ export async function fetchBuildCredentials(args) {
     steps: data?.steps && typeof data.steps === 'object' ? data.steps : null,
     // F2 (plano v2): env do pipeline de áudio (TTS/BGM/ASR), só em memória.
     audio: data?.audio && typeof data.audio === 'object' ? data.audio : null,
+    // F2 (plano v2): env do gate de qualidade (VLM primário + fallback).
+    quality: data?.quality && typeof data.quality === 'object' ? data.quality : null,
   };
 }
 

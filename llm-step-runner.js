@@ -41,12 +41,15 @@ import {
   extractVisualArtifacts,
 } from './build-html/vendor/video-v4-steps/visualStep.ts';
 import { runAudioPipeline } from './build-html/vendor/video-v4-audio/audioPipeline.ts';
+import { runQualityPipeline } from './build-html/vendor/video-v4-quality/qualityPipeline.ts';
+import { createCompositionPublicationStore } from './build-html/vendor/_shared/compositionPublicationStore.ts';
+import { readQualityCompositionRegistry } from './build-html/vendor/video-v4-quality/compositionContext.ts';
 import { fetchBuildCredentials } from './build-html-runner.js';
 
 const ARTIFACTS_BUCKET = 'video-artifacts';
 
 /** Allowlist de runners portados (espelho do orchestrator). */
-export const LLM_STEP_SUPPORTED = ['design', 'storyboard', 'audio', 'visual'];
+export const LLM_STEP_SUPPORTED = ['design', 'storyboard', 'audio', 'visual', 'quality'];
 
 /**
  * StepConfigs — espelho EXATO das edges (video-v4-designer/storyboarder/
@@ -154,6 +157,7 @@ export async function runLlmStepJob(args) {
   // Seam de teste (DI, padrão do codebase): o pipeline de áudio pode ser
   // injetado; em produção é o módulo vendado tal-e-qual.
   const audioPipelineImpl = args.audioPipelineImpl ?? runAudioPipeline;
+  const qualityPipelineImpl = args.qualityPipelineImpl ?? runQualityPipeline;
   const projectId = body?.project_id;
   const step = body?.inputs?.step ?? body?.step;
   if (!projectId) return { ok: false, error: 'LLM_STEP_PROJECT_ID_MISSING' };
@@ -235,6 +239,64 @@ export async function runLlmStepJob(args) {
           ...(payload.needs_attention === true ? { needs_attention: true } : {}),
           ...(Array.isArray(payload.voice_fit_failures) && payload.voice_fit_failures.length > 0
             ? { voice_fit_failures: payload.voice_fit_failures } : {}),
+        },
+      };
+    }
+    if (step === 'quality') {
+      // F2 (plano v2): gate de qualidade pós-finalize — o MESMO módulo puro
+      // que a edge video-v4-quality executa. Env VLM (primário + fallback)
+      // vem JIT do endpoint de credenciais (emenda C), nunca do payload.
+      const q = credentials.quality;
+      if (!q || typeof q !== 'object') {
+        return { ok: false, error: 'LLM_STEP_QUALITY_ENV_MISSING' };
+      }
+      const qualityEnv = {
+        visionApiUrl: typeof q.vision_api_url === 'string' ? q.vision_api_url : '',
+        visionGateModel: typeof q.vision_gate_model === 'string' ? q.vision_gate_model : '',
+        visionReasoningEffort: typeof q.vision_reasoning_effort === 'string' ? q.vision_reasoning_effort : '',
+        fallbackApiUrl: typeof q.fallback_api_url === 'string' ? q.fallback_api_url : '',
+        fallbackModel: typeof q.fallback_model === 'string' ? q.fallback_model : '',
+        fallbackEffort: typeof q.fallback_effort === 'string' && q.fallback_effort ? q.fallback_effort : 'high',
+        visionTimeoutMs: typeof q.vision_timeout_ms === 'number' && q.vision_timeout_ms > 0 ? q.vision_timeout_ms : 60_000,
+        primaryApiKey: typeof q.primary_api_key === 'string' && q.primary_api_key ? q.primary_api_key : undefined,
+        fallbackApiKey: typeof q.fallback_api_key === 'string' && q.fallback_api_key ? q.fallback_api_key : undefined,
+      };
+      // Storage do gate — espelho do createStorage da edge (caps de tamanho
+      // incluídos) + readRegistry head-first via publication store vendado.
+      const publicationStore = createCompositionPublicationStore(supabase);
+      const qualityStorage = {
+        ...storage,
+        readRegistry: (pid, revision) => readQualityCompositionRegistry(publicationStore, pid, revision),
+        async readText(path) {
+          const { data, error } = await supabase.storage.from(ARTIFACTS_BUCKET).download(path);
+          if (error || !data) return null;
+          if (data.size > 1024 * 1024) throw new Error('QUALITY_TEXT_TOO_LARGE');
+          return await data.text();
+        },
+        async readBinary(path) {
+          const { data, error } = await supabase.storage.from(ARTIFACTS_BUCKET).download(path);
+          if (error || !data) return null;
+          if (data.size > 8 * 1024 * 1024) throw new Error('QUALITY_SNAPSHOT_TOO_LARGE');
+          return new Uint8Array(await data.arrayBuffer());
+        },
+      };
+      const expectedRevision = typeof body?.inputs?.expected_revision === 'number' && Number.isFinite(body.inputs.expected_revision)
+        ? Math.floor(body.inputs.expected_revision)
+        : null;
+      const payload = await qualityPipelineImpl(qualityStorage, projectId, { expectedRevision, requestJobId: body?.job_id ?? null }, qualityEnv);
+      const durationSeconds = Math.round((Date.now() - startedAt) / 100) / 10;
+      if (payload.ok === false) {
+        log(`[llm-step] job step=quality project=${projectId} failed: ${payload.error}`);
+        return { ok: false, error: `LLM_STEP_FAILED:${payload.error}${payload.detail ? `: ${payload.detail}` : ''}`.slice(0, 450) };
+      }
+      log(`[llm-step] job step=quality project=${projectId} done (${durationSeconds}s, score=${payload.score})`);
+      return {
+        ok: true,
+        step_result: {
+          artifacts: payload.artifacts,
+          duration_seconds: durationSeconds,
+          ...(typeof payload.score === 'number' ? { score: payload.score } : {}),
+          ...(payload.needs_attention === true ? { needs_attention: true } : {}),
         },
       };
     }

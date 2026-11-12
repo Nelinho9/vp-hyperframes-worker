@@ -37,6 +37,12 @@ export const ENTRY_MODULES = [
   // F2 (plano v2): pipeline completo do step de áudio (TTS/BGM/ASR) — o MESMO
   // módulo que a edge video-v4-audio executa (extração behavior-preserving).
   'video-v4-audio/audioPipeline.ts',
+  // F2 (plano v2): gate de qualidade pós-finalize (VLM + determinístico) —
+  // o MESMO módulo que a edge video-v4-quality executa.
+  'video-v4-quality/qualityPipeline.ts',
+  // F2: o runner llm-step lê o registry publicado (head-first) para o quality.
+  '_shared/compositionPublicationStore.ts',
+  'video-v4-quality/compositionContext.ts',
 ];
 
 /**

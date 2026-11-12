@@ -29,13 +29,13 @@ export function parseRenderJob(value, workerSecret) {
   for (const key of ['job_id', 'project_id']) if (!UUID_RE.test(body[key] || '')) fail('INVALID_UUID');
   // UUID identity is case insensitive, including on a Windows persistence volume.
   body.job_id = body.job_id.toLowerCase(); body.project_id = body.project_id.toLowerCase();
-  if (!['preview', 'build', 'render', 'finalize', 'design', 'storyboard', 'audio', 'visual'].includes(body.step) || !['preview', 'render', 'build-html', 'llm-step'].includes(body.mode)) fail('INVALID_STEP_MODE');
+  if (!['preview', 'build', 'render', 'finalize', 'design', 'storyboard', 'audio', 'visual', 'quality'].includes(body.step) || !['preview', 'render', 'build-html', 'llm-step'].includes(body.mode)) fail('INVALID_STEP_MODE');
   // F1 (plano v2): build-html é um job de GERAÇÃO (LLM no worker) — só existe
   // como step 'build'. O HTML é produzido, não transportado.
   if (body.mode === 'build-html' && body.step !== 'build') fail('INVALID_STEP_MODE');
   // F2 (plano v2): llm-step só existe para os steps com runner portado
-  // (allowlist espelho do orchestrator; quality fica na edge).
-  if (body.mode === 'llm-step' && !['design', 'storyboard', 'audio', 'visual'].includes(body.step)) fail('INVALID_STEP_MODE');
+  // (allowlist espelho do orchestrator).
+  if (body.mode === 'llm-step' && !['design', 'storyboard', 'audio', 'visual', 'quality'].includes(body.step)) fail('INVALID_STEP_MODE');
   if (body.contract_version !== undefined && body.contract_version !== 1) fail('UNSUPPORTED_CONTRACT');
   if (body.contract_version === 1) {
     if (!UUID_RE.test(body.request_id || '') || !Number.isSafeInteger(body.revision) || body.revision < 1 || !/^[a-f0-9]{64}$/.test(body.input_hash || '')) fail('INVALID_REVISION');
@@ -66,8 +66,11 @@ export function parseRenderJob(value, workerSecret) {
     const credentialsUrl = body.inputs?.credentials_url;
     if (typeof credentialsUrl !== 'string' || !https(credentialsUrl)) fail('INVALID_CREDENTIALS_URL');
     if (body.inputs?.step !== body.step) fail('INVALID_LLM_STEP_INPUTS');
+    // F2: o quality aceita a revisão esperada (opcional, inteira >= 1).
+    if (body.inputs?.expected_revision !== undefined
+      && (!Number.isSafeInteger(body.inputs.expected_revision) || body.inputs.expected_revision < 1)) fail('INVALID_LLM_STEP_INPUTS');
     for (const key of Object.keys(body.inputs ?? {})) {
-      if (!['credentials_url', 'step'].includes(key)) fail('INVALID_LLM_STEP_INPUTS');
+      if (!['credentials_url', 'step', 'expected_revision'].includes(key)) fail('INVALID_LLM_STEP_INPUTS');
     }
   }
   if (html) {
