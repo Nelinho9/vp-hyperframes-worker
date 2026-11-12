@@ -33,6 +33,15 @@ const ARTIFACTS_BUCKET = 'video-artifacts';
 /** Mesmo orçamento do builder edge (video-v4-builder/index.ts, 2026-10-18). */
 export const BUILD_LLM_TIMEOUT_MS = 360_000;
 export const BUILD_CREDENTIALS_TIMEOUT_MS = 15_000;
+/**
+ * Retry budget do build (emenda E, prova de paridade 2026-11-12): o prompt de
+ * composição HTML é o mais pesado e o origin do provider devolve 524 com
+ * frequência sob carga. O worker não tem o wall-cap das edges, por isso o
+ * build tem mais tentativas com backoff crescente (5s/15s/30s/60s) antes de
+ * falhar o job. Steps LLM leves mantêm o default do cliente (3 tentativas).
+ */
+export const BUILD_LLM_MAX_ATTEMPTS = 5;
+export const BUILD_LLM_RETRY_DELAY_MS = [5_000, 15_000, 30_000, 60_000];
 /** TTL das assinaturas de leitura VO — espelha o builder edge (7 dias). */
 export const BUILD_SIGN_READ_TTL_SEC = 604_800;
 
@@ -299,7 +308,16 @@ export async function runBuildHtmlJob(args) {
     });
   };
 
-  const llm = createWorkerLlmClient(credentials, { fetchImpl });
+  // Build é o prompt mais pesado (composição HTML completa) e o mais exposto
+  // a 524 do origin do provider (prova de paridade 2026-11-12: 3 tentativas
+  // esgotavam-se com 524 em todas). Emenda E: o worker é o único dono do
+  // retry budget e NÃO tem o wall-cap das edges — damos mais tentativas com
+  // backoff crescente ao build. Os steps LLM leves mantêm o default (3).
+  const llm = createWorkerLlmClient(credentials, {
+    fetchImpl,
+    maxAttempts: BUILD_LLM_MAX_ATTEMPTS,
+    retryDelayMs: BUILD_LLM_RETRY_DELAY_MS,
+  });
   const lint = createEdgeLintRunner();
   const brief = typeof inputs.brief === 'string' ? inputs.brief : undefined;
   const aspectRatio = typeof inputs.aspect_ratio === 'string' ? inputs.aspect_ratio : undefined;
