@@ -63,6 +63,7 @@ import {
   supervisorEnabled,
 } from "./pipeline-runner.js";
 import { runBuildHtmlJob } from "./build-html-runner.js";
+import { pruneTerminalJobs, retentionTtlMs, directoryBytes } from "./job-retention.js";
 
 const app = express();
 app.use('/job', (req, res, next) => {
@@ -352,12 +353,32 @@ export function rehydrateJobs() {
 rehydrateJobs();
 // F1 (plano v2): dois tipos de job no mesmo contentor — render/preview (staging
 // + CLI) e build-html (geração LLM com módulos vendados, sem teto de CPU).
+// F2/F3 (emenda B): pools separados — geração (I/O-bound, LLM_JOB_CONCURRENCY)
+// nunca fica atrás de renders Chromium (JOB_CONCURRENCY, limitado por RAM).
 const jobQueue = createJobQueue({ root: WORK_DIR, jobs,
   processJob: (payload) => (payload?.mode === "build-html" ? stageBuildHtmlJob(payload) : stageJob(payload)),
   deliverCallback: retryTerminalCallback,
-  concurrency: process.env.JOB_CONCURRENCY, capacity: process.env.JOB_QUEUE_CAPACITY });
+  concurrency: process.env.JOB_CONCURRENCY, capacity: process.env.JOB_QUEUE_CAPACITY,
+  pools: {
+    llm: { concurrency: process.env.LLM_JOB_CONCURRENCY || 4, capacity: process.env.LLM_JOB_CAPACITY || 32 },
+    render: { concurrency: process.env.JOB_CONCURRENCY || 1, capacity: process.env.JOB_QUEUE_CAPACITY || 16 },
+  } });
 jobQueue.recover();
 for (const job of [...jobs.values()].sort((a, b) => String(a.created_at).localeCompare(String(b.created_at)))) projectJobs.set(job.project_id, job.id);
+
+// F3 (plano v2, emenda H1): retenção dos job dirs terminais. A cópia durável
+// crítica vive na Supabase Storage; o volume é cache reconstruível. Poda no
+// boot + a cada 6h; JOB_RETENTION_TTL_DAYS=0 desliga.
+const RETENTION_TTL_MS = retentionTtlMs(process.env);
+let lastRetention = { pruned: 0, kept: 0, errors: 0, at: null };
+function runRetention() {
+  lastRetention = { ...pruneTerminalJobs({ root: WORK_DIR, jobs, projectJobs, ttlMs: RETENTION_TTL_MS, log: console.log }), at: new Date().toISOString() };
+  if (lastRetention.pruned > 0) console.log(`[retention] pruned ${lastRetention.pruned} terminal job dir(s)`);
+}
+runRetention();
+const retentionTimer = setInterval(runRetention, 6 * 3600_000);
+retentionTimer.unref?.();
+
 async function retryTerminalCallback(job, options = {}) {
   if (!job.callback?.url || job.callback_status?.ok) return;
   job.callback_payload ||= { job_id: job.id, project_id: job.project_id, request_id: job.request_id, step: job.step,
@@ -543,6 +564,25 @@ app.get("/healthz", (_req, res) => {
     uptime_s: Math.round(process.uptime()),
     active_jobs: jobQueue.stats().active,
     queue: jobQueue.stats(),
+  });
+});
+
+// F3 (plano v2): observabilidade — métricas do worker para alertas/dashboards
+// (Uptime Kuma / scraper). Autenticado com o worker secret; sem dados de
+// projeto/credenciais: só contagens, estados e uso de disco.
+app.get("/metrics", (req, res) => {
+  const auth = authorizedWorkerService(req);
+  if (!auth.ok) return res.status(auth.status).json({ error: auth.error });
+  const byStatus = {};
+  for (const job of jobs.values()) byStatus[job.status] = (byStatus[job.status] ?? 0) + 1;
+  res.json({
+    ok: true,
+    ts: Date.now(),
+    uptime_s: Math.round(process.uptime()),
+    queue: jobQueue.stats(),
+    jobs: { total: jobs.size, by_status: byStatus, projects: projectJobs.size },
+    retention: { ttl_days: RETENTION_TTL_MS / 86_400_000, last: lastRetention },
+    work_dir_bytes: directoryBytes(WORK_DIR),
   });
 });
 
