@@ -62,6 +62,7 @@ import {
   startSupervision,
   supervisorEnabled,
 } from "./pipeline-runner.js";
+import { runBuildHtmlJob } from "./build-html-runner.js";
 
 const app = express();
 app.use('/job', (req, res, next) => {
@@ -349,17 +350,35 @@ export function rehydrateJobs() {
 }
 
 rehydrateJobs();
-const jobQueue = createJobQueue({ root: WORK_DIR, jobs, processJob: stageJob, deliverCallback: retryTerminalCallback,
+// F1 (plano v2): dois tipos de job no mesmo contentor — render/preview (staging
+// + CLI) e build-html (geração LLM com módulos vendados, sem teto de CPU).
+const jobQueue = createJobQueue({ root: WORK_DIR, jobs,
+  processJob: (payload) => (payload?.mode === "build-html" ? stageBuildHtmlJob(payload) : stageJob(payload)),
+  deliverCallback: retryTerminalCallback,
   concurrency: process.env.JOB_CONCURRENCY, capacity: process.env.JOB_QUEUE_CAPACITY });
 jobQueue.recover();
 for (const job of [...jobs.values()].sort((a, b) => String(a.created_at).localeCompare(String(b.created_at)))) projectJobs.set(job.project_id, job.id);
-async function retryTerminalCallback(job) {
+async function retryTerminalCallback(job, options = {}) {
   if (!job.callback?.url || job.callback_status?.ok) return;
   job.callback_payload ||= { job_id: job.id, project_id: job.project_id, request_id: job.request_id, step: job.step,
     revision: job.revision, input_hash: job.input_hash, callback_nonce: job.callback.nonce,
     status: job.status, ...(job.status === 'failed' ? { error: job.error_code || 'WORKER_JOB_FAILED' } : {}) };
   atomicWriteJob(job);
-  job.callback_status = await postCallback(job.callback.url, job.callback.secret, job.callback_payload);
+  job.callback_status = await postCallback(job.callback.url, job.callback.secret, job.callback_payload, options);
+  // F1 (plano v2, emenda C): após entrega bem-sucedida o secret de transporte
+  // deixa de ser necessário — redige-o do estado durável (o ficheiro da fila
+  // não guarda credenciais em repouso mais tempo do que o preciso). Entregas
+  // falhadas mantêm o secret para o retry no rehydrate. Duas cópias existem:
+  // payload.callback (contrato) e job.callback (registo da fila).
+  if (job.callback_status?.ok) {
+    if (typeof job.payload?.callback?.secret === 'string') {
+      job.payload = { ...job.payload, callback: { ...job.payload.callback, secret: '[redacted]' } };
+    }
+    if (typeof job.callback?.secret === 'string') {
+      job.callback = { ...job.callback, secret: '[redacted]' };
+    }
+    atomicWriteJob(job);
+  }
 }
 
 /**
@@ -587,6 +606,73 @@ app.get("/bgm/:file", runtimeCors, (req, res) => {
 });
 
 // ── Submit job ──────────────────────────────────────────────────────
+/**
+ * F1 (plano Video-Engine v2): job de GERAÇÃO do HTML de build no worker.
+ * O loop LLM→repair→lint→fallback corre aqui (sem o teto de CPU das edges);
+ * as credenciais LLM são pedidas JIT ao orchestrator — o payload durável não
+ * contém keys (emenda C). O resultado público vai no callback como
+ * `build_result`; o orchestrator lê o HTML da Storage e despacha o render.
+ * Nunca lança: o estado terminal + callback são sempre produzidos.
+ */
+async function stageBuildHtmlJob(body) {
+  const job = jobs.get(body.job_id);
+  if (!job) throw new Error("BUILD_JOB_NOT_FOUND");
+  const startTime = Date.now();
+  let storageHost = "";
+  try { storageHost = new URL(SUPABASE_URL).host.toLowerCase(); } catch { /* sem storage host */ }
+  let result;
+  try {
+    result = await runBuildHtmlJob({
+      body,
+      supabase,
+      // BGM: a biblioteca vendida é servida pelo PRÓPRIO worker; o origin
+      // público vem do dispatch (paridade com o resolveBgmSrc do builder edge).
+      workerOrigin: job.public_origin || `http://127.0.0.1:${PORT}`,
+      workerSecret: WORKER_SECRET,
+      storageHost,
+      fetchImpl: fetch,
+      log: console.log,
+    });
+  } catch (err) {
+    result = { ok: false, error: formatExecError(err) };
+  }
+  job.total_ms = Date.now() - startTime;
+  job.completed_at = new Date().toISOString();
+  if (result.ok) {
+    job.status = "done";
+    job.build_result = result;
+    job.uploaded = { composition_html: true };
+    job.callback_payload = {
+      job_id: job.id, project_id: job.project_id, step: job.step,
+      request_id: job.request_id, revision: job.revision, input_hash: job.input_hash,
+      callback_nonce: job.callback?.nonce,
+      status: "done",
+      uploaded: { composition_html: true },
+      build_result: result,
+      tokens: result.tokens,
+      total_ms: job.total_ms,
+    };
+    console.log(`[build-html] job ${job.id} done (project ${job.project_id}, retries=${result.retries}, fallback=${result.fallback}, ${job.total_ms}ms)`);
+  } else {
+    job.status = "failed";
+    job.error_code = "BUILD_HTML_FAILED";
+    job.error = result.error;
+    job.callback_payload = {
+      job_id: job.id, project_id: job.project_id, step: job.step,
+      request_id: job.request_id, revision: job.revision, input_hash: job.input_hash,
+      callback_nonce: job.callback?.nonce,
+      status: "failed",
+      error: result.error,
+      total_ms: job.total_ms,
+    };
+    console.error(`[build-html] job ${job.id} failed (project ${job.project_id}): ${String(result.error).slice(-500)}`);
+  }
+  // A entrega do callback (com retry) fica a cargo da fila durável
+  // (deliverCallback=retryTerminalCallback), que também redige o secret de
+  // transporte após entrega bem-sucedida (emenda C).
+  atomicWriteJob(job);
+}
+
 async function stageJob(body, { publishPreview = true, resolvePublished = true } = {}) {
   const project_id = body.project_id;
   const step = body.step;
@@ -1089,6 +1175,17 @@ app.post('/job', (req, res) => {
     if (result.status === 409) return res.status(409).json({ error: 'JOB_HASH_CONFLICT' });
     if (result.status === 429) return res.status(429).json({ error: 'JOB_QUEUE_FULL' });
     if (result.status === 503) return res.status(503).json({ error: 'DURABLE_STORE_UNAVAILABLE' });
+    // F1: origin público deste worker (via proxy Coolify) — o build-html usa-o
+    // para resolver a BGM vendada no HTML publicado (paridade com o edge).
+    // Campo do REGISTO do job, nunca do payload hashado.
+    if (result.status === 202) {
+      const host = req.get('x-forwarded-host') || req.get('host') || '';
+      const proto = (req.get('x-forwarded-proto') || 'https').split(',')[0].trim();
+      if (host && /^https?$/.test(proto)) {
+        result.job.public_origin = `${proto}://${host}`;
+        atomicWriteJob(result.job);
+      }
+    }
     return res.status(result.status).json({ job_id: result.job.id, status: result.job.status });
   } catch (error) {
     const code = error?.message || 'INVALID_JOB';
@@ -2052,4 +2149,4 @@ if (isMain) {
   });
 }
 
-export { app, injectPreviewHelper };
+export { app, injectPreviewHelper, retryTerminalCallback };

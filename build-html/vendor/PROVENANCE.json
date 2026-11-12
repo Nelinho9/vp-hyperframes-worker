@@ -1,0 +1,23 @@
+{
+  "contract": "build-html-vendor.v1",
+  "source_repo": "visttapro (supabase/functions)",
+  "source_commit": "54ae718ff511a62a273aea6e541fd48ba53353dc",
+  "synced_at": "2026-11-12T13:58:48.682Z",
+  "node_requirement": ">=22.18 (native TypeScript type stripping)",
+  "files": {
+    "_shared/llmProvider.ts": "006586db4b666bf51f3dbdf0c3399d6ef2427ea27854d2f0ce2116a1bcf93dbd",
+    "_shared/skills/hyperframesAnimation.ts": "360954c7342506621e635e01ecb56213ccdf4aa30f8be275109ed130622409cd",
+    "_shared/skills/hyperframesCore.ts": "bea1844fd556ad9001e82f519b7359afcb9cb587d0607b32faaff5758b2c1bee",
+    "_shared/skills/hyperframesCreative.ts": "df7119aef8cb720b38382f8dc95ad1840f493055606a500cdded4a9ba99ba429",
+    "_shared/skills/mediaUse.ts": "2732277a32ffec3b5859a1d7de1031186f7de31e908858d8db3ad954360d241f",
+    "_shared/skills/mod.ts": "c1d2ba0548475450e396fcc29e63b2f8088c6e6a73ff66d9bdf62ec62805ac81",
+    "video-v4-audio/audioMeasure.ts": "5d91056f0ebfc34356db8bae1486c01f891b82075db0c1714bb72ef2f895ee4d",
+    "video-v4-steps/audioInjection.ts": "c08f837e6ec1c360d6230416a0825bf500591e278f4f8312dbc5f5c7996801d5",
+    "video-v4-steps/audioMaterialize.ts": "43e498605d2bc43ba09415d1fd20906a6f04f19b59fa46ec61296ba2ade85985",
+    "video-v4-steps/buildStep.ts": "88434e0c134d37b9c2106ca1649acdcc602082b13c2e46983b5e12c5eeff17ea",
+    "video-v4-steps/captionInjection.ts": "43086ce272c0ef7e2c3d4fe190a701ac33df1e4541588ad2425ee93614758fe5",
+    "video-v4-steps/captionStyle.ts": "7b7aa1243c9301abae20e3723944157c8e615f7ed599a338dcfa62d4e50aecdd",
+    "video-v4-steps/edgeLint.ts": "75649ae79389e550c5eb55a87699d99b2a9bbe1d31fce959f604077c0d64c9c6",
+    "video-v4-steps/mediaUrls.ts": "f2ff98199fcc980c7aab276c6c5a53d659cb996453fd9c0ee53fcb5910716e22"
+  }
+}

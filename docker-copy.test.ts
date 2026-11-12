@@ -14,15 +14,21 @@ const root = dirname(fileURLToPath(import.meta.url));
 
 const read = (p: string): string => readFileSync(join(root, p), 'utf8');
 
-/** Grafo transitivo de imports locais (`./x.js`) a partir de um módulo raiz. */
+/**
+ * Grafo transitivo de imports locais a partir de um módulo raiz. Os specs
+ * resolvem RELATIVO ao ficheiro que importa (o grafo vendado do build-html
+ * usa `../` entre subdiretórios); o resultado é normalizado para paths
+ * relativos à raiz do repo (comparáveis com os tokens do COPY).
+ */
 function localImportGraph(entry: string): Set<string> {
   const seen = new Set<string>();
   const queue = [entry];
   while (queue.length > 0) {
     const file = queue.shift() as string;
     const src = read(file);
-    for (const m of src.matchAll(/(?:from|import)\s*\(?\s*['"](\.\/[^'"]+)['"]/g)) {
-      const dep = m[1].replace(/^\.\//, '');
+    const dir = dirname(file);
+    for (const m of src.matchAll(/(?:from|import)\s*\(?\s*['"](\.[^'"]+)['"]/g)) {
+      const dep = join(dir, m[1]).replace(/\\/g, '/');
       if (!seen.has(dep)) {
         seen.add(dep);
         queue.push(dep);
@@ -83,9 +89,12 @@ describe('Dockerfile cobre o grafo de imports do worker', () => {
     // explícita, este assertion continua a validar cada módulo.
     expect(directives.some((d) => d.hasWildcardJs)).toBe(true);
 
+    // COPY de diretórios (ex.: build-html) cobre todo o subgrafo vendado.
+    const covered = (dep: string) =>
+      copied.has(dep) || [...copied].some((token) => dep.startsWith(`${token}/`));
     for (const dep of graph) {
       expect(
-        copied.has(dep),
+        covered(dep),
         `deploy vai crashar: '${dep}' importado por server.js mas ausente do COPY do Dockerfile`
       ).toBe(true);
     }

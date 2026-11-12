@@ -29,7 +29,10 @@ export function parseRenderJob(value, workerSecret) {
   for (const key of ['job_id', 'project_id']) if (!UUID_RE.test(body[key] || '')) fail('INVALID_UUID');
   // UUID identity is case insensitive, including on a Windows persistence volume.
   body.job_id = body.job_id.toLowerCase(); body.project_id = body.project_id.toLowerCase();
-  if (!['preview', 'build', 'render', 'finalize'].includes(body.step) || !['preview', 'render'].includes(body.mode)) fail('INVALID_STEP_MODE');
+  if (!['preview', 'build', 'render', 'finalize'].includes(body.step) || !['preview', 'render', 'build-html'].includes(body.mode)) fail('INVALID_STEP_MODE');
+  // F1 (plano v2): build-html é um job de GERAÇÃO (LLM no worker) — só existe
+  // como step 'build'. O HTML é produzido, não transportado.
+  if (body.mode === 'build-html' && body.step !== 'build') fail('INVALID_STEP_MODE');
   if (body.contract_version !== undefined && body.contract_version !== 1) fail('UNSUPPORTED_CONTRACT');
   if (body.contract_version === 1) {
     if (!UUID_RE.test(body.request_id || '') || !Number.isSafeInteger(body.revision) || body.revision < 1 || !/^[a-f0-9]{64}$/.test(body.input_hash || '')) fail('INVALID_REVISION');
@@ -40,7 +43,18 @@ export function parseRenderJob(value, workerSecret) {
   }
   const html = body.index_html ?? body.inputs?.index_html;
   if (html !== undefined && (typeof html !== 'string' || Buffer.byteLength(html) > 8 * 1024 * 1024)) fail('INVALID_HTML');
-  if (!html && body.step !== 'finalize') fail('HTML_REQUIRED');
+  if (!html && body.step !== 'finalize' && body.mode !== 'build-html') fail('HTML_REQUIRED');
+  // F1 (plano v2, emenda C): o job build-html transporta APENAS o endpoint JIT
+  // de credenciais (https) + brief/aspect — nunca keys. O worker pede a config
+  // LLM ao orchestrator no momento de executar; nada de secrets no payload
+  // durável da fila.
+  if (body.mode === 'build-html') {
+    if (html !== undefined) fail('INVALID_BUILD_INPUTS');
+    const credentialsUrl = body.inputs?.credentials_url;
+    if (typeof credentialsUrl !== 'string' || !https(credentialsUrl)) fail('INVALID_CREDENTIALS_URL');
+    if (body.inputs?.brief !== undefined && (typeof body.inputs.brief !== 'string' || body.inputs.brief.length > 20000)) fail('INVALID_BUILD_INPUTS');
+    if (body.inputs?.aspect_ratio !== undefined && (typeof body.inputs.aspect_ratio !== 'string' || body.inputs.aspect_ratio.length > 32)) fail('INVALID_BUILD_INPUTS');
+  }
   if (html) {
     for (const match of html.matchAll(/\b(?:src|href)\s*=\s*["']([^"']+)["']/gi)) {
       const ref = match[1];
@@ -118,6 +132,21 @@ export function publicJob(job) {
     next_id: job.window_normalization_warning.next_id,
   };
   if (job.uploaded) out.uploaded = Object.fromEntries(Object.entries(job.uploaded).filter(([key, value]) => ['mp4', 'contact_sheet', 'snapshots', 'composition_html', 'composition_elements'].includes(key) && (typeof value === 'boolean' || storageRef(value))));
+  // F1 (plano v2): resultado público do build-html — allowlist estrita, sem
+  // credenciais nem URLs de transporte (o HTML vive na Storage, não aqui).
+  if (job.build_result && typeof job.build_result === 'object') {
+    const br = job.build_result;
+    const num = (v) => typeof v === 'number' && Number.isFinite(v);
+    out.build_result = {
+      ...(storageRef(br.html_path) ? { html_path: br.html_path } : {}),
+      ...(typeof br.sha256 === 'string' && /^[a-f0-9]{64}$/.test(br.sha256) ? { sha256: br.sha256 } : {}),
+      ...(num(br.retries) ? { retries: br.retries } : {}),
+      ...(num(br.duration_seconds) ? { duration_seconds: br.duration_seconds } : {}),
+      ...(typeof br.fallback === 'boolean' ? { fallback: br.fallback } : {}),
+      ...(typeof br.fallback_reason === 'string' ? { fallback_reason: br.fallback_reason.slice(0, 64) } : {}),
+      ...(br.tokens && num(br.tokens.input) && num(br.tokens.output) ? { tokens: { input: br.tokens.input, output: br.tokens.output } } : {}),
+    };
+  }
   if (job.output) out.output = {
     ...(storageRef(job.output.mp4_url) ? { mp4_url: job.output.mp4_url } : {}),
     ...(Number.isFinite(job.output.mp4_size_bytes) ? { mp4_size_bytes: job.output.mp4_size_bytes } : {}),

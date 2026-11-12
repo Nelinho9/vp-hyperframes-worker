@@ -60,6 +60,9 @@ COPY --from=deps /app/node_modules ./node_modules
 # patch-engine.js + composition-sanitizer.js em d40beaf — deploy 22-08-2026
 # com ERR_MODULE_NOT_FOUND e rollback do Coolify). Testes são *.ts, ficam fora.
 COPY package.json *.js ./
+# F1 (plano v2): grafo vendado do build HTML (.ts puros, type stripping nativo
+# do Node >= 22.18) + PROVENANCE.json. Os testes *.ts do vendor NÃO são copiados.
+COPY build-html ./build-html
 COPY fixtures ./fixtures
 COPY bgm ./bgm
 
@@ -67,6 +70,10 @@ COPY bgm ./bgm
 # grafo server.js não existir na imagem — antes disto, o crash só aparecia no
 # boot (ERR_MODULE_NOT_FOUND) após o build, em crash-loop.
 RUN node -e "const fs=require('fs');const seen=new Set(['server.js']);const queue=['server.js'];const missing=[];while(queue.length){const f=queue.shift();const src=fs.readFileSync(f,'utf8');for(const m of src.matchAll(/(?:from|import)\s*\(?\s*['\"](\.\/[^'\"]+)['\"]/g)){const dep=m[1].replace(/^\.\//,'');if(seen.has(dep))continue;seen.add(dep);if(fs.existsSync(dep)){queue.push(dep)}else{missing.push(f+' -> '+dep)}}}if(missing.length){console.error('FATAL — módulos locais em falta na imagem:',missing);process.exit(1)}"
+
+# F1 (plano v2): o grafo vendado do build-html (.ts) tem de carregar na imagem
+# com o type stripping nativo do Node — falha cedo no build, não no boot.
+RUN node --input-type=module -e "import('./build-html-runner.js').then(() => console.log('build-html graph OK')).catch((e) => { console.error('FATAL — build-html graph:', e.message); process.exit(1); })"
 
 RUN mkdir -p $WORK_DIR
 
