@@ -1,0 +1,928 @@
+{
+  "started_at": "2026-11-12T22:09:58.400Z",
+  "results": [
+    {
+      "index": 1,
+      "name": "Parity A — Tasca do Largo (9:16)",
+      "started_at": "2026-11-12T22:09:58.400Z",
+      "project_id": "ea6ec054-a9c7-4226-bc43-908fa0b69ae8",
+      "failed_step": null,
+      "terminal": true,
+      "manifest": {
+        "version": 1,
+        "step": "quality",
+        "steps": {
+          "capture": {
+            "status": "done",
+            "artifacts": [
+              "capture/extracted/tokens.json",
+              "capture/bundle.json",
+              "capture/media_plan.json"
+            ]
+          },
+          "design": {
+            "status": "done",
+            "artifacts": [
+              "frame.md",
+              "caption-skin.html"
+            ],
+            "credits": 1,
+            "duration_seconds": 44.3,
+            "tokens": {
+              "input": 1468,
+              "output": 5062
+            },
+            "started_at": 1794521399881,
+            "brief_sha256": "dc6270963927d15a668f391740a7cc040332ba6bbbb85849e6e58815f8b62ef9"
+          },
+          "storyboard": {
+            "status": "done",
+            "artifacts": [
+              "STORYBOARD.md",
+              "SCRIPT.md"
+            ],
+            "credits": 2,
+            "duration_seconds": 45.2,
+            "tokens": {
+              "input": 5602,
+              "output": 5527
+            },
+            "started_at": 1794521448067,
+            "brief_sha256": "dc6270963927d15a668f391740a7cc040332ba6bbbb85849e6e58815f8b62ef9"
+          },
+          "audio": {
+            "status": "done",
+            "artifacts": [
+              "audio_meta.json",
+              "projects/ea6ec054-a9c7-4226-bc43-908fa0b69ae8/audio/vo-1.wav",
+              "projects/ea6ec054-a9c7-4226-bc43-908fa0b69ae8/audio/vo-2.wav",
+              "projects/ea6ec054-a9c7-4226-bc43-908fa0b69ae8/audio/vo-3.wav",
+              "projects/ea6ec054-a9c7-4226-bc43-908fa0b69ae8/audio/vo-4.wav",
+              "projects/ea6ec054-a9c7-4226-bc43-908fa0b69ae8/audio/vo-5.wav",
+              "projects/ea6ec054-a9c7-4226-bc43-908fa0b69ae8/audio/music/04b2113268ec4b9aacbe7da2eb5191ca3ee97507cb739f1a59cc10ec2168e9c5/bgm.mp3"
+            ],
+            "credits": 1,
+            "duration_seconds": 15,
+            "tokens": {
+              "input": 2866,
+              "output": 2047
+            },
+            "timing_source": "acoustic",
+            "caption_style": "editorial",
+            "started_at": 1794521494817,
+            "brief_sha256": "dc6270963927d15a668f391740a7cc040332ba6bbbb85849e6e58815f8b62ef9"
+          },
+          "visual": {
+            "status": "done",
+            "artifacts": [
+              "STORYBOARD.md"
+            ],
+            "credits": 1,
+            "duration_seconds": 23.9,
+            "tokens": {
+              "input": 7093,
+              "output": 3932
+            },
+            "started_at": 1794521616106,
+            "brief_sha256": "dc6270963927d15a668f391740a7cc040332ba6bbbb85849e6e58815f8b62ef9"
+          },
+          "build": {
+            "status": "done",
+            "artifacts": [
+              "projects/ea6ec054-a9c7-4226-bc43-908fa0b69ae8/renders/build.mp4",
+              "projects/ea6ec054-a9c7-4226-bc43-908fa0b69ae8/compositions/index.html"
+            ],
+            "credits": 4,
+            "duration_seconds": 15,
+            "tokens": {
+              "input": 28908,
+              "output": 18399
+            },
+            "started_at": 1794521756386
+          },
+          "finalize": {
+            "status": "done",
+            "artifacts": [
+              "projects/ea6ec054-a9c7-4226-bc43-908fa0b69ae8/renders/output.mp4"
+            ],
+            "credits": 1,
+            "started_at": 1794521836544
+          },
+          "quality": {
+            "status": "done",
+            "artifacts": [
+              "quality_report.json"
+            ],
+            "credits": 0,
+            "duration_seconds": 53.8,
+            "score": 7,
+            "started_at": 1794521916848,
+            "brief_sha256": "dc6270963927d15a668f391740a7cc040332ba6bbbb85849e6e58815f8b62ef9"
+          }
+        },
+        "credits": {
+          "spent": 10,
+          "by_step": {
+            "audio": 1,
+            "build": 4,
+            "design": 1,
+            "visual": 1,
+            "quality": 0,
+            "finalize": 1,
+            "storyboard": 2
+          }
+        },
+        "brief": "Create a promotional video Original user request: \"Cria um vídeo promocional de 15 segundos para a Tasca do Largo, um restaurante tradicional português. Objetivo: atrair clientes para o novo menu de jantar. Oferta: pratos de bacalhau e polvo à lagareiro com vinho da casa incluído. CTA: reserva a tua mesa este fim de semana. Tom acolhedor e apetitoso, com foco na comida e no ambiente familiar.\". Voice locale: pt-PT. Niche: restaurante. Language: pt. Format: portrait 9:16 — the composition canvas MUST be 1080x1920 (data-width/data-height). Target duration: 15 seconds (root data-duration and total clip time). Video language: pt. Voice locale: pt-PT.",
+        "brief_sha256": "dc6270963927d15a668f391740a7cc040332ba6bbbb85849e6e58815f8b62ef9"
+      },
+      "jobs": [
+        {
+          "id": "ed5e5b64-9642-4806-b4f2-bb6b9e31908f",
+          "step": "design",
+          "status": "done",
+          "credits_cost": 1,
+          "credits_refunded": false,
+          "created_at": "2026-11-12T22:09:59.780101+00:00",
+          "dispatched_at": "2026-11-12T22:10:00.096+00:00",
+          "result": {
+            "tokens": {
+              "input": 1468,
+              "output": 5062
+            },
+            "timings": {},
+            "total_ms": 46293,
+            "uploaded": {}
+          }
+        },
+        {
+          "id": "9829b8e8-f29f-4acd-8a86-c333d4ff1b33",
+          "step": "storyboard",
+          "status": "done",
+          "credits_cost": 2,
+          "credits_refunded": false,
+          "created_at": "2026-11-12T22:10:47.959844+00:00",
+          "dispatched_at": "2026-11-12T22:10:48.23+00:00",
+          "result": {
+            "tokens": {
+              "input": 5602,
+              "output": 5527
+            },
+            "timings": {},
+            "total_ms": 45266,
+            "uploaded": {}
+          }
+        },
+        {
+          "id": "a3944042-3489-4210-bffa-f603459d5e93",
+          "step": "audio",
+          "status": "done",
+          "credits_cost": 1,
+          "credits_refunded": false,
+          "created_at": "2026-11-12T22:11:34.70316+00:00",
+          "dispatched_at": "2026-11-12T22:11:34.898+00:00",
+          "result": {
+            "tokens": {
+              "input": 2866,
+              "output": 2047
+            },
+            "timings": {},
+            "total_ms": 119576,
+            "uploaded": {}
+          }
+        },
+        {
+          "id": "e608d6a3-1277-406f-b135-8101349e9d0b",
+          "step": "visual",
+          "status": "done",
+          "credits_cost": 1,
+          "credits_refunded": false,
+          "created_at": "2026-11-12T22:13:35.957699+00:00",
+          "dispatched_at": "2026-11-12T22:13:36.204+00:00",
+          "result": {
+            "tokens": {
+              "input": 7093,
+              "output": 3932
+            },
+            "timings": {},
+            "total_ms": 23900,
+            "uploaded": {}
+          }
+        },
+        {
+          "id": "fadad8e2-d62f-4fc1-86dc-1f5ce98fcf2e",
+          "step": "build",
+          "status": "done",
+          "credits_cost": 4,
+          "credits_refunded": false,
+          "created_at": "2026-11-12T22:14:01.923407+00:00",
+          "dispatched_at": "2026-11-12T22:14:02.102+00:00",
+          "result": {
+            "tokens": {
+              "input": 28908,
+              "output": 18399
+            },
+            "timings": {},
+            "total_ms": 112283,
+            "uploaded": {
+              "composition_html": true
+            }
+          }
+        },
+        {
+          "id": "e1a8686b-eeee-415b-b476-1092b4935147",
+          "step": "build",
+          "status": "done",
+          "credits_cost": 0,
+          "credits_refunded": false,
+          "created_at": "2026-11-12T22:15:55.871021+00:00",
+          "dispatched_at": "2026-11-12T22:15:56.531+00:00",
+          "result": {
+            "tokens": {},
+            "timings": {
+              "lint_ms": 1643,
+              "check_ms": 11516,
+              "render_ms": 51478,
+              "lint_start": 1794521758773,
+              "check_start": 1794521760416,
+              "snapshot_ms": 9989,
+              "render_start": 1794521781921,
+              "snapshot_start": 1794521771932
+            },
+            "total_ms": 76255,
+            "uploaded": {
+              "mp4": true,
+              "snapshots": true,
+              "composition_html": true,
+              "composition_elements": true
+            }
+          }
+        },
+        {
+          "id": "c5041d55-cbb4-4e9d-979d-34a9c299ced2",
+          "step": "finalize",
+          "status": "done",
+          "credits_cost": 1,
+          "credits_refunded": false,
+          "created_at": "2026-11-12T22:17:16.255681+00:00",
+          "dispatched_at": "2026-11-12T22:17:16.633+00:00",
+          "result": {
+            "tokens": {},
+            "timings": {
+              "lint_ms": 1690,
+              "check_ms": 11024,
+              "render_ms": 50081,
+              "lint_start": 1794521838384,
+              "check_start": 1794521840074,
+              "snapshot_ms": 9892,
+              "render_start": 1794521860990,
+              "snapshot_start": 1794521851098
+            },
+            "total_ms": 76937,
+            "uploaded": {
+              "mp4": true,
+              "snapshots": true,
+              "composition_html": true,
+              "composition_elements": true
+            }
+          }
+        },
+        {
+          "id": "1ad535a0-1b14-4f11-a33f-d5e814296924",
+          "step": "quality",
+          "status": "done",
+          "credits_cost": 0,
+          "credits_refunded": false,
+          "created_at": "2026-11-12T22:18:36.721334+00:00",
+          "dispatched_at": "2026-11-12T22:18:37.01+00:00",
+          "result": {
+            "tokens": {},
+            "timings": {},
+            "total_ms": 53867,
+            "uploaded": {}
+          }
+        }
+      ],
+      "artifacts": {
+        "build-input.html": {
+          "present": true,
+          "size": 25462
+        },
+        "audio_meta.json": {
+          "present": true,
+          "size": 4427,
+          "files_ok": 5,
+          "files_total": 5,
+          "timing_source": "acoustic"
+        },
+        "quality_report.json": {
+          "present": true,
+          "size": 5969,
+          "score": 7,
+          "status": "current"
+        },
+        "output.mp4": {
+          "present": true,
+          "size": 2598902
+        }
+      },
+      "credits_spent": 10,
+      "worker_steps": [],
+      "finished_at": "2026-11-12T22:19:34.917Z",
+      "verdict": "PASS"
+    },
+    {
+      "index": 2,
+      "name": "Parity B — FlowDesk (16:9)",
+      "started_at": "2026-11-12T22:19:34.918Z",
+      "project_id": "cf33434f-23c9-4597-9988-59a786191f3b",
+      "failed_step": null,
+      "terminal": true,
+      "manifest": {
+        "version": 1,
+        "step": "quality",
+        "steps": {
+          "capture": {
+            "status": "done",
+            "artifacts": [
+              "capture/extracted/tokens.json",
+              "capture/bundle.json",
+              "capture/media_plan.json"
+            ]
+          },
+          "design": {
+            "status": "done",
+            "artifacts": [
+              "frame.md",
+              "caption-skin.html"
+            ],
+            "credits": 1,
+            "duration_seconds": 42.3,
+            "tokens": {
+              "input": 1461,
+              "output": 4223
+            },
+            "started_at": 1794521975925,
+            "brief_sha256": "6ca0a48bff98f0e70162040d9c6f845927f46062a721aff66d88feb1a93aa88a"
+          },
+          "storyboard": {
+            "status": "done",
+            "artifacts": [
+              "STORYBOARD.md",
+              "SCRIPT.md"
+            ],
+            "credits": 2,
+            "duration_seconds": 73.5,
+            "tokens": {
+              "input": 5478,
+              "output": 7883
+            },
+            "started_at": 1794522020027,
+            "brief_sha256": "6ca0a48bff98f0e70162040d9c6f845927f46062a721aff66d88feb1a93aa88a"
+          },
+          "audio": {
+            "status": "done",
+            "artifacts": [
+              "audio_meta.json",
+              "projects/cf33434f-23c9-4597-9988-59a786191f3b/audio/vo-1.wav",
+              "projects/cf33434f-23c9-4597-9988-59a786191f3b/audio/vo-2.wav",
+              "projects/cf33434f-23c9-4597-9988-59a786191f3b/audio/vo-3.wav",
+              "projects/cf33434f-23c9-4597-9988-59a786191f3b/audio/vo-5.wav",
+              "projects/cf33434f-23c9-4597-9988-59a786191f3b/audio/music/04a407caa2a6eeb3261bbcff388ffb44e9ae26910980b4cba6659405f53412b3/bgm.mp3"
+            ],
+            "credits": 1,
+            "duration_seconds": 15,
+            "tokens": {
+              "input": 3520,
+              "output": 1434
+            },
+            "needs_attention": true,
+            "timing_source": "estimated",
+            "caption_style": "editorial",
+            "voice_fit_failures": [
+              {
+                "frame_number": 4,
+                "code": "VO_WINDOW_OVERFLOW",
+                "detail": "VO_WINDOW_OVERFLOW: Segmento 4: voz 48960 samples @24000Hz (62 frames) excede janela 9s–11s (60 frames) em 2 frame(s) — reduzir/reescrever script e regenerar dentro do orçamento. (reescrita LLM indisp"
+              }
+            ],
+            "started_at": 1794522094956,
+            "brief_sha256": "6ca0a48bff98f0e70162040d9c6f845927f46062a721aff66d88feb1a93aa88a"
+          },
+          "visual": {
+            "status": "done",
+            "artifacts": [
+              "STORYBOARD.md"
+            ],
+            "credits": 1,
+            "duration_seconds": 54.8,
+            "tokens": {
+              "input": 8473,
+              "output": 3551
+            },
+            "started_at": 1794522188681,
+            "brief_sha256": "6ca0a48bff98f0e70162040d9c6f845927f46062a721aff66d88feb1a93aa88a"
+          },
+          "build": {
+            "status": "done",
+            "artifacts": [
+              "projects/cf33434f-23c9-4597-9988-59a786191f3b/renders/build.mp4",
+              "projects/cf33434f-23c9-4597-9988-59a786191f3b/compositions/index.html"
+            ],
+            "credits": 4,
+            "duration_seconds": 15,
+            "tokens": {
+              "input": 12075,
+              "output": 16610
+            },
+            "started_at": 1794522370879
+          },
+          "finalize": {
+            "status": "done",
+            "artifacts": [
+              "projects/cf33434f-23c9-4597-9988-59a786191f3b/renders/output.mp4"
+            ],
+            "credits": 1,
+            "started_at": 1794522441784
+          },
+          "quality": {
+            "status": "done",
+            "artifacts": [
+              "quality_report.json"
+            ],
+            "credits": 0,
+            "duration_seconds": 25.8,
+            "score": 7,
+            "started_at": 1794522515307,
+            "brief_sha256": "6ca0a48bff98f0e70162040d9c6f845927f46062a721aff66d88feb1a93aa88a"
+          }
+        },
+        "credits": {
+          "spent": 10,
+          "by_step": {
+            "audio": 1,
+            "build": 4,
+            "design": 1,
+            "visual": 1,
+            "quality": 0,
+            "finalize": 1,
+            "storyboard": 2
+          }
+        },
+        "brief": "Create a promotional video Original user request: \"Cria um vídeo de demonstração de 15 segundos para o FlowDesk, uma aplicação de produtividade para equipas remotas. Objetivo: mostrar como organiza tarefas, reuniões e documentos num só lugar. Oferta: teste gratuito de 14 dias sem cartão de crédito. CTA: experimenta grátis hoje. Tom moderno e direto, com foco na interface e na simplicidade.\". Voice locale: pt-PT. Niche: software. Language: pt. Format: landscape 16:9 — the composition canvas MUST be 1920x1080 (data-width/data-height). Target duration: 15 seconds (root data-duration and total clip time). Video language: pt. Voice locale: pt-PT.",
+        "brief_sha256": "6ca0a48bff98f0e70162040d9c6f845927f46062a721aff66d88feb1a93aa88a"
+      },
+      "jobs": [
+        {
+          "id": "6c06d476-e25b-4333-ae54-5a2dd43c3a3b",
+          "step": "design",
+          "status": "done",
+          "credits_cost": 1,
+          "credits_refunded": false,
+          "created_at": "2026-11-12T22:19:35.827382+00:00",
+          "dispatched_at": "2026-11-12T22:19:36.235+00:00",
+          "result": {
+            "tokens": {
+              "input": 1461,
+              "output": 4223
+            },
+            "timings": {},
+            "total_ms": 42347,
+            "uploaded": {}
+          }
+        },
+        {
+          "id": "a40f30c0-bcf4-49fe-a53d-551bc7f48e34",
+          "step": "storyboard",
+          "status": "done",
+          "credits_cost": 2,
+          "credits_refunded": false,
+          "created_at": "2026-11-12T22:20:19.924559+00:00",
+          "dispatched_at": "2026-11-12T22:20:20.319+00:00",
+          "result": {
+            "tokens": {
+              "input": 5478,
+              "output": 7883
+            },
+            "timings": {},
+            "total_ms": 73502,
+            "uploaded": {}
+          }
+        },
+        {
+          "id": "157260a7-c08f-4db0-a611-2ae5337cdb30",
+          "step": "audio",
+          "status": "done",
+          "credits_cost": 1,
+          "credits_refunded": false,
+          "created_at": "2026-11-12T22:21:34.841393+00:00",
+          "dispatched_at": "2026-11-12T22:21:35.04+00:00",
+          "result": {
+            "tokens": {
+              "input": 3520,
+              "output": 1434
+            },
+            "timings": {},
+            "total_ms": 91691,
+            "uploaded": {}
+          }
+        },
+        {
+          "id": "2fc0dd4d-b4d5-41a8-8f6b-0cc97b467c5b",
+          "step": "visual",
+          "status": "done",
+          "credits_cost": 1,
+          "credits_refunded": false,
+          "created_at": "2026-11-12T22:23:08.546432+00:00",
+          "dispatched_at": "2026-11-12T22:23:08.812+00:00",
+          "result": {
+            "tokens": {
+              "input": 8473,
+              "output": 3551
+            },
+            "timings": {},
+            "total_ms": 54903,
+            "uploaded": {}
+          }
+        },
+        {
+          "id": "9849023a-e5bf-4e97-ba79-4737d01b4e2f",
+          "step": "build",
+          "status": "done",
+          "credits_cost": 4,
+          "credits_refunded": false,
+          "created_at": "2026-11-12T22:24:04.969072+00:00",
+          "dispatched_at": "2026-11-12T22:24:05.166+00:00",
+          "result": {
+            "tokens": {
+              "input": 12075,
+              "output": 16610
+            },
+            "timings": {},
+            "total_ms": 123743,
+            "uploaded": {
+              "composition_html": true
+            }
+          }
+        },
+        {
+          "id": "5736773a-03f0-4ef1-8119-fc2b27ec278e",
+          "step": "build",
+          "status": "done",
+          "credits_cost": 0,
+          "credits_refunded": false,
+          "created_at": "2026-11-12T22:26:10.54568+00:00",
+          "dispatched_at": "2026-11-12T22:26:11.124+00:00",
+          "result": {
+            "tokens": {},
+            "timings": {
+              "lint_ms": 1619,
+              "check_ms": 8412,
+              "render_ms": 49040,
+              "lint_start": 1794522373055,
+              "check_start": 1794522374674,
+              "snapshot_ms": 6705,
+              "render_start": 1794522389791,
+              "snapshot_start": 1794522383086
+            },
+            "total_ms": 67217,
+            "uploaded": {
+              "mp4": true,
+              "snapshots": true,
+              "composition_html": true,
+              "composition_elements": true
+            }
+          }
+        },
+        {
+          "id": "52ec27b6-961e-4800-a774-b24eedbf5e81",
+          "step": "finalize",
+          "status": "done",
+          "credits_cost": 1,
+          "credits_refunded": false,
+          "created_at": "2026-11-12T22:27:21.488775+00:00",
+          "dispatched_at": "2026-11-12T22:27:21.905+00:00",
+          "result": {
+            "tokens": {},
+            "timings": {
+              "lint_ms": 1678,
+              "check_ms": 8502,
+              "render_ms": 49526,
+              "lint_start": 1794522443348,
+              "check_start": 1794522445026,
+              "snapshot_ms": 6972,
+              "render_start": 1794522460500,
+              "snapshot_start": 1794522453528
+            },
+            "total_ms": 71025,
+            "uploaded": {
+              "mp4": true,
+              "snapshots": true,
+              "composition_html": true,
+              "composition_elements": true
+            }
+          }
+        },
+        {
+          "id": "d404df78-f4a7-43d4-826c-9779cc5fd3e2",
+          "step": "quality",
+          "status": "done",
+          "credits_cost": 0,
+          "credits_refunded": false,
+          "created_at": "2026-11-12T22:28:35.201146+00:00",
+          "dispatched_at": "2026-11-12T22:28:35.374+00:00",
+          "result": {
+            "tokens": {},
+            "timings": {},
+            "total_ms": 25863,
+            "uploaded": {}
+          }
+        }
+      ],
+      "artifacts": {
+        "build-input.html": {
+          "present": true,
+          "size": 22835
+        },
+        "audio_meta.json": {
+          "present": true,
+          "size": 4499,
+          "files_ok": 4,
+          "files_total": 5,
+          "timing_source": "estimated"
+        },
+        "quality_report.json": {
+          "present": true,
+          "size": 7470,
+          "score": 7,
+          "status": "current"
+        },
+        "output.mp4": {
+          "present": true,
+          "size": 1919127
+        }
+      },
+      "credits_spent": 10,
+      "worker_steps": [],
+      "finished_at": "2026-11-12T22:29:11.016Z",
+      "verdict": "PASS"
+    },
+    {
+      "index": 3,
+      "name": "Parity C — MoveFit (1:1)",
+      "started_at": "2026-11-12T22:29:11.018Z",
+      "project_id": "b4143ee4-54fb-49cc-be7d-44c677cefeef",
+      "failed_step": "build",
+      "terminal": true,
+      "manifest": {
+        "version": 1,
+        "step": "build",
+        "steps": {
+          "capture": {
+            "status": "done",
+            "artifacts": [
+              "capture/extracted/tokens.json",
+              "capture/bundle.json",
+              "capture/media_plan.json"
+            ]
+          },
+          "design": {
+            "status": "done",
+            "artifacts": [
+              "frame.md",
+              "caption-skin.html"
+            ],
+            "credits": 1,
+            "duration_seconds": 42.4,
+            "tokens": {
+              "input": 1455,
+              "output": 4624
+            },
+            "started_at": 1794522552070,
+            "brief_sha256": "55b9f3a52f91c2e101064549ff9fcba3fc554fe1e307ffe20b03116c00ee4a73"
+          },
+          "storyboard": {
+            "status": "done",
+            "artifacts": [
+              "STORYBOARD.md",
+              "SCRIPT.md"
+            ],
+            "credits": 2,
+            "duration_seconds": 33,
+            "tokens": {
+              "input": 5661,
+              "output": 4555
+            },
+            "started_at": 1794522595848,
+            "brief_sha256": "55b9f3a52f91c2e101064549ff9fcba3fc554fe1e307ffe20b03116c00ee4a73"
+          },
+          "audio": {
+            "status": "done",
+            "artifacts": [
+              "audio_meta.json",
+              "projects/b4143ee4-54fb-49cc-be7d-44c677cefeef/audio/vo-1.wav",
+              "projects/b4143ee4-54fb-49cc-be7d-44c677cefeef/audio/vo-2.wav",
+              "projects/b4143ee4-54fb-49cc-be7d-44c677cefeef/audio/vo-4.wav",
+              "projects/b4143ee4-54fb-49cc-be7d-44c677cefeef/audio/vo-5.wav",
+              "projects/b4143ee4-54fb-49cc-be7d-44c677cefeef/audio/music/e8e8fb80bdfbe42129f48186e889352472a4c468faa00fd82c1e623035a97356/bgm.mp3"
+            ],
+            "credits": 1,
+            "duration_seconds": 15,
+            "tokens": {
+              "input": 3016,
+              "output": 1485
+            },
+            "needs_attention": true,
+            "timing_source": "estimated",
+            "caption_style": "editorial",
+            "voice_fit_failures": [
+              {
+                "frame_number": 3,
+                "code": "VO_WINDOW_OVERFLOW",
+                "detail": "VO_WINDOW_OVERFLOW: Segmento 3: voz 100800 samples @24000Hz (126 frames) excede janela 6.3s–8.45s (64 frames) em 62 frame(s) — pedir aumento de duração ou reescrever. (reescrita LLM indisponível)"
+              }
+            ],
+            "started_at": 1794522630789,
+            "brief_sha256": "55b9f3a52f91c2e101064549ff9fcba3fc554fe1e307ffe20b03116c00ee4a73"
+          },
+          "visual": {
+            "status": "done",
+            "artifacts": [
+              "STORYBOARD.md"
+            ],
+            "credits": 1,
+            "duration_seconds": 30.2,
+            "tokens": {
+              "input": 7435,
+              "output": 3807
+            },
+            "started_at": 1794522762593,
+            "brief_sha256": "55b9f3a52f91c2e101064549ff9fcba3fc554fe1e307ffe20b03116c00ee4a73"
+          },
+          "build": {
+            "status": "failed",
+            "artifacts": [],
+            "error": "HyperFrames check failed (CLI 0.7.109)\ncontent_overlap: Two text blocks overlap and may render unreadable.\n[hyperframes] browserGpuMode probe → software (WebGL unavailable)\n\n{\n  \"ok\": false,\n  \"strict\": false,\n  \"lint\": {\n    \"ok\": true,\n    \"errorCount\": 0,\n    \"warningCount\": 0,\n    \"infoCount\": 6,\n    \"findings\": [\n      {\n        \"code\": \"pointer_events_none\",\n        \"severity\": \"info\",\n        \"message\": \"<span id=\\\"vp-caption-cue-0\\\"> has `pointer-events: none` in its inline style. Elements with this property are harder to select in the Studio preview.\",\n        \"selector\": \"#vp-caption-cue-0\",\n        \"dataAttributes\": {},\n        \"sourceFile\": \"/tmp/hyperframes-worker/33e0b4c9-63bf-45fc-a49d-f4902b506fc4/index.html\",\n        \"bbox\": {\n          \"x\": 0,\n          \"y\": 0,\n          \"width\": 0,\n          \"height\": 0\n        },\n        \"time\": 0,\n        \"fixHint\": \"If this element should be selectable in the Studio, remove `pointer-events: none` or move it to a wrapper that doesn\n[…truncated…]\n,\n        \"rect\": {\n          \"left\": -169.44,\n          \"top\": 301.59,\n          \"right\": 1349.44,\n          \"bottom\": 798.41,\n          \"width\": 1518.89,\n          \"height\": 496.83\n        },\n        \"containerSelector\": \"[data-composition-id=\\\"main\\\"]\",\n        \"text\": \"\",\n        \"fixHint\": \"Move the panel inward, or mark intentional off-canvas animation with data-layout-allow-overflow.\",\n        \"containerRect\": {\n          \"left\": 0,\n          \"top\": 0,\n          \"right\": 1080,\n          \"bottom\": 1080,\n          \"width\": 1080,\n          \"height\": 1080\n        },\n        \"overflow\": {\n          \"left\": 169.44,\n          \"right\": 269.44\n        },\n        \"dataAttributes\": {},\n        \"sourceFile\": \"index.html\",\n        \"bbox\": {\n          \"x\": -169.44,\n          \"y\": 301.59,\n          \"width\": 1518.89,\n          \"height\": 496.83\n        },\n        \"firstSeen\": 4.167,\n        \"lastSeen\": 5.833,\n        \"occurrences\": 2\n      },\n      {\n        \"code\": \"panel_out_of_canvas\",\n        \"severity\": \"warning\",\n        \"time\": 4.167,\n        \"selector\": \"#scene-2 > div:nth-of-type(2)\",\n        \"message\": \"Painted panel extends outside the composition canvas.\",\n        \"rect\": {\n          \"left\": 730,\n          \"top\": 96,\n          \"right\": 1170,\n          \"bottom\": 536,\n          \"width\": 440,\n          \"height\": 440\n        },\n        \"containerSelector\": \"[data-composition-id=\\\"main\\\"]\",\n        \"text\": \"\",\n        \"fixHint\": \"Move the panel inward, or mark intentional off-canvas animation with data-layout-allow-overflow.\",\n        \"containerRect\": {\n          \"left\": 0,\n          \"top\": 0,\n          \"right\": 1080,\n          \"bottom\": 1080,\n          \"width\": 1080,\n          \"height\": 1080\n        },\n        \"overflow\": {\n          \"right\": 90\n        },\n        \"dataAttributes\": {},\n        \"sourceFile\": \"index.html\",\n        \"bbox\": {\n          \"x\": 730,\n          \"y\": 96,\n          \"width\": 440,\n          \"height\": 440\n        },\n        \"firstSeen\": 4.167,\n        \"lastSeen\": 5.833,\n        \"occurrences\": 2\n      }\n    ],\n    \"duration\": 15,\n    \"samples\": [\n      0.833,\n      2.5,\n      4.167,\n      5.833,\n      7.5,\n      9.167,\n      10.833,\n      12.5,\n      14.167\n    ],\n    \"transitionSamples\": [],\n    \"transitionSamplesDropped\": 0,\n    \"tolerance\": 2,\n    \"totalIssueCount\": 5,\n    \"truncated\": false\n  },\n  \"motion\": {\n    \"ok\": true,\n    \"errorCount\": 0,\n    \"warningCount\": 0,\n    \"infoCount\": 0,\n    \"findings\": [],\n    \"enabled\": false,\n    \"samples\": 0\n  },\n  \"contrast\": {\n    \"ok\": true,\n    \"errorCount\": 0,\n    \"warningCount\": 0,\n    \"infoCount\": 0,\n    \"findings\": [],\n    \"enabled\": true,\n    \"samples\": [\n      0.833,\n      4.167,\n      7.5,\n      10.833,\n      14.167\n    ],\n    \"checked\": 33,\n    \"passed\": 33\n  },\n  \"snapshots\": {\n    \"enabled\": false,\n    \"files\": [],\n    \"times\": [],\n    \"findingFiles\": []\n  },\n  \"_meta\": {\n    \"version\": \"0.7.109\",\n    \"latestVersion\": \"0.9.39\",\n    \"updateAvailable\": true\n  }\n}",
+            "duration_seconds": 15,
+            "tokens": {
+              "input": 12435,
+              "output": 12219
+            },
+            "started_at": 1794522886885
+          },
+          "finalize": {
+            "status": "pending",
+            "artifacts": []
+          },
+          "quality": {
+            "status": "pending",
+            "artifacts": []
+          }
+        },
+        "credits": {
+          "spent": 5,
+          "by_step": {
+            "audio": 1,
+            "design": 1,
+            "visual": 1,
+            "storyboard": 2
+          }
+        },
+        "brief": "Create a promotional video Original user request: \"Cria um vídeo promocional de 15 segundos para o MoveFit, um ginásio com aulas de grupo e acompanhamento personalizado. Objetivo: angariar novos membros para o plano de verão. Oferta: primeira semana grátis e inscrição sem taxa. CTA: inscreve-te esta semana. Tom enérgico e motivador, com foco nas aulas e na comunidade.\". Voice locale: pt-PT. Niche: fitness. Language: pt. Format: square 1:1 — the composition canvas MUST be 1080x1080 (data-width/data-height). Target duration: 15 seconds (root data-duration and total clip time). Video language: pt. Voice locale: pt-PT.",
+        "brief_sha256": "55b9f3a52f91c2e101064549ff9fcba3fc554fe1e307ffe20b03116c00ee4a73"
+      },
+      "jobs": [
+        {
+          "id": "7ecaa8a0-00e2-43e4-8f18-f3abf8fa9c45",
+          "step": "design",
+          "status": "done",
+          "credits_cost": 1,
+          "credits_refunded": false,
+          "created_at": "2026-11-12T22:29:11.966451+00:00",
+          "dispatched_at": "2026-11-12T22:29:12.264+00:00",
+          "result": {
+            "tokens": {
+              "input": 1455,
+              "output": 4624
+            },
+            "timings": {},
+            "total_ms": 42524,
+            "uploaded": {}
+          }
+        },
+        {
+          "id": "26bb9c32-42b3-4a4a-88a9-5d12e42f397d",
+          "step": "storyboard",
+          "status": "done",
+          "credits_cost": 2,
+          "credits_refunded": false,
+          "created_at": "2026-11-12T22:29:55.749332+00:00",
+          "dispatched_at": "2026-11-12T22:29:55.904+00:00",
+          "result": {
+            "tokens": {
+              "input": 5661,
+              "output": 4555
+            },
+            "timings": {},
+            "total_ms": 33068,
+            "uploaded": {}
+          }
+        },
+        {
+          "id": "61fbf772-8c1b-4e27-b1a2-23050f5f8f46",
+          "step": "audio",
+          "status": "done",
+          "credits_cost": 1,
+          "credits_refunded": false,
+          "created_at": "2026-11-12T22:30:30.618073+00:00",
+          "dispatched_at": "2026-11-12T22:30:30.969+00:00",
+          "result": {
+            "tokens": {
+              "input": 3016,
+              "output": 1485
+            },
+            "timings": {},
+            "total_ms": 130423,
+            "uploaded": {}
+          }
+        },
+        {
+          "id": "0c2b2612-c070-4450-b3d8-cf17eda31d29",
+          "step": "visual",
+          "status": "done",
+          "credits_cost": 1,
+          "credits_refunded": false,
+          "created_at": "2026-11-12T22:32:42.466992+00:00",
+          "dispatched_at": "2026-11-12T22:32:42.696+00:00",
+          "result": {
+            "tokens": {
+              "input": 7435,
+              "output": 3807
+            },
+            "timings": {},
+            "total_ms": 30479,
+            "uploaded": {}
+          }
+        },
+        {
+          "id": "6758e782-e880-46ad-a1e2-86f1b0c5f1aa",
+          "step": "build",
+          "status": "done",
+          "credits_cost": 4,
+          "credits_refunded": false,
+          "created_at": "2026-11-12T22:33:14.36444+00:00",
+          "dispatched_at": "2026-11-12T22:33:14.56+00:00",
+          "result": {
+            "tokens": {
+              "input": 12435,
+              "output": 12219
+            },
+            "timings": {},
+            "total_ms": 90251,
+            "uploaded": {
+              "composition_html": true
+            }
+          }
+        },
+        {
+          "id": "33e0b4c9-63bf-45fc-a49d-f4902b506fc4",
+          "step": "build",
+          "status": "failed",
+          "credits_cost": 0,
+          "credits_refunded": true,
+          "created_at": "2026-11-12T22:34:46.557724+00:00",
+          "dispatched_at": "2026-11-12T22:34:47.169+00:00",
+          "result": {
+            "tokens": {},
+            "timings": {},
+            "total_ms": 10276,
+            "uploaded": {},
+            "error_code": "WORKER_JOB_FAILED"
+          }
+        }
+      ],
+      "artifacts": {
+        "build-input.html": {
+          "present": true,
+          "size": 22361
+        },
+        "audio_meta.json": {
+          "present": true,
+          "size": 4993,
+          "files_ok": 4,
+          "files_total": 5,
+          "timing_source": "estimated"
+        },
+        "quality_report.json": {
+          "present": false
+        },
+        "output.mp4": {
+          "present": false
+        }
+      },
+      "credits_spent": 5,
+      "worker_steps": [],
+      "finished_at": "2026-11-12T22:35:21.057Z",
+      "verdict": "FAIL"
+    }
+  ]
+}

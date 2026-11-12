@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="pt">
+<head>
+<meta charset="utf-8">
+<title>Tasca do Largo — Menu de Jantar</title>
+<script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@heygen/hyperframes@0.7.109/dist/hyperframes.min.js"></script>
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; background: #FBF4E8; }
+  .composition { font-family: 'Inter', system-ui, sans-serif; color: #2B1D14; }
+  .serif { font-family: 'Playfair Display', Georgia, 'Times New Roman', serif; font-weight: 700; }
+  .label { font-family: 'Inter', system-ui, sans-serif; font-weight: 600; letter-spacing: 0.16em; text-transform: uppercase; }
+  .linen {
+    background-image:
+      repeating-linear-gradient(0deg, rgba(43,29,20,0.035) 0 1px, transparent 1px 5px),
+      repeating-linear-gradient(90deg, rgba(43,29,20,0.028) 0 1px, transparent 1px 5px);
+  }
+</style>
+<!-- __vp-caption-style:v1 --><style data-vp-caption-style="editorial">.vp-word{display:inline-block;transition:none;will-change:transform,color;opacity:.62}.vp-word[data-active="1"]{opacity:1}.vp-caption[data-preset="editorial"]{background:#101018f2;padding:12px 20px}.vp-word[data-active="1"]{color:#fff}</style><!-- /__vp-caption-style --></head>
+<body>
+<div class="composition" data-composition-id="main" data-start="0" data-duration="15" data-width="1080" data-height="1920" style="position:relative;width:1080px;height:1920px;overflow:hidden;background:#FBF4E8;">
+
+  <!-- SCENE 1 — Jantar como em casa (0-3s) -->
+  <div id="scene-1" class="clip" data-start="0" data-duration="3" data-track-index="0" style="position:absolute;inset:0;width:1080px;height:1920px;overflow:hidden;">
+    <div class="linen" style="position:absolute;inset:0;background-color:#FBF4E8;z-index:0;"></div>
+    <div style="position:absolute;left:90px;top:170px;width:900px;height:900px;border-radius:50%;background:radial-gradient(circle, rgba(201,138,46,0.42) 0%, rgba(201,138,46,0.14) 46%, rgba(201,138,46,0) 70%);z-index:1;"></div>
+    <div class="s1-plate" style="position:absolute;left:270px;top:360px;width:540px;height:540px;border-radius:50%;background:radial-gradient(circle at 38% 32%, #FFFDF8 0%, #F3E7D3 62%, #E8D6BC 100%);box-shadow:0 28px 70px rgba(43,29,20,0.18), inset 0 0 0 14px #FBF4E8, inset 0 0 0 17px #E8D6BC;z-index:2;"></div>
+    <div style="position:absolute;left:470px;top:560px;width:140px;height:140px;border-radius:50%;background:radial-gradient(circle at 40% 36%, rgba(201,138,46,0.55), rgba(201,138,46,0.05));z-index:3;"></div>
+    <div id="scene-1-text-1" class="label" style="position:absolute;left:72px;top:250px;width:936px;text-align:center;color:#5C6B3F;font-size:28px;line-height:1.3;z-index:6;">Tasca do Largo</div>
+    <h1 id="scene-1-text-2" class="serif" style="position:absolute;left:72px;top:1010px;width:936px;margin:0;font-size:80px;line-height:1.06;letter-spacing:-0.02em;color:#9E3B26;text-align:center;z-index:6;">Jantar como em casa.</h1>
+  </div>
+
+  <!-- SCENE 2 — A mesa pede companhia (3-6s) -->
+  <div id="scene-2" class="clip" data-start="3" data-duration="3" data-track-index="1" style="position:absolute;inset:0;width:1080px;height:1920px;overflow:hidden;">
+    <div class="linen" style="position:absolute;inset:0;background-color:#F3E7D3;z-index:0;"></div>
+    <div style="position:absolute;left:110px;top:250px;width:860px;height:860px;border-radius:50%;background:radial-gradient(circle at 45% 35%, rgba(255,253,248,0.85), rgba(232,214,188,0.35) 70%);z-index:1;"></div>
+    <div class="s2-table" style="position:absolute;left:150px;top:400px;width:780px;height:520px;border-radius:56px;background:linear-gradient(165deg,#FBF4E8,#E8D6BC);box-shadow:0 30px 80px rgba(43,29,20,0.16);z-index:2;">
+      <div style="position:absolute;left:110px;top:120px;width:200px;height:200px;border-radius:50%;background:#FFFDF8;box-shadow:inset 0 0 0 10px #F3E7D3, 0 10px 24px rgba(43,29,20,0.12);"></div>
+      <div style="position:absolute;left:470px;top:120px;width:200px;height:200px;border-radius:50%;background:#FFFDF8;box-shadow:inset 0 0 0 10px #F3E7D3, 0 10px 24px rgba(43,29,20,0.12);"></div>
+      <div style="position:absolute;left:300px;top:350px;width:180px;height:6px;border-radius:3px;background:rgba(201,138,46,0.65);"></div>
+    </div>
+    <div id="scene-2-text-1" style="position:absolute;left:72px;top:990px;width:936px;font-size:32px;line-height:1.35;color:#6E5A4B;text-align:center;z-index:6;">Ninguém cozinha hoje.</div>
+    <div id="scene-2-text-2" class="serif" style="position:absolute;left:72px;top:1050px;width:936px;font-size:72px;line-height:1.08;letter-spacing:-0.02em;color:#9E3B26;text-align:center;z-index:6;">O fim de semana pede mesa posta.</div>
+  </div>
+
+  <!-- SCENE 3 — Bacalhau e polvo à lagareiro (6-9.5s) -->
+  <div id="scene-3" class="clip" data-start="6" data-duration="3.5" data-track-index="2" style="position:absolute;inset:0;width:1080px;height:1920px;overflow:hidden;">
+    <div class="linen" style="position:absolute;inset:0;background-color:#FBF4E8;z-index:0;"></div>
+    <div id="scene-3-text-1" class="label" style="position:absolute;left:72px;top:340px;padding:16px 34px;border:1.5px solid #5C6B3F;border-radius:999px;color:#5C6B3F;font-size:28px;line-height:1.2;z-index:6;">Menu de jantar</div>
+    <div class="s3-card-1" style="position:absolute;left:72px;top:500px;width:456px;height:440px;border-radius:28px;background:linear-gradient(165deg,#FBF4E8,#F3E7D3);border:1px solid #E8D6BC;box-shadow:0 18px 48px rgba(43,29,20,0.14);z-index:2;">
+      <div style="position:absolute;left:78px;top:70px;width:300px;height:300px;border-radius:50%;background:radial-gradient(circle at 40% 34%, #F7DFAE, #C98A2E 78%);box-shadow:inset 0 0 0 12px #FBF4E8;"></div>
+    </div>
+    <div class="s3-card-2" style="position:absolute;left:552px;top:500px;width:456px;height:440px;border-radius:28px;background:linear-gradient(165deg,#FBF4E8,#F3E7D3);border:1px solid #E8D6BC;box-shadow:0 18px 48px rgba(43,29,20,0.14);z-index:2;">
+      <div style="position:absolute;left:78px;top:70px;width:300px;height:300px;border-radius:50%;background:radial-gradient(circle at 40% 34%, #E6BE7C, #9E3B26 82%);box-shadow:inset 0 0 0 12px #FBF4E8;"></div>
+    </div>
+    <div id="scene-3-text-2" class="serif" style="position:absolute;left:72px;top:985px;width:456px;font-size:46px;line-height:1.1;letter-spacing:-0.01em;color:#9E3B26;text-align:center;z-index:6;">Bacalhau</div>
+    <div id="scene-3-text-3" class="serif" style="position:absolute;left:552px;top:985px;width:456px;font-size:46px;line-height:1.1;letter-spacing:-0.01em;color:#9E3B26;text-align:center;z-index:6;">Polvo à lagareiro</div>
+    <div class="s3-rule-1" style="position:absolute;left:252px;top:1110px;width:96px;height:4px;border-radius:2px;background:#C98A2E;transform-origin:center;z-index:6;"></div>
+    <div class="s3-rule-2" style="position:absolute;left:732px;top:1110px;width:96px;height:4px;border-radius:2px;background:#C98A2E;transform-origin:center;z-index:6;"></div>
+  </div>
+
+  <!-- SCENE 4 — Vinho da casa incluído (9.5-12.5s) -->
+  <div id="scene-4" class="clip" data-start="9.5" data-duration="3" data-track-index="0" style="position:absolute;inset:0;width:1080px;height:1920px;overflow:hidden;">
+    <div class="linen" style="position:absolute;inset:0;background:linear-gradient(180deg,#FBF4E8 0%,#F3E7D3 100%);z-index:0;"></div>
+    <div style="position:absolute;left:190px;top:230px;width:700px;height:700px;border-radius:50%;background:radial-gradient(circle, rgba(201,138,46,0.35) 0%, rgba(201,138,46,0) 68%);z-index:1;"></div>
+    <div class="s4-glass" style="position:absolute;left:400px;top:320px;width:280px;height:400px;border-radius:24px 24px 140px 140px;background:linear-gradient(180deg, rgba(158,59,38,0.18) 0%, #A8402C 30%, #7B1E22 100%);box-shadow:0 24px 60px rgba(43,29,20,0.22), inset 0 0 0 6px rgba(255,248,236,0.35);z-index:2;"></div>
+    <div style="position:absolute;left:430px;top:300px;width:220px;height:14px;border-radius:7px;background:rgba(255,248,236,0.75);z-index:3;"></div>
+    <div class="s4-card" style="position:absolute;left:72px;top:880px;width:936px;padding:48px;border-radius:24px;background:#FBF4E8;border:1px solid #E8D6BC;box-shadow:0 18px 48px rgba(43,29,20,0.14);z-index:4;">
+      <div id="scene-4-text-1" class="label" style="font-size:28px;line-height:1.3;color:#5C6B3F;margin-bottom:20px;">Vinho da casa</div>
+      <div id="scene-4-text-2" class="serif" style="font-size:62px;line-height:1.08;letter-spacing:-0.02em;color:#9E3B26;">Vinho da casa incluído.</div>
+      <div class="s4-rule" style="margin-top:28px;width:96px;height:4px;border-radius:2px;background:#C98A2E;transform-origin:left center;"></div>
+    </div>
+  </div>
+
+  <!-- SCENE 5 — Reserva a tua mesa (12.5-15s) -->
+  <div id="scene-5" class="clip" data-start="12.5" data-duration="2.5" data-track-index="1" style="position:absolute;inset:0;width:1080px;height:1920px;overflow:hidden;">
+    <div class="linen" style="position:absolute;inset:0;background-color:#FBF4E8;z-index:0;"></div>
+    <div class="s5-plate" style="position:absolute;left:190px;top:200px;width:700px;height:700px;border-radius:50%;background:radial-gradient(circle at 40% 34%, #E6BE7C, #9E3B26 82%);opacity:0.25;z-index:1;"></div>
+    <div id="scene-5-text-1" class="serif" style="position:absolute;left:72px;top:940px;width:936px;font-size:76px;line-height:1.06;letter-spacing:-0.02em;color:#9E3B26;text-align:center;z-index:6;">Tasca do Largo</div>
+    <div class="s5-rule" style="position:absolute;left:492px;top:1080px;width:96px;height:4px;border-radius:2px;background:#C98A2E;transform-origin:center;z-index:6;"></div>
+    <div class="s5-pill" style="position:absolute;left:140px;top:1150px;width:800px;height:112px;border-radius:999px;background:#9E3B26;display:flex;align-items:center;justify-content:center;box-shadow:0 20px 46px rgba(158,59,38,0.32);z-index:6;">
+      <div id="scene-5-text-2" style="font-family:'Inter', system-ui, sans-serif;font-weight:600;font-size:38px;line-height:1.2;color:#FFF8EC;">Reserva a tua mesa</div>
+    </div>
+    <div id="scene-5-text-3" style="position:absolute;left:72px;top:1300px;width:936px;font-size:34px;line-height:1.35;color:#6E5A4B;text-align:center;z-index:6;">este fim de semana.</div>
+  </div>
+
+<!-- __vp-audio-tracks:v1 -->
+<audio id="scene-1-voice-1" src="https://syyxuhrvyfxagcadrlqb.supabase.co/storage/v1/object/sign/video-artifacts/projects/24909d75-d3e1-4ea2-8ac0-dbf4fd1b269d/audio/vo-1.wav?token=eyJraWQiOiJiNDIzN2JmOC03ZmJkLTQxMGEtOTNhZS03MmNiOWRlNzIxZDQiLCJhbGciOiJIUzI1NiJ9.eyJ1cmwiOiJ2aWRlby1hcnRpZmFjdHMvcHJvamVjdHMvMjQ5MDlkNzUtZDNlMS00ZWEyLThhYzAtZGJmNGZkMWIyNjlkL2F1ZGlvL3ZvLTEud2F2Iiwic2NvcGUiOiJkb3dubG9hZCIsImlhdCI6MTc5NDUxOTUwMCwiZXhwIjoxNzk1MTI0MzAwfQ.uWPvuIRyWkNBujsP3N5ow5VMNjRI4TnzuRoOj4JezJo" data-track="vo" data-track-index="8" data-start="0" data-duration="3" data-sample-rate="24000" data-fade-in="200" data-fade-out="300" preload="auto"></audio>
+<audio id="scene-2-voice-1" src="https://syyxuhrvyfxagcadrlqb.supabase.co/storage/v1/object/sign/video-artifacts/projects/24909d75-d3e1-4ea2-8ac0-dbf4fd1b269d/audio/vo-2.wav?token=eyJraWQiOiJiNDIzN2JmOC03ZmJkLTQxMGEtOTNhZS03MmNiOWRlNzIxZDQiLCJhbGciOiJIUzI1NiJ9.eyJ1cmwiOiJ2aWRlby1hcnRpZmFjdHMvcHJvamVjdHMvMjQ5MDlkNzUtZDNlMS00ZWEyLThhYzAtZGJmNGZkMWIyNjlkL2F1ZGlvL3ZvLTIud2F2Iiwic2NvcGUiOiJkb3dubG9hZCIsImlhdCI6MTc5NDUxOTUwMCwiZXhwIjoxNzk1MTI0MzAwfQ.iLdkASXcFVFBLdhssTIXGM7IXT8YnmcfaU-2Utf3oNM" data-track="vo" data-track-index="8" data-start="3" data-duration="3" data-sample-rate="24000" data-fade-in="200" data-fade-out="300" preload="auto"></audio>
+<audio id="scene-3-voice-1" src="https://syyxuhrvyfxagcadrlqb.supabase.co/storage/v1/object/sign/video-artifacts/projects/24909d75-d3e1-4ea2-8ac0-dbf4fd1b269d/audio/vo-3.wav?token=eyJraWQiOiJiNDIzN2JmOC03ZmJkLTQxMGEtOTNhZS03MmNiOWRlNzIxZDQiLCJhbGciOiJIUzI1NiJ9.eyJ1cmwiOiJ2aWRlby1hcnRpZmFjdHMvcHJvamVjdHMvMjQ5MDlkNzUtZDNlMS00ZWEyLThhYzAtZGJmNGZkMWIyNjlkL2F1ZGlvL3ZvLTMud2F2Iiwic2NvcGUiOiJkb3dubG9hZCIsImlhdCI6MTc5NDUxOTUwMSwiZXhwIjoxNzk1MTI0MzAxfQ.aJQuiX-AYWp_jEPCgF4lGNu-KO3Mjrl0aMWH3CipGrA" data-track="vo" data-track-index="8" data-start="6" data-duration="3.5" data-sample-rate="24000" data-fade-in="200" data-fade-out="300" preload="auto"></audio>
+<audio id="scene-4-voice-1" src="https://syyxuhrvyfxagcadrlqb.supabase.co/storage/v1/object/sign/video-artifacts/projects/24909d75-d3e1-4ea2-8ac0-dbf4fd1b269d/audio/vo-4.wav?token=eyJraWQiOiJiNDIzN2JmOC03ZmJkLTQxMGEtOTNhZS03MmNiOWRlNzIxZDQiLCJhbGciOiJIUzI1NiJ9.eyJ1cmwiOiJ2aWRlby1hcnRpZmFjdHMvcHJvamVjdHMvMjQ5MDlkNzUtZDNlMS00ZWEyLThhYzAtZGJmNGZkMWIyNjlkL2F1ZGlvL3ZvLTQud2F2Iiwic2NvcGUiOiJkb3dubG9hZCIsImlhdCI6MTc5NDUxOTUwMSwiZXhwIjoxNzk1MTI0MzAxfQ.HRYzCEy92z_N1iCbINXRcEFG0Zw5JaWtVu1PtQfndcA" data-track="vo" data-track-index="8" data-start="9.5" data-duration="3" data-sample-rate="24000" data-fade-in="200" data-fade-out="300" preload="auto"></audio>
+<audio id="scene-5-voice-1" src="https://syyxuhrvyfxagcadrlqb.supabase.co/storage/v1/object/sign/video-artifacts/projects/24909d75-d3e1-4ea2-8ac0-dbf4fd1b269d/audio/vo-5.wav?token=eyJraWQiOiJiNDIzN2JmOC03ZmJkLTQxMGEtOTNhZS03MmNiOWRlNzIxZDQiLCJhbGciOiJIUzI1NiJ9.eyJ1cmwiOiJ2aWRlby1hcnRpZmFjdHMvcHJvamVjdHMvMjQ5MDlkNzUtZDNlMS00ZWEyLThhYzAtZGJmNGZkMWIyNjlkL2F1ZGlvL3ZvLTUud2F2Iiwic2NvcGUiOiJkb3dubG9hZCIsImlhdCI6MTc5NDUxOTUwMSwiZXhwIjoxNzk1MTI0MzAxfQ.9V_4quILyNZaN_0_8btQ2bUolGTITpEoXbxIjhhQ0aw" data-track="vo" data-track-index="8" data-start="12.5" data-duration="2.5" data-sample-rate="24000" data-fade-in="200" data-fade-out="300" preload="auto"></audio>
+<audio id="bgm-main" src="https://syyxuhrvyfxagcadrlqb.supabase.co/storage/v1/object/sign/video-artifacts/projects/24909d75-d3e1-4ea2-8ac0-dbf4fd1b269d/audio/music/5253dd86acfb3636cd027d3c7ec7df6a5860bdf7c541cd84342c18cfe6ecddb7/bgm.mp3?token=eyJraWQiOiJiNDIzN2JmOC03ZmJkLTQxMGEtOTNhZS03MmNiOWRlNzIxZDQiLCJhbGciOiJIUzI1NiJ9.eyJ1cmwiOiJ2aWRlby1hcnRpZmFjdHMvcHJvamVjdHMvMjQ5MDlkNzUtZDNlMS00ZWEyLThhYzAtZGJmNGZkMWIyNjlkL2F1ZGlvL211c2ljLzUyNTNkZDg2YWNmYjM2MzZjZDAyN2QzYzdlYzdkZjZhNTg2MGJkZjdjNTQxY2Q4NDM0MmMxOGNmZTZlY2RkYjcvYmdtLm1wMyIsInNjb3BlIjoiZG93bmxvYWQiLCJpYXQiOjE3OTQ1MTk1MDEsImV4cCI6MTc5NTEyNDMwMX0.R3f79j5Fxv1x2A3lY9tJTVOmc-frIxWhNASrO_vdCAI" data-track="bgm" data-track-index="9" data-start="0" data-duration="14.856" data-volume="0.18" data-fade-in="1500" data-fade-out="3000" preload="auto"></audio>
+<script id="__vp-audio-materialized__">try{
+function __vpApplyAudioProps(){
+  try {
+    var tl = (window.__timelines || {})["main"];
+    if (!tl || typeof tl.fromTo !== "function" || !window.gsap) return;
+    var nodes = document.querySelectorAll("audio[data-volume],audio[data-muted],audio[data-fade-in],audio[data-fade-out]");
+    Array.prototype.forEach.call(nodes, function(el){
+      var vol = parseFloat(el.getAttribute("data-volume")); if (!isFinite(vol)) vol = 1;
+      // E02/I4 §8: o applier do renderer consome `data-muted` COMO o preview
+      // (preview-helper: el.muted = data-muted === 'true'). O mute DOMINA o
+      // gain e os fades: um clip muted produz zero sem alterar source/gain/
+      // fades authored (`data-volume` nunca é reescrito → unmute restaura).
+      var muted = el.getAttribute("data-muted") === "true";
+      var gain = muted ? 0 : Math.max(0, Math.min(1, vol));
+      var start = parseFloat(el.getAttribute("data-start")); if (!isFinite(start)) start = 0;
+      var dur = parseFloat(el.getAttribute("data-duration"));
+      var fIn = (parseFloat(el.getAttribute("data-fade-in")) || 0) / 1000;
+      var fOut = (parseFloat(el.getAttribute("data-fade-out")) || 0) / 1000;
+      try { window.gsap.killTweensOf(el, "volume"); } catch (e) {}
+      el.muted = muted;
+      el.volume = gain;
+      if (!isFinite(dur) || dur <= 0) return;
+      var maxFade = Math.max(0, dur - 0.5);
+      if (fIn + fOut > maxFade) { var k = maxFade / (fIn + fOut); fIn *= k; fOut *= k; }
+      // Envelopes lineares de amplitude, clip-local; um clip muted não gera
+      // tweens (nada para rampar) e fica a zero em qualquer seek.
+      if (!muted && fIn > 0) tl.fromTo(el, { volume: 0 }, { volume: gain, duration: fIn, ease: "none" }, start);
+      if (!muted && fOut > 0) tl.fromTo(el, { volume: gain }, { volume: 0, duration: fOut, ease: "none" }, start + dur - fOut);
+    });
+  } catch (err) { /* nunca quebrar a composição por áudio */ }
+}
+if (typeof window !== "undefined") {
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", __vpApplyAudioProps);
+  else __vpApplyAudioProps();
+}}catch(e){}</script>
+<!-- /__vp-audio-tracks --><!-- __vp-captions:v1 --><span id="vp-caption-cue-0" class="vp-caption" data-vp-caption-cue data-preset="editorial" data-timing-source="acoustic" style="position:absolute;left:5%;right:5%;bottom:7%;z-index:100;opacity:0;text-align:center;pointer-events:none;font:600 36px/1.4 sans-serif;color:#fff;background:#101018f2;border-radius:12px;padding:12px 20px;"><span class="vp-word" id="vp-word-0" data-active="0">Jantar</span> <span class="vp-word" id="vp-word-1" data-active="0">como</span> <span class="vp-word" id="vp-word-2" data-active="0">em</span> <span class="vp-word" id="vp-word-3" data-active="0">casa.</span></span>
+<span id="vp-caption-cue-1" class="vp-caption" data-vp-caption-cue data-preset="editorial" data-timing-source="acoustic" style="position:absolute;left:5%;right:5%;bottom:7%;z-index:100;opacity:0;text-align:center;pointer-events:none;font:600 36px/1.4 sans-serif;color:#fff;background:#101018f2;border-radius:12px;padding:12px 20px;"><span class="vp-word" id="vp-word-4" data-active="0">Ninguém</span> <span class="vp-word" id="vp-word-5" data-active="0">cozinha</span> <span class="vp-word" id="vp-word-6" data-active="0">hoje.</span></span>
+<span id="vp-caption-cue-2" class="vp-caption" data-vp-caption-cue data-preset="editorial" data-timing-source="acoustic" style="position:absolute;left:5%;right:5%;bottom:7%;z-index:100;opacity:0;text-align:center;pointer-events:none;font:600 36px/1.4 sans-serif;color:#fff;background:#101018f2;border-radius:12px;padding:12px 20px;"><span class="vp-word" id="vp-word-7" data-active="0">Bacalhau</span> <span class="vp-word" id="vp-word-8" data-active="0">e</span> <span class="vp-word" id="vp-word-9" data-active="0">polvo</span> <span class="vp-word" id="vp-word-10" data-active="0">à</span> <span class="vp-word" id="vp-word-11" data-active="0">lagareiro.</span></span>
+<span id="vp-caption-cue-3" class="vp-caption" data-vp-caption-cue data-preset="editorial" data-timing-source="acoustic" style="position:absolute;left:5%;right:5%;bottom:7%;z-index:100;opacity:0;text-align:center;pointer-events:none;font:600 36px/1.4 sans-serif;color:#fff;background:#101018f2;border-radius:12px;padding:12px 20px;"><span class="vp-word" id="vp-word-12" data-active="0">Vinho</span> <span class="vp-word" id="vp-word-13" data-active="0">da</span> <span class="vp-word" id="vp-word-14" data-active="0">casa</span> <span class="vp-word" id="vp-word-15" data-active="0">incluído.</span></span>
+<span id="vp-caption-cue-4" class="vp-caption" data-vp-caption-cue data-preset="editorial" data-timing-source="acoustic" style="position:absolute;left:5%;right:5%;bottom:7%;z-index:100;opacity:0;text-align:center;pointer-events:none;font:600 36px/1.4 sans-serif;color:#fff;background:#101018f2;border-radius:12px;padding:12px 20px;"><span class="vp-word" id="vp-word-16" data-active="0">Reserva</span> <span class="vp-word" id="vp-word-17" data-active="0">a</span> <span class="vp-word" id="vp-word-18" data-active="0">tua</span> <span class="vp-word" id="vp-word-19" data-active="0">mesa.</span></span><!-- /__vp-captions --></div>
+
+<script>
+  window.__timelines = window.__timelines || {};
+  var tl = gsap.timeline({ paused: true });
+  window.__timelines["main"] = tl;
+
+  /* Scene 1 — slow push-in, headline rise, logo settle */
+  tl.fromTo(".s1-plate", { scale: 1 }, { scale: 1.06, duration: 3, ease: "power1.out" }, 0);
+  tl.fromTo("#scene-1-text-2", { y: 32 }, { y: 0, duration: 1, ease: "power2.out" }, 1.0);
+  tl.fromTo("#scene-1-text-1", { y: 20 }, { y: 0, duration: 0.8, ease: "power2.out" }, 2.0);
+
+  /* Scene 2 — breathing table, two type beats */
+  tl.fromTo(".s2-table", { scale: 1 }, { scale: 1.02, duration: 3, ease: "sine.inOut" }, 3.0);
+  tl.fromTo("#scene-2-text-1", { y: 26 }, { y: 0, duration: 0.8, ease: "power2.out" }, 3.3);
+  tl.fromTo("#scene-2-text-2", { y: 30 }, { y: 0, duration: 0.9, ease: "power2.out" }, 4.5);
+
+  /* Scene 3 — dish grid assemble, names settle, accent rules grow */
+  tl.fromTo("#scene-3-text-1", { scale: 0.9 }, { scale: 1, duration: 0.5, ease: "back.out(1.5)" }, 6.2);
+  tl.fromTo(".s3-card-1", { scale: 0.86 }, { scale: 1, duration: 0.7, ease: "back.out(1.3)" }, 6.35);
+  tl.fromTo(".s3-card-2", { scale: 0.86 }, { scale: 1, duration: 0.7, ease: "back.out(1.3)" }, 7.55);
+  tl.fromTo("#scene-3-text-2", { y: 24 }, { y: 0, duration: 0.6, ease: "power2.out" }, 8.0);
+  tl.fromTo("#scene-3-text-3", { y: 24 }, { y: 0, duration: 0.6, ease: "power2.out" }, 8.3);
+  tl.fromTo(".s3-rule-1", { scaleX: 0 }, { scaleX: 1, duration: 0.5, ease: "power2.out" }, 8.6);
+  tl.fromTo(".s3-rule-2", { scaleX: 0 }, { scaleX: 1, duration: 0.5, ease: "power2.out" }, 8.8);
+
+  /* Scene 4 — glass breathe, card rise, offer reveal */
+  tl.fromTo(".s4-glass", { scale: 1 }, { scale: 1.03, duration: 3, ease: "sine.inOut" }, 9.5);
+  tl.fromTo(".s4-card", { y: 24 }, { y: 0, duration: 0.9, ease: "power2.out" }, 9.8);
+  tl.fromTo("#scene-4-text-1", { y: 16 }, { y: 0, duration: 0.6, ease: "power2.out" }, 10.0);
+  tl.fromTo("#scene-4-text-2", { y: 24 }, { y: 0, duration: 0.8, ease: "power2.out" }, 10.6);
+  tl.fromTo(".s4-rule", { scaleX: 0 }, { scaleX: 1, duration: 0.6, ease: "power2.out" }, 11.1);
+
+  /* Scene 5 — lockup settles, CTA pill pops, static hold */
+  tl.fromTo(".s5-plate", { scale: 1 }, { scale: 1.04, duration: 2.5, ease: "sine.out" }, 12.5);
+  tl.fromTo("#scene-5-text-1", { y: 24 }, { y: 0, duration: 0.9, ease: "power2.out" }, 12.6);
+  tl.fromTo(".s5-pill", { scale: 0.88 }, { scale: 1, duration: 0.6, ease: "back.out(1.4)" }, 13.5);
+  tl.fromTo(".s5-rule", { scaleX: 0 }, { scaleX: 1, duration: 0.5, ease: "power2.out" }, 13.9);
+  tl.fromTo("#scene-5-text-3", { y: 16 }, { y: 0, duration: 0.6, ease: "power2.out" }, 14.0);
+</script>
+<!-- __vp-captions:v1 --><script>(function(){var tl=(window.__timelines||{})["main"];if(!tl)return;tl.set("#vp-caption-cue-0",{opacity:0},0).set("#vp-caption-cue-0",{opacity:1},0.43).set("#vp-caption-cue-0",{opacity:0},2.08);tl.set("#vp-word-0",{attr:{"data-active":"0"}},0).set("#vp-word-0",{attr:{"data-active":"1"}},0.43).set("#vp-word-0",{attr:{"data-active":"0"}},1.16);tl.set("#vp-word-1",{attr:{"data-active":"0"}},0).set("#vp-word-1",{attr:{"data-active":"1"}},1.16).set("#vp-word-1",{attr:{"data-active":"0"}},1.48);tl.set("#vp-word-2",{attr:{"data-active":"0"}},0).set("#vp-word-2",{attr:{"data-active":"1"}},1.48).set("#vp-word-2",{attr:{"data-active":"0"}},1.72);tl.set("#vp-word-3",{attr:{"data-active":"0"}},0).set("#vp-word-3",{attr:{"data-active":"1"}},1.72).set("#vp-word-3",{attr:{"data-active":"0"}},2.08);tl.set("#vp-caption-cue-1",{opacity:0},0).set("#vp-caption-cue-1",{opacity:1},3.42).set("#vp-caption-cue-1",{opacity:0},5.21);tl.set("#vp-word-4",{attr:{"data-active":"0"}},0).set("#vp-word-4",{attr:{"data-active":"1"}},3.42).set("#vp-word-4",{attr:{"data-active":"0"}},4.24);tl.set("#vp-word-5",{attr:{"data-active":"0"}},0).set("#vp-word-5",{attr:{"data-active":"1"}},4.24).set("#vp-word-5",{attr:{"data-active":"0"}},4.88);tl.set("#vp-word-6",{attr:{"data-active":"0"}},0).set("#vp-word-6",{attr:{"data-active":"1"}},4.88).set("#vp-word-6",{attr:{"data-active":"0"}},5.21);tl.set("#vp-caption-cue-2",{opacity:0},0).set("#vp-caption-cue-2",{opacity:1},6.36).set("#vp-caption-cue-2",{opacity:0},8.99);tl.set("#vp-word-7",{attr:{"data-active":"0"}},0).set("#vp-word-7",{attr:{"data-active":"1"}},6.36).set("#vp-word-7",{attr:{"data-active":"0"}},7.307);tl.set("#vp-word-8",{attr:{"data-active":"0"}},0).set("#vp-word-8",{attr:{"data-active":"1"}},7.334).set("#vp-word-8",{attr:{"data-active":"0"}},7.65);tl.set("#vp-word-9",{attr:{"data-active":"0"}},0).set("#vp-word-9",{attr:{"data-active":"1"}},7.65).set("#vp-word-9",{attr:{"data-active":"0"}},8.045);tl.set("#vp-word-10",{attr:{"data-active":"0"}},0).set("#vp-word-10",{attr:{"data-active":"1"}},8.045).set("#vp-word-10",{attr:{"data-active":"0"}},8.282);tl.set("#vp-word-11",{attr:{"data-active":"0"}},0).set("#vp-word-11",{attr:{"data-active":"1"}},8.282).set("#vp-word-11",{attr:{"data-active":"0"}},8.99);tl.set("#vp-caption-cue-3",{opacity:0},0).set("#vp-caption-cue-3",{opacity:1},9.97).set("#vp-caption-cue-3",{opacity:0},11.61);tl.set("#vp-word-12",{attr:{"data-active":"0"}},0).set("#vp-word-12",{attr:{"data-active":"1"}},9.97).set("#vp-word-12",{attr:{"data-active":"0"}},10.34);tl.set("#vp-word-13",{attr:{"data-active":"0"}},0).set("#vp-word-13",{attr:{"data-active":"1"}},10.34).set("#vp-word-13",{attr:{"data-active":"0"}},10.58);tl.set("#vp-word-14",{attr:{"data-active":"0"}},0).set("#vp-word-14",{attr:{"data-active":"1"}},10.58).set("#vp-word-14",{attr:{"data-active":"0"}},11.06);tl.set("#vp-word-15",{attr:{"data-active":"0"}},0).set("#vp-word-15",{attr:{"data-active":"1"}},11.06).set("#vp-word-15",{attr:{"data-active":"0"}},11.61);tl.set("#vp-caption-cue-4",{opacity:0},0).set("#vp-caption-cue-4",{opacity:1},12.98).set("#vp-caption-cue-4",{opacity:0},14.26);tl.set("#vp-word-16",{attr:{"data-active":"0"}},0).set("#vp-word-16",{attr:{"data-active":"1"}},12.98).set("#vp-word-16",{attr:{"data-active":"0"}},13.504);tl.set("#vp-word-17",{attr:{"data-active":"0"}},0).set("#vp-word-17",{attr:{"data-active":"1"}},13.504).set("#vp-word-17",{attr:{"data-active":"0"}},13.661);tl.set("#vp-word-18",{attr:{"data-active":"0"}},0).set("#vp-word-18",{attr:{"data-active":"1"}},13.661).set("#vp-word-18",{attr:{"data-active":"0"}},13.896);tl.set("#vp-word-19",{attr:{"data-active":"0"}},0).set("#vp-word-19",{attr:{"data-active":"1"}},13.896).set("#vp-word-19",{attr:{"data-active":"0"}},14.26);})();</script><!-- /__vp-captions --></body>
+</html>

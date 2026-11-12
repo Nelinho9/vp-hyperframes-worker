@@ -1,0 +1,13 @@
+{
+  "finished_at": "2026-11-12T22:35:21.060Z",
+  "flags": {
+    "V4_BUILD_ON_WORKER": "true",
+    "V4_LLM_STEPS_ON_WORKER": "design,storyboard,audio,visual,quality"
+  },
+  "user": "a4918a0a-d6e4-46b0-b9dd-3cbfbe3bb1e0",
+  "videos": 3,
+  "passed": 2,
+  "cumulative_passed": 3,
+  "credits_total": 25,
+  "verdict": "PARITY_PROVEN"
+}

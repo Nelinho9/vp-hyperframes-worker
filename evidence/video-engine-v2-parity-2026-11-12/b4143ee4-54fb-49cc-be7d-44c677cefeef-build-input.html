@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="pt">
+<head>
+<meta charset="utf-8">
+<script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@heygen/hyperframes@0.7.109/dist/hyperframes.min.js"></script>
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; background: #0B0C0F; }
+  .head { font-family: 'Montserrat', system-ui, sans-serif; font-weight: 900; letter-spacing: -0.02em; color: #F7F5F0; margin: 0; }
+  .body-t { font-family: 'Inter', system-ui, sans-serif; margin: 0; }
+  .eyebrow { font-family: 'Inter', system-ui, sans-serif; font-weight: 600; font-size: 28px; letter-spacing: 0.16em; text-transform: uppercase; color: #D6FF3F; }
+  .grain { position: absolute; inset: 0; z-index: 1; opacity: 0.05; pointer-events: none; background-image: radial-gradient(#F7F5F0 1px, transparent 1px); background-size: 4px 4px; }
+  .front { position: absolute; inset: 0; z-index: 2; }
+</style>
+<!-- __vp-caption-style:v1 --><style data-vp-caption-style="editorial">.vp-word{display:inline-block;transition:none;will-change:transform,color;opacity:.62}.vp-word[data-active="1"]{opacity:1}.vp-caption[data-preset="editorial"]{background:#101018f2;padding:12px 20px}.vp-word[data-active="1"]{color:#fff}</style><!-- /__vp-caption-style --></head>
+<body>
+<div class="composition" data-composition-id="main" data-start="0" data-duration="15" data-width="1080" data-height="1080" style="position:relative;width:1080px;height:1080px;overflow:hidden;background:#0B0C0F;">
+
+  <!-- SCENE 1 — HOOK -->
+  <div id="scene-1" class="clip" data-start="0" data-duration="3" data-track-index="0" style="position:absolute;inset:0;width:1080px;height:1080px;background:#0B0C0F;overflow:hidden;">
+    <div style="position:absolute;inset:0;background:radial-gradient(circle at 50% 44%, rgba(255,77,28,0.26) 0%, rgba(255,77,28,0) 64%);"></div>
+    <div style="position:absolute;left:50%;top:50%;width:860px;height:860px;margin:-430px 0 0 -430px;border:2px solid rgba(26,28,34,0.95);border-radius:50%;"></div>
+    <div class="grain"></div>
+    <div class="front" style="display:flex;flex-direction:column;align-items:center;justify-content:center;">
+      <h1 id="scene-1-text-1" class="head" style="font-size:112px;line-height:0.9;text-align:center;">O TEU VERÃO</h1>
+      <h1 id="scene-1-text-2" class="head" style="font-size:112px;line-height:0.9;text-align:center;margin-top:12px;">COMEÇA AQUI</h1>
+      <div class="s1-line" style="width:340px;height:8px;background:#D6FF3F;border-radius:999px;margin-top:28px;transform-origin:center center;"></div>
+    </div>
+    <div id="scene-1-text-3" class="head" style="position:absolute;left:72px;top:768px;z-index:3;font-size:44px;">MoveFit<span style="color:#FF4D1C;">.</span></div>
+  </div>
+
+  <!-- SCENE 2 — PROBLEMA -->
+  <div id="scene-2" class="clip" data-start="3" data-duration="3" data-track-index="0" style="position:absolute;inset:0;width:1080px;height:1080px;background:#0B0C0F;overflow:hidden;">
+    <div style="position:absolute;left:-160px;top:430px;width:1500px;height:240px;background:#1A1C22;transform:rotate(-10deg);"></div>
+    <div style="position:absolute;right:-90px;top:96px;width:440px;height:440px;border-radius:50%;border:2px solid rgba(214,255,63,0.22);"></div>
+    <div class="grain"></div>
+    <div class="front" style="padding:0 0 0 72px;display:flex;flex-direction:column;justify-content:center;">
+      <div style="width:900px;">
+        <h2 id="scene-2-text-1" class="head" style="font-size:88px;line-height:0.95;">SOZINHO É MAIS</h2>
+        <h2 id="scene-2-text-2" class="head" style="font-size:88px;line-height:0.95;color:#D6FF3F;margin-top:8px;">DIFÍCIL</h2>
+        <div class="s2-line" style="width:300px;height:8px;background:#D6FF3F;border-radius:999px;margin-top:24px;transform-origin:left center;"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- SCENE 3 — SOLUÇÃO -->
+  <div id="scene-3" class="clip" data-start="6" data-duration="3" data-track-index="0" style="position:absolute;inset:0;width:1080px;height:1080px;background:#0B0C0F;overflow:hidden;">
+    <div style="position:absolute;inset:0;background:linear-gradient(135deg, rgba(255,77,28,0.18) 0%, rgba(11,12,15,0) 58%);"></div>
+    <div class="grain"></div>
+    <div class="front" style="padding:0 0 0 72px;">
+      <div style="position:absolute;left:72px;top:130px;width:880px;">
+        <div id="scene-3-text-1" class="eyebrow">MOVEFIT</div>
+        <h2 id="scene-3-text-2" class="head" style="font-size:84px;line-height:0.95;margin-top:20px;">AULAS DE GRUPO</h2>
+        <div id="scene-3-text-3" class="body-t" style="font-size:40px;line-height:1.25;color:#F7F5F0;margin-top:24px;max-width:780px;">Acompanhamento personalizado em cada treino.</div>
+      </div>
+      <div style="position:absolute;left:72px;top:600px;display:flex;gap:24px;">
+        <div class="s3-card" style="width:440px;height:180px;background:#1A1C22;border-radius:24px;padding:32px;">
+          <div style="width:36px;height:36px;border-radius:50%;background:#D6FF3F;"></div>
+          <div id="scene-3-text-4" class="body-t" style="font-size:32px;font-weight:700;color:#F7F5F0;margin-top:20px;">AULAS DIÁRIAS</div>
+        </div>
+        <div class="s3-card" style="width:440px;height:180px;background:#1A1C22;border-radius:24px;padding:32px;">
+          <div style="width:36px;height:36px;border-radius:50%;background:#D6FF3F;"></div>
+          <div id="scene-3-text-5" class="body-t" style="font-size:32px;font-weight:700;color:#F7F5F0;margin-top:20px;">COACH DEDICADO</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- SCENE 4 — OFERTA -->
+  <div id="scene-4" class="clip" data-start="9" data-duration="3" data-track-index="1" style="position:absolute;inset:0;width:1080px;height:1080px;background:#0B0C0F;overflow:hidden;">
+    <div style="position:absolute;inset:0;background:radial-gradient(circle at 82% 18%, rgba(214,255,63,0.12) 0%, rgba(11,12,15,0) 58%);"></div>
+    <div class="grain"></div>
+    <div class="front">
+      <div class="s4-card" style="position:absolute;left:72px;top:206px;width:936px;height:520px;background:#1A1C22;border-radius:24px;padding:48px;">
+        <div style="position:absolute;left:0;top:56px;width:6px;height:408px;background:#D6FF3F;border-radius:999px;"></div>
+        <div id="scene-4-text-1" class="eyebrow">A OFERTA DE VERÃO</div>
+        <div style="display:flex;align-items:baseline;gap:20px;margin-top:18px;">
+          <span id="scene-4-text-2" class="head" style="display:inline-block;font-size:140px;line-height:0.85;color:#D6FF3F;">1</span>
+          <span id="scene-4-text-3" class="head" style="display:inline-block;font-size:72px;line-height:0.9;">SEMANA GRÁTIS</span>
+        </div>
+        <div id="scene-4-text-4" class="body-t" style="font-size:44px;font-weight:600;color:#F7F5F0;margin-top:28px;">SEM TAXA DE INSCRIÇÃO</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- SCENE 5 — CTA -->
+  <div id="scene-5" class="clip" data-start="12" data-duration="3" data-track-index="1" style="position:absolute;inset:0;width:1080px;height:1080px;background:#0B0C0F;overflow:hidden;">
+    <div style="position:absolute;left:50%;top:50%;width:900px;height:900px;margin:-450px 0 0 -450px;border:2px solid rgba(26,28,34,0.95);border-radius:50%;"></div>
+    <div style="position:absolute;inset:0;background:radial-gradient(circle at 50% 50%, rgba(255,77,28,0.20) 0%, rgba(255,77,28,0) 62%);"></div>
+    <div class="grain"></div>
+    <div class="front" style="display:flex;flex-direction:column;align-items:center;justify-content:center;">
+      <div class="s5-pill" style="display:flex;align-items:center;gap:16px;background:#FF4D1C;border-radius:999px;padding:24px 48px;min-height:96px;transform-origin:center center;">
+        <span id="scene-5-text-1" class="body-t" style="display:inline-block;font-size:40px;font-weight:700;color:#0B0C0F;text-transform:uppercase;letter-spacing:0.01em;">INSCREVE-TE ESTA SEMANA</span>
+        <span style="font-family:'Inter',system-ui,sans-serif;font-weight:700;font-size:40px;color:#0B0C0F;">&#8594;</span>
+      </div>
+      <div id="scene-5-text-2" class="head" style="font-size:64px;margin-top:48px;">MoveFit<span style="color:#FF4D1C;">.</span></div>
+      <div id="scene-5-text-3" class="body-t" style="font-size:28px;font-weight:600;color:#D6FF3F;margin-top:16px;letter-spacing:0.16em;text-transform:uppercase;">Plano de verão</div>
+    </div>
+  </div>
+
+<!-- __vp-audio-tracks:v1 -->
+<audio id="scene-1-voice-1" src="https://syyxuhrvyfxagcadrlqb.supabase.co/storage/v1/object/sign/video-artifacts/projects/b4143ee4-54fb-49cc-be7d-44c677cefeef/audio/vo-1.wav?token=eyJraWQiOiJiNDIzN2JmOC03ZmJkLTQxMGEtOTNhZS03MmNiOWRlNzIxZDQiLCJhbGciOiJIUzI1NiJ9.eyJ1cmwiOiJ2aWRlby1hcnRpZmFjdHMvcHJvamVjdHMvYjQxNDNlZTQtNTRmYi00OWNjLWJlN2QtNDRjNjc3Y2VmZWVmL2F1ZGlvL3ZvLTEud2F2Iiwic2NvcGUiOiJkb3dubG9hZCIsImlhdCI6MTc5NDUyMjg4NCwiZXhwIjoxNzk1MTI3Njg0fQ.rizGRc1odFPC1i563JqLHhuL_YwYeBMIRSWQcNL43NU" data-track="vo" data-track-index="8" data-start="0" data-duration="3" data-sample-rate="24000" data-fade-in="200" data-fade-out="300" preload="auto"></audio>
+<audio id="scene-2-voice-1" src="https://syyxuhrvyfxagcadrlqb.supabase.co/storage/v1/object/sign/video-artifacts/projects/b4143ee4-54fb-49cc-be7d-44c677cefeef/audio/vo-2.wav?token=eyJraWQiOiJiNDIzN2JmOC03ZmJkLTQxMGEtOTNhZS03MmNiOWRlNzIxZDQiLCJhbGciOiJIUzI1NiJ9.eyJ1cmwiOiJ2aWRlby1hcnRpZmFjdHMvcHJvamVjdHMvYjQxNDNlZTQtNTRmYi00OWNjLWJlN2QtNDRjNjc3Y2VmZWVmL2F1ZGlvL3ZvLTIud2F2Iiwic2NvcGUiOiJkb3dubG9hZCIsImlhdCI6MTc5NDUyMjg4NCwiZXhwIjoxNzk1MTI3Njg0fQ.grHLM8fP-pk-bnL3inbDNCeABKBAlH9wdvXmIzv7cEs" data-track="vo" data-track-index="8" data-start="3" data-duration="3" data-sample-rate="24000" data-fade-in="200" data-fade-out="300" preload="auto"></audio>
+<audio id="scene-4-voice-1" src="https://syyxuhrvyfxagcadrlqb.supabase.co/storage/v1/object/sign/video-artifacts/projects/b4143ee4-54fb-49cc-be7d-44c677cefeef/audio/vo-4.wav?token=eyJraWQiOiJiNDIzN2JmOC03ZmJkLTQxMGEtOTNhZS03MmNiOWRlNzIxZDQiLCJhbGciOiJIUzI1NiJ9.eyJ1cmwiOiJ2aWRlby1hcnRpZmFjdHMvcHJvamVjdHMvYjQxNDNlZTQtNTRmYi00OWNjLWJlN2QtNDRjNjc3Y2VmZWVmL2F1ZGlvL3ZvLTQud2F2Iiwic2NvcGUiOiJkb3dubG9hZCIsImlhdCI6MTc5NDUyMjg4NCwiZXhwIjoxNzk1MTI3Njg0fQ.ChJAtFqtxM7B2UiUENuVPwjhZVlbdhd4WQkX6adbFEg" data-track="vo" data-track-index="8" data-start="9" data-duration="3" data-sample-rate="24000" data-fade-in="200" data-fade-out="300" preload="auto"></audio>
+<audio id="scene-5-voice-1" src="https://syyxuhrvyfxagcadrlqb.supabase.co/storage/v1/object/sign/video-artifacts/projects/b4143ee4-54fb-49cc-be7d-44c677cefeef/audio/vo-5.wav?token=eyJraWQiOiJiNDIzN2JmOC03ZmJkLTQxMGEtOTNhZS03MmNiOWRlNzIxZDQiLCJhbGciOiJIUzI1NiJ9.eyJ1cmwiOiJ2aWRlby1hcnRpZmFjdHMvcHJvamVjdHMvYjQxNDNlZTQtNTRmYi00OWNjLWJlN2QtNDRjNjc3Y2VmZWVmL2F1ZGlvL3ZvLTUud2F2Iiwic2NvcGUiOiJkb3dubG9hZCIsImlhdCI6MTc5NDUyMjg4NCwiZXhwIjoxNzk1MTI3Njg0fQ.ia39fp0zFxze0ksDN2oTpgWZ-cshO8IiITHK-pKpNrc" data-track="vo" data-track-index="8" data-start="12" data-duration="3" data-sample-rate="24000" data-fade-in="200" data-fade-out="300" preload="auto"></audio>
+<audio id="bgm-main" src="https://syyxuhrvyfxagcadrlqb.supabase.co/storage/v1/object/sign/video-artifacts/projects/b4143ee4-54fb-49cc-be7d-44c677cefeef/audio/music/e8e8fb80bdfbe42129f48186e889352472a4c468faa00fd82c1e623035a97356/bgm.mp3?token=eyJraWQiOiJiNDIzN2JmOC03ZmJkLTQxMGEtOTNhZS03MmNiOWRlNzIxZDQiLCJhbGciOiJIUzI1NiJ9.eyJ1cmwiOiJ2aWRlby1hcnRpZmFjdHMvcHJvamVjdHMvYjQxNDNlZTQtNTRmYi00OWNjLWJlN2QtNDRjNjc3Y2VmZWVmL2F1ZGlvL211c2ljL2U4ZThmYjgwYmRmYmU0MjEyOWY0ODE4NmU4ODkzNTI0NzJhNGM0NjhmYWEwMGZkODJjMWU2MjMwMzVhOTczNTYvYmdtLm1wMyIsInNjb3BlIjoiZG93bmxvYWQiLCJpYXQiOjE3OTQ1MjI4ODQsImV4cCI6MTc5NTEyNzY4NH0.snpqm3WlzHvTbaDAnwSugd-D_5EcdE42wOgyxOZtCWY" data-track="bgm" data-track-index="9" data-start="0" data-duration="14.784" data-volume="0.18" data-fade-in="1500" data-fade-out="3000" preload="auto"></audio>
+<script id="__vp-audio-materialized__">try{
+function __vpApplyAudioProps(){
+  try {
+    var tl = (window.__timelines || {})["main"];
+    if (!tl || typeof tl.fromTo !== "function" || !window.gsap) return;
+    var nodes = document.querySelectorAll("audio[data-volume],audio[data-muted],audio[data-fade-in],audio[data-fade-out]");
+    Array.prototype.forEach.call(nodes, function(el){
+      var vol = parseFloat(el.getAttribute("data-volume")); if (!isFinite(vol)) vol = 1;
+      // E02/I4 §8: o applier do renderer consome `data-muted` COMO o preview
+      // (preview-helper: el.muted = data-muted === 'true'). O mute DOMINA o
+      // gain e os fades: um clip muted produz zero sem alterar source/gain/
+      // fades authored (`data-volume` nunca é reescrito → unmute restaura).
+      var muted = el.getAttribute("data-muted") === "true";
+      var gain = muted ? 0 : Math.max(0, Math.min(1, vol));
+      var start = parseFloat(el.getAttribute("data-start")); if (!isFinite(start)) start = 0;
+      var dur = parseFloat(el.getAttribute("data-duration"));
+      var fIn = (parseFloat(el.getAttribute("data-fade-in")) || 0) / 1000;
+      var fOut = (parseFloat(el.getAttribute("data-fade-out")) || 0) / 1000;
+      try { window.gsap.killTweensOf(el, "volume"); } catch (e) {}
+      el.muted = muted;
+      el.volume = gain;
+      if (!isFinite(dur) || dur <= 0) return;
+      var maxFade = Math.max(0, dur - 0.5);
+      if (fIn + fOut > maxFade) { var k = maxFade / (fIn + fOut); fIn *= k; fOut *= k; }
+      // Envelopes lineares de amplitude, clip-local; um clip muted não gera
+      // tweens (nada para rampar) e fica a zero em qualquer seek.
+      if (!muted && fIn > 0) tl.fromTo(el, { volume: 0 }, { volume: gain, duration: fIn, ease: "none" }, start);
+      if (!muted && fOut > 0) tl.fromTo(el, { volume: gain }, { volume: 0, duration: fOut, ease: "none" }, start + dur - fOut);
+    });
+  } catch (err) { /* nunca quebrar a composição por áudio */ }
+}
+if (typeof window !== "undefined") {
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", __vpApplyAudioProps);
+  else __vpApplyAudioProps();
+}}catch(e){}</script>
+<!-- /__vp-audio-tracks --><!-- __vp-captions:v1 --><span id="vp-caption-cue-0" class="vp-caption" data-vp-caption-cue data-preset="editorial" data-timing-source="acoustic" style="position:absolute;left:5%;right:5%;bottom:6%;z-index:100;opacity:0;text-align:center;pointer-events:none;font:600 30px/1.4 sans-serif;color:#fff;background:#101018f2;border-radius:12px;padding:12px 20px;"><span class="vp-word" id="vp-word-0" data-active="0">Teu</span> <span class="vp-word" id="vp-word-1" data-active="0">verão</span> <span class="vp-word" id="vp-word-2" data-active="0">começa.</span></span>
+<span id="vp-caption-cue-1" class="vp-caption" data-vp-caption-cue data-preset="editorial" data-timing-source="acoustic" style="position:absolute;left:5%;right:5%;bottom:6%;z-index:100;opacity:0;text-align:center;pointer-events:none;font:600 30px/1.4 sans-serif;color:#fff;background:#101018f2;border-radius:12px;padding:12px 20px;"><span class="vp-word" id="vp-word-3" data-active="0">Sozinho</span> <span class="vp-word" id="vp-word-4" data-active="0">é</span> <span class="vp-word" id="vp-word-5" data-active="0">difícil.</span></span>
+<span id="vp-caption-cue-2" class="vp-caption" data-vp-caption-cue data-preset="editorial" data-timing-source="estimated" style="position:absolute;left:5%;right:5%;bottom:6%;z-index:100;opacity:0;text-align:center;pointer-events:none;font:600 30px/1.4 sans-serif;color:#fff;background:#101018f2;border-radius:12px;padding:12px 20px;"><span class="vp-word" id="vp-word-6" data-active="0">MoveFit:</span> <span class="vp-word" id="vp-word-7" data-active="0">aulas</span> <span class="vp-word" id="vp-word-8" data-active="0">e</span> <span class="vp-word" id="vp-word-9" data-active="0">apoio.</span></span>
+<span id="vp-caption-cue-3" class="vp-caption" data-vp-caption-cue data-preset="editorial" data-timing-source="estimated" style="position:absolute;left:5%;right:5%;bottom:6%;z-index:100;opacity:0;text-align:center;pointer-events:none;font:600 30px/1.4 sans-serif;color:#fff;background:#101018f2;border-radius:12px;padding:12px 20px;"><span class="vp-word" id="vp-word-10" data-active="0">Primeira</span> <span class="vp-word" id="vp-word-11" data-active="0">semana</span> <span class="vp-word" id="vp-word-12" data-active="0">grátis.</span></span>
+<span id="vp-caption-cue-4" class="vp-caption" data-vp-caption-cue data-preset="editorial" data-timing-source="acoustic" style="position:absolute;left:5%;right:5%;bottom:6%;z-index:100;opacity:0;text-align:center;pointer-events:none;font:600 30px/1.4 sans-serif;color:#fff;background:#101018f2;border-radius:12px;padding:12px 20px;"><span class="vp-word" id="vp-word-13" data-active="0">Inscreve-te</span> <span class="vp-word" id="vp-word-14" data-active="0">esta</span> <span class="vp-word" id="vp-word-15" data-active="0">semana.</span></span><!-- /__vp-captions --></div>
+
+<script>
+window.__timelines = window.__timelines || {};
+var tl = gsap.timeline({ paused: true });
+window.__timelines["main"] = tl;
+
+/* SCENE 1 — kinetic type beats + underline draw + lockup */
+tl.fromTo("#scene-1-text-1", { y: 56, scale: 1.06 }, { y: 0, scale: 1, duration: 0.45, ease: "power3.out" }, 0.1);
+tl.fromTo("#scene-1-text-2", { y: 56, scale: 1.06 }, { y: 0, scale: 1, duration: 0.45, ease: "power3.out" }, 0.34);
+tl.fromTo(".s1-line", { scaleX: 0 }, { scaleX: 1, duration: 0.4, ease: "power2.out" }, 0.9);
+tl.fromTo("#scene-1-text-3", { y: 28 }, { y: 0, duration: 0.5, ease: "back.out(1.6)" }, 2.45);
+
+/* SCENE 2 — hard cut, mask rise left, colour swap + underline */
+tl.fromTo("#scene-2-text-1", { y: 70 }, { y: 0, duration: 0.45, ease: "power3.out" }, 3.05);
+tl.fromTo("#scene-2-text-2", { y: 70 }, { y: 0, duration: 0.45, ease: "power3.out" }, 3.35);
+tl.fromTo(".s2-line", { scaleX: 0 }, { scaleX: 1, duration: 0.35, ease: "power2.out" }, 4.6);
+
+/* SCENE 3 — eyebrow, headline, support, card cascade */
+tl.fromTo("#scene-3-text-1", { y: -24 }, { y: 0, duration: 0.4, ease: "power2.out" }, 6.1);
+tl.fromTo("#scene-3-text-2", { y: 60, scale: 1.04 }, { y: 0, scale: 1, duration: 0.45, ease: "power3.out" }, 6.4);
+tl.fromTo("#scene-3-text-3", { y: 40 }, { y: 0, duration: 0.45, ease: "power2.out" }, 6.9);
+tl.fromTo(".s3-card", { y: 44, scale: 0.94 }, { y: 0, scale: 1, duration: 0.4, stagger: 0.18, ease: "back.out(1.4)" }, 7.4);
+
+/* SCENE 4 — offer card rise, number punch, no-fee line */
+tl.fromTo(".s4-card", { y: 60 }, { y: 0, duration: 0.45, ease: "power3.out" }, 9.05);
+tl.fromTo("#scene-4-text-2", { scale: 1.45 }, { scale: 1, duration: 0.5, ease: "back.out(1.8)" }, 9.5);
+tl.fromTo("#scene-4-text-4", { y: 30 }, { y: 0, duration: 0.45, ease: "power2.out" }, 11.2);
+
+/* SCENE 5 — CTA pill spring-pop, label slam, lockup waterfall */
+tl.fromTo(".s5-pill", { scale: 0.92 }, { scale: 1, duration: 0.6, ease: "back.out(2)" }, 12.1);
+tl.fromTo("#scene-5-text-1", { y: 20 }, { y: 0, duration: 0.4, ease: "power3.out" }, 12.7);
+tl.fromTo("#scene-5-text-2", { y: 30 }, { y: 0, duration: 0.45, ease: "power3.out" }, 13.6);
+tl.fromTo("#scene-5-text-3", { y: 24 }, { y: 0, duration: 0.4, ease: "power2.out" }, 13.9);
+</script>
+<!-- __vp-captions:v1 --><script>(function(){var tl=(window.__timelines||{})["main"];if(!tl)return;tl.set("#vp-caption-cue-0",{opacity:0},0).set("#vp-caption-cue-0",{opacity:1},0.51).set("#vp-caption-cue-0",{opacity:0},1.82);tl.set("#vp-word-0",{attr:{"data-active":"0"}},0).set("#vp-word-0",{attr:{"data-active":"1"}},0.51).set("#vp-word-0",{attr:{"data-active":"0"}},0.78);tl.set("#vp-word-1",{attr:{"data-active":"0"}},0).set("#vp-word-1",{attr:{"data-active":"1"}},0.78).set("#vp-word-1",{attr:{"data-active":"0"}},1.26);tl.set("#vp-word-2",{attr:{"data-active":"0"}},0).set("#vp-word-2",{attr:{"data-active":"1"}},1.26).set("#vp-word-2",{attr:{"data-active":"0"}},1.82);tl.set("#vp-caption-cue-1",{opacity:0},0).set("#vp-caption-cue-1",{opacity:1},3.51).set("#vp-caption-cue-1",{opacity:0},5.06);tl.set("#vp-word-3",{attr:{"data-active":"0"}},0).set("#vp-word-3",{attr:{"data-active":"1"}},3.51).set("#vp-word-3",{attr:{"data-active":"0"}},4.242);tl.set("#vp-word-4",{attr:{"data-active":"0"}},0).set("#vp-word-4",{attr:{"data-active":"1"}},4.242).set("#vp-word-4",{attr:{"data-active":"0"}},4.398);tl.set("#vp-word-5",{attr:{"data-active":"0"}},0).set("#vp-word-5",{attr:{"data-active":"1"}},4.398).set("#vp-word-5",{attr:{"data-active":"0"}},5.06);tl.set("#vp-caption-cue-2",{opacity:0},0).set("#vp-caption-cue-2",{opacity:1},6.3).set("#vp-caption-cue-2",{opacity:0},8.45);tl.set("#vp-word-6",{attr:{"data-active":"0"}},0).set("#vp-word-6",{attr:{"data-active":"1"}},6.3).set("#vp-word-6",{attr:{"data-active":"0"}},6.95);tl.set("#vp-word-7",{attr:{"data-active":"0"}},0).set("#vp-word-7",{attr:{"data-active":"1"}},7).set("#vp-word-7",{attr:{"data-active":"0"}},7.45);tl.set("#vp-word-8",{attr:{"data-active":"0"}},0).set("#vp-word-8",{attr:{"data-active":"1"}},7.45).set("#vp-word-8",{attr:{"data-active":"0"}},7.6);tl.set("#vp-word-9",{attr:{"data-active":"0"}},0).set("#vp-word-9",{attr:{"data-active":"1"}},7.6).set("#vp-word-9",{attr:{"data-active":"0"}},8.45);tl.set("#vp-caption-cue-3",{opacity:0},0).set("#vp-caption-cue-3",{opacity:1},9.3).set("#vp-caption-cue-3",{opacity:0},11.6);tl.set("#vp-word-10",{attr:{"data-active":"0"}},0).set("#vp-word-10",{attr:{"data-active":"1"}},9.3).set("#vp-word-10",{attr:{"data-active":"0"}},10);tl.set("#vp-word-11",{attr:{"data-active":"0"}},0).set("#vp-word-11",{attr:{"data-active":"1"}},10).set("#vp-word-11",{attr:{"data-active":"0"}},10.7);tl.set("#vp-word-12",{attr:{"data-active":"0"}},0).set("#vp-word-12",{attr:{"data-active":"1"}},10.7).set("#vp-word-12",{attr:{"data-active":"0"}},11.6);tl.set("#vp-caption-cue-4",{opacity:0},0).set("#vp-caption-cue-4",{opacity:1},12.54).set("#vp-caption-cue-4",{opacity:0},14.03);tl.set("#vp-word-13",{attr:{"data-active":"0"}},0).set("#vp-word-13",{attr:{"data-active":"1"}},12.54).set("#vp-word-13",{attr:{"data-active":"0"}},13.18);tl.set("#vp-word-14",{attr:{"data-active":"0"}},0).set("#vp-word-14",{attr:{"data-active":"1"}},13.18).set("#vp-word-14",{attr:{"data-active":"0"}},13.5);tl.set("#vp-word-15",{attr:{"data-active":"0"}},0).set("#vp-word-15",{attr:{"data-active":"1"}},13.5).set("#vp-word-15",{attr:{"data-active":"0"}},14.03);})();</script><!-- /__vp-captions --></body>
+</html>

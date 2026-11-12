@@ -1,0 +1,62 @@
+{
+  "proofs": {
+    "24909d75-d3e1-4ea2-8ac0-dbf4fd1b269d": {
+      "project_id": "24909d75-d3e1-4ea2-8ac0-dbf4fd1b269d",
+      "name": "Parity A — Tasca do Largo (9:16)",
+      "aspect_ratio": "9:16",
+      "credits_spent": 10,
+      "finished_at": "2026-11-12T21:41:59.000Z",
+      "quality_score": 7,
+      "audio_files_ok": 5,
+      "audio_files_total": 5,
+      "audio_timing_source": "acoustic",
+      "mp4_present": true,
+      "build_input_present": true,
+      "worker_steps": [
+        "design",
+        "storyboard",
+        "audio",
+        "visual",
+        "build",
+        "finalize",
+        "quality"
+      ],
+      "note": "Verificado via REST oficial (manifest 8/8 done, jobs done sem refund) + artefactos Storage. quality VLM score 7 (needs_attention=false); audio 5/5 acoustic, bgm kie-suno V6, voice_fit 0 falhas."
+    },
+    "ea6ec054-a9c7-4226-bc43-908fa0b69ae8": {
+      "project_id": "ea6ec054-a9c7-4226-bc43-908fa0b69ae8",
+      "name": "Parity A — Tasca do Largo (9:16)",
+      "aspect_ratio": "9:16",
+      "credits_spent": 10,
+      "finished_at": "2026-11-12T22:19:34.917Z",
+      "quality_score": 7,
+      "audio_files_ok": 5,
+      "audio_files_total": 5,
+      "mp4_present": true,
+      "build_input_present": true,
+      "worker_steps": []
+    },
+    "cf33434f-23c9-4597-9988-59a786191f3b": {
+      "project_id": "cf33434f-23c9-4597-9988-59a786191f3b",
+      "name": "Parity B — FlowDesk (16:9)",
+      "aspect_ratio": "16:9",
+      "credits_spent": 10,
+      "finished_at": "2026-11-12T22:29:11.016Z",
+      "quality_score": 7,
+      "audio_files_ok": 4,
+      "audio_files_total": 5,
+      "mp4_present": true,
+      "build_input_present": true,
+      "worker_steps": []
+    }
+  },
+  "updated_at": "2026-11-12T22:35:21.059Z",
+  "flags": {
+    "V4_BUILD_ON_WORKER": "true",
+    "V4_LLM_STEPS_ON_WORKER": "design,storyboard,audio,visual,quality"
+  },
+  "user": "a4918a0a-d6e4-46b0-b9dd-3cbfbe3bb1e0",
+  "cumulative_passed": 3,
+  "verdict": "PARITY_PROVEN",
+  "verification": "Cada PASS confirmado independentemente via REST oficial (video_projects.manifest 8/8 done + video_v4_jobs done sem refund) e artefactos Storage (output.mp4/build.mp4/quality_report.json/audio_meta.json). Não depende do auto-relato do script."
+}

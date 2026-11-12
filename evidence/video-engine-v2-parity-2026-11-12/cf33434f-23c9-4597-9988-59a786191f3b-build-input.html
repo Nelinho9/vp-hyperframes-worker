@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="pt">
+<head>
+<meta charset="utf-8" />
+<title>FlowDesk — Demo 15s</title>
+<script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@heygen/hyperframes@0.7.109/dist/hyperframes.min.js"></script>
+<style>
+  *{box-sizing:border-box;}
+  body{margin:0;background:#0B0E13;}
+  .clip{position:absolute;inset:0;width:1920px;height:1080px;overflow:hidden;background:#0B0E13;font-family:Inter,system-ui,sans-serif;color:#F2F5FA;}
+  .h1{position:absolute;margin:0;font-weight:700;font-size:72px;line-height:1.06;letter-spacing:-0.025em;color:#F2F5FA;}
+  .h1s{font-size:60px;line-height:1.1;}
+  .card{position:absolute;left:1080px;width:700px;height:112px;background:#1C2530;border:1px solid rgba(79,124,255,0.12);border-radius:20px;padding:0 28px;display:flex;align-items:center;gap:20px;}
+  .cardT{font-size:28px;font-weight:600;color:#F2F5FA;}
+  .frag{position:absolute;width:360px;height:240px;background:#1C2530;border:1px solid rgba(79,124,255,0.10);border-radius:20px;filter:blur(0.6px);}
+  .fragL{position:absolute;left:24px;bottom:20px;font-size:24px;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;color:rgba(242,245,250,0.64);}
+  .win{background:#1C2530;border:1px solid rgba(79,124,255,0.12);border-radius:28px;box-shadow:0 40px 120px rgba(0,0,0,0.55);overflow:hidden;}
+  .chrome{height:56px;display:flex;align-items:center;gap:10px;padding:0 24px;background:rgba(79,124,255,0.12);border-bottom:1px solid rgba(79,124,255,0.18);}
+  .dot{width:12px;height:12px;border-radius:999px;background:rgba(242,245,250,0.40);}
+  .bar{height:20px;border-radius:8px;background:rgba(242,245,250,0.10);}
+  .zone{width:389px;height:300px;background:rgba(79,124,255,0.06);border:1px solid rgba(79,124,255,0.14);border-radius:20px;padding:24px;}
+  .chip{display:inline-block;border-radius:999px;padding:8px 18px;background:rgba(79,124,255,0.12);color:#8FB0FF;font-size:24px;font-weight:600;}
+</style>
+<!-- __vp-caption-style:v1 --><style data-vp-caption-style="editorial">.vp-word{display:inline-block;transition:none;will-change:transform,color;opacity:.62}.vp-word[data-active="1"]{opacity:1}.vp-caption[data-preset="editorial"]{background:#101018f2;padding:12px 20px}.vp-word[data-active="1"]{color:#fff}</style><!-- /__vp-caption-style --></head>
+<body>
+<div class="composition" data-composition-id="main" data-start="0" data-duration="15" data-width="1920" data-height="1080" style="position:relative;width:1920px;height:1080px;overflow:hidden;">
+
+  <!-- FRAME 1 — Tudo num só lugar -->
+  <div id="scene-1" class="clip" data-start="0" data-duration="3" data-track-index="0">
+    <div class="s1-halo" style="position:absolute;left:820px;top:20px;width:1000px;height:1000px;background:radial-gradient(circle at 50% 50%, rgba(79,124,255,0.22) 0%, rgba(79,124,255,0) 62%);"></div>
+    <h1 id="scene-1-text-1" class="h1" style="left:96px;top:392px;width:760px;">Tudo num só lugar.</h1>
+    <div class="s1-card card" style="top:340px;">
+      <span class="s1-check" style="display:block;width:20px;height:20px;border-radius:999px;background:#35E0A1;"></span>
+      <span id="scene-1-text-2" class="cardT">Revisão do sprint</span>
+    </div>
+    <div class="s1-card card" style="top:476px;">
+      <span id="scene-1-text-3" class="cardT">Briefing do cliente</span>
+    </div>
+    <div class="s1-card card" style="top:612px;">
+      <span id="scene-1-text-4" class="cardT">Ata da reunião</span>
+    </div>
+  </div>
+
+  <!-- FRAME 2 — Demasiadas apps abertas -->
+  <div id="scene-2" class="clip" data-start="3" data-duration="3" data-track-index="0">
+    <h1 id="scene-2-text-1" class="h1" style="left:96px;top:352px;width:660px;">Demasiadas apps abertas.</h1>
+    <div class="s2-frag1 frag" style="left:960px;top:220px;">
+      <span id="scene-2-text-2" class="s2-label fragL">Chat</span>
+    </div>
+    <div class="s2-frag2 frag" style="left:1320px;top:440px;">
+      <span id="scene-2-text-3" class="s2-label fragL">Ficheiros</span>
+    </div>
+    <div class="s2-frag3 frag" style="left:820px;top:600px;">
+      <span id="scene-2-text-4" class="s2-label fragL">Calendário</span>
+    </div>
+  </div>
+
+  <!-- FRAME 3 — O FlowDesk organiza tudo -->
+  <div id="scene-3" class="clip" data-start="6" data-duration="3" data-track-index="0">
+    <div class="s3-halo" style="position:absolute;left:760px;top:-80px;width:1100px;height:1100px;background:radial-gradient(circle at 50% 50%, rgba(79,124,255,0.26) 0%, rgba(79,124,255,0) 60%);"></div>
+    <h1 id="scene-3-text-1" class="h1" style="left:96px;top:392px;width:660px;">O FlowDesk organiza tudo.</h1>
+    <div class="s3-win win" style="position:absolute;left:840px;top:216px;width:984px;height:576px;">
+      <div class="chrome">
+        <span class="dot"></span><span class="dot"></span><span class="dot"></span>
+        <span id="scene-3-text-2" style="margin-left:16px;font-size:24px;font-weight:600;color:#F2F5FA;">FlowDesk</span>
+      </div>
+      <div style="padding:32px 40px;">
+        <div id="scene-3-text-3" style="font-size:24px;font-weight:600;letter-spacing:0.08em;color:rgba(242,245,250,0.64);">SPRINT 24 · 8 TAREFAS</div>
+        <div class="s3-row bar" style="margin-top:24px;"></div>
+        <div class="s3-row bar" style="margin-top:16px;width:72%;"></div>
+        <div class="s3-row bar" style="margin-top:16px;width:86%;"></div>
+        <div class="s3-row bar" style="margin-top:16px;width:64%;"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- FRAME 4 — Tudo sincronizado -->
+  <div id="scene-4" class="clip" data-start="9" data-duration="3" data-track-index="1">
+    <h1 id="scene-4-text-1" class="h1 h1s" style="left:96px;top:150px;width:1000px;">Tudo sincronizado.</h1>
+    <div class="win" style="position:absolute;left:240px;top:320px;width:1440px;height:420px;">
+      <div class="chrome">
+        <span class="dot"></span><span class="dot"></span><span class="dot"></span>
+        <span id="scene-4-text-2" style="margin-left:16px;font-size:24px;font-weight:600;color:#F2F5FA;">FlowDesk</span>
+      </div>
+      <div style="display:flex;gap:96px;padding:40px;">
+        <div class="s4-zone zone">
+          <span class="s4-chip chip" id="scene-4-text-3">Tarefas</span>
+          <div class="bar" style="margin-top:24px;"></div>
+          <div class="bar" style="margin-top:16px;width:78%;"></div>
+          <div class="bar" style="margin-top:16px;width:62%;"></div>
+        </div>
+        <div class="s4-zone zone">
+          <span class="s4-chip chip" id="scene-4-text-4">Reuniões</span>
+          <div class="bar" style="margin-top:24px;"></div>
+          <div class="bar" style="margin-top:16px;width:70%;"></div>
+          <div class="bar" style="margin-top:16px;width:84%;"></div>
+        </div>
+        <div class="s4-zone zone">
+          <span class="s4-chip chip" id="scene-4-text-5">Documentos</span>
+          <div class="bar" style="margin-top:24px;"></div>
+          <div class="bar" style="margin-top:16px;width:82%;"></div>
+          <div class="bar" style="margin-top:16px;width:58%;"></div>
+        </div>
+      </div>
+    </div>
+    <div class="s4-bar" style="position:absolute;left:96px;top:812px;width:1728px;height:6px;border-radius:999px;background:#35E0A1;transform-origin:left center;"></div>
+  </div>
+
+  <!-- FRAME 5 — Experimenta grátis hoje -->
+  <div id="scene-5" class="clip" data-start="12" data-duration="3" data-track-index="1">
+    <div style="position:absolute;left:560px;top:140px;width:800px;height:800px;background:radial-gradient(circle at 50% 50%, rgba(79,124,255,0.18) 0%, rgba(79,124,255,0) 60%);"></div>
+    <div style="position:absolute;left:0;top:300px;width:1920px;display:flex;flex-direction:column;align-items:center;">
+      <h1 id="scene-5-text-1" style="margin:0;font-family:Inter,system-ui,sans-serif;font-size:72px;line-height:1.04;font-weight:700;letter-spacing:-0.025em;color:#F2F5FA;">FlowDesk</h1>
+      <div id="scene-5-text-2" style="margin-top:24px;font-size:44px;line-height:1.2;font-weight:700;color:#35E0A1;">14 dias grátis</div>
+      <div id="scene-5-text-3" style="margin-top:40px;background:#35E0A1;color:#0B0E13;border-radius:14px;padding:24px 48px;font-size:32px;font-weight:600;">Experimenta grátis hoje</div>
+      <div id="scene-5-text-4" style="margin-top:24px;font-size:24px;font-weight:500;color:rgba(242,245,250,0.64);">sem cartão de crédito</div>
+    </div>
+  </div>
+
+<!-- __vp-audio-tracks:v1 -->
+<audio id="scene-1-voice-1" src="https://syyxuhrvyfxagcadrlqb.supabase.co/storage/v1/object/sign/video-artifacts/projects/cf33434f-23c9-4597-9988-59a786191f3b/audio/vo-1.wav?token=eyJraWQiOiJiNDIzN2JmOC03ZmJkLTQxMGEtOTNhZS03MmNiOWRlNzIxZDQiLCJhbGciOiJIUzI1NiJ9.eyJ1cmwiOiJ2aWRlby1hcnRpZmFjdHMvcHJvamVjdHMvY2YzMzQzNGYtMjNjOS00NTk3LTk5ODgtNTlhNzg2MTkxZjNiL2F1ZGlvL3ZvLTEud2F2Iiwic2NvcGUiOiJkb3dubG9hZCIsImlhdCI6MTc5NDUyMjM2OCwiZXhwIjoxNzk1MTI3MTY4fQ.xZDfQkGtx8e265TrrHZ8Xh9gx3r1Q8ksN65F-nphlfs" data-track="vo" data-track-index="8" data-start="0" data-duration="3" data-sample-rate="24000" data-fade-in="200" data-fade-out="300" preload="auto"></audio>
+<audio id="scene-2-voice-1" src="https://syyxuhrvyfxagcadrlqb.supabase.co/storage/v1/object/sign/video-artifacts/projects/cf33434f-23c9-4597-9988-59a786191f3b/audio/vo-2.wav?token=eyJraWQiOiJiNDIzN2JmOC03ZmJkLTQxMGEtOTNhZS03MmNiOWRlNzIxZDQiLCJhbGciOiJIUzI1NiJ9.eyJ1cmwiOiJ2aWRlby1hcnRpZmFjdHMvcHJvamVjdHMvY2YzMzQzNGYtMjNjOS00NTk3LTk5ODgtNTlhNzg2MTkxZjNiL2F1ZGlvL3ZvLTIud2F2Iiwic2NvcGUiOiJkb3dubG9hZCIsImlhdCI6MTc5NDUyMjM2OCwiZXhwIjoxNzk1MTI3MTY4fQ.ZDK4BwdWgh2F5Xc3c1QDRjdKqwl_Hd0O8KefQbJVMfA" data-track="vo" data-track-index="8" data-start="3" data-duration="3" data-sample-rate="24000" data-fade-in="200" data-fade-out="300" preload="auto"></audio>
+<audio id="scene-3-voice-1" src="https://syyxuhrvyfxagcadrlqb.supabase.co/storage/v1/object/sign/video-artifacts/projects/cf33434f-23c9-4597-9988-59a786191f3b/audio/vo-3.wav?token=eyJraWQiOiJiNDIzN2JmOC03ZmJkLTQxMGEtOTNhZS03MmNiOWRlNzIxZDQiLCJhbGciOiJIUzI1NiJ9.eyJ1cmwiOiJ2aWRlby1hcnRpZmFjdHMvcHJvamVjdHMvY2YzMzQzNGYtMjNjOS00NTk3LTk5ODgtNTlhNzg2MTkxZjNiL2F1ZGlvL3ZvLTMud2F2Iiwic2NvcGUiOiJkb3dubG9hZCIsImlhdCI6MTc5NDUyMjM2OCwiZXhwIjoxNzk1MTI3MTY4fQ.QfUp7PqKFiWmhQvAsxQ-RCGm6uD8E3taYGPCMYzWinY" data-track="vo" data-track-index="8" data-start="6" data-duration="3" data-sample-rate="24000" data-fade-in="200" data-fade-out="300" preload="auto"></audio>
+<audio id="scene-5-voice-1" src="https://syyxuhrvyfxagcadrlqb.supabase.co/storage/v1/object/sign/video-artifacts/projects/cf33434f-23c9-4597-9988-59a786191f3b/audio/vo-5.wav?token=eyJraWQiOiJiNDIzN2JmOC03ZmJkLTQxMGEtOTNhZS03MmNiOWRlNzIxZDQiLCJhbGciOiJIUzI1NiJ9.eyJ1cmwiOiJ2aWRlby1hcnRpZmFjdHMvcHJvamVjdHMvY2YzMzQzNGYtMjNjOS00NTk3LTk5ODgtNTlhNzg2MTkxZjNiL2F1ZGlvL3ZvLTUud2F2Iiwic2NvcGUiOiJkb3dubG9hZCIsImlhdCI6MTc5NDUyMjM2OCwiZXhwIjoxNzk1MTI3MTY4fQ.B_njUuKdjgT4hcKvfeN8OiUUJPxXO9kEZyDA3ouct9o" data-track="vo" data-track-index="8" data-start="12" data-duration="3" data-sample-rate="24000" data-fade-in="200" data-fade-out="300" preload="auto"></audio>
+<audio id="bgm-main" src="https://syyxuhrvyfxagcadrlqb.supabase.co/storage/v1/object/sign/video-artifacts/projects/cf33434f-23c9-4597-9988-59a786191f3b/audio/music/04a407caa2a6eeb3261bbcff388ffb44e9ae26910980b4cba6659405f53412b3/bgm.mp3?token=eyJraWQiOiJiNDIzN2JmOC03ZmJkLTQxMGEtOTNhZS03MmNiOWRlNzIxZDQiLCJhbGciOiJIUzI1NiJ9.eyJ1cmwiOiJ2aWRlby1hcnRpZmFjdHMvcHJvamVjdHMvY2YzMzQzNGYtMjNjOS00NTk3LTk5ODgtNTlhNzg2MTkxZjNiL2F1ZGlvL211c2ljLzA0YTQwN2NhYTJhNmVlYjMyNjFiYmNmZjM4OGZmYjQ0ZTlhZTI2OTEwOTgwYjRjYmE2NjU5NDA1ZjUzNDEyYjMvYmdtLm1wMyIsInNjb3BlIjoiZG93bmxvYWQiLCJpYXQiOjE3OTQ1MjIzNjgsImV4cCI6MTc5NTEyNzE2OH0.VmqrM5YhcK_hMjmXuinilkp-q9Zi2BKVGb4m_Z2srXg" data-track="bgm" data-track-index="9" data-start="0" data-duration="14.808" data-volume="0.18" data-fade-in="1500" data-fade-out="3000" preload="auto"></audio>
+<script id="__vp-audio-materialized__">try{
+function __vpApplyAudioProps(){
+  try {
+    var tl = (window.__timelines || {})["main"];
+    if (!tl || typeof tl.fromTo !== "function" || !window.gsap) return;
+    var nodes = document.querySelectorAll("audio[data-volume],audio[data-muted],audio[data-fade-in],audio[data-fade-out]");
+    Array.prototype.forEach.call(nodes, function(el){
+      var vol = parseFloat(el.getAttribute("data-volume")); if (!isFinite(vol)) vol = 1;
+      // E02/I4 §8: o applier do renderer consome `data-muted` COMO o preview
+      // (preview-helper: el.muted = data-muted === 'true'). O mute DOMINA o
+      // gain e os fades: um clip muted produz zero sem alterar source/gain/
+      // fades authored (`data-volume` nunca é reescrito → unmute restaura).
+      var muted = el.getAttribute("data-muted") === "true";
+      var gain = muted ? 0 : Math.max(0, Math.min(1, vol));
+      var start = parseFloat(el.getAttribute("data-start")); if (!isFinite(start)) start = 0;
+      var dur = parseFloat(el.getAttribute("data-duration"));
+      var fIn = (parseFloat(el.getAttribute("data-fade-in")) || 0) / 1000;
+      var fOut = (parseFloat(el.getAttribute("data-fade-out")) || 0) / 1000;
+      try { window.gsap.killTweensOf(el, "volume"); } catch (e) {}
+      el.muted = muted;
+      el.volume = gain;
+      if (!isFinite(dur) || dur <= 0) return;
+      var maxFade = Math.max(0, dur - 0.5);
+      if (fIn + fOut > maxFade) { var k = maxFade / (fIn + fOut); fIn *= k; fOut *= k; }
+      // Envelopes lineares de amplitude, clip-local; um clip muted não gera
+      // tweens (nada para rampar) e fica a zero em qualquer seek.
+      if (!muted && fIn > 0) tl.fromTo(el, { volume: 0 }, { volume: gain, duration: fIn, ease: "none" }, start);
+      if (!muted && fOut > 0) tl.fromTo(el, { volume: gain }, { volume: 0, duration: fOut, ease: "none" }, start + dur - fOut);
+    });
+  } catch (err) { /* nunca quebrar a composição por áudio */ }
+}
+if (typeof window !== "undefined") {
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", __vpApplyAudioProps);
+  else __vpApplyAudioProps();
+}}catch(e){}</script>
+<!-- /__vp-audio-tracks --><!-- __vp-captions:v1 --><span id="vp-caption-cue-0" class="vp-caption" data-vp-caption-cue data-preset="editorial" data-timing-source="acoustic" style="position:absolute;left:5%;right:5%;bottom:6%;z-index:100;opacity:0;text-align:center;pointer-events:none;font:600 28px/1.4 sans-serif;color:#fff;background:#101018f2;border-radius:12px;padding:12px 20px;"><span class="vp-word" id="vp-word-0" data-active="0">Tudo</span> <span class="vp-word" id="vp-word-1" data-active="0">num</span> <span class="vp-word" id="vp-word-2" data-active="0">só</span> <span class="vp-word" id="vp-word-3" data-active="0">lugar.</span></span>
+<span id="vp-caption-cue-1" class="vp-caption" data-vp-caption-cue data-preset="editorial" data-timing-source="acoustic" style="position:absolute;left:5%;right:5%;bottom:6%;z-index:100;opacity:0;text-align:center;pointer-events:none;font:600 28px/1.4 sans-serif;color:#fff;background:#101018f2;border-radius:12px;padding:12px 20px;"><span class="vp-word" id="vp-word-4" data-active="0">Muitas</span> <span class="vp-word" id="vp-word-5" data-active="0">apps</span> <span class="vp-word" id="vp-word-6" data-active="0">abertas.</span></span>
+<span id="vp-caption-cue-2" class="vp-caption" data-vp-caption-cue data-preset="editorial" data-timing-source="estimated" style="position:absolute;left:5%;right:5%;bottom:6%;z-index:100;opacity:0;text-align:center;pointer-events:none;font:600 28px/1.4 sans-serif;color:#fff;background:#101018f2;border-radius:12px;padding:12px 20px;"><span class="vp-word" id="vp-word-7" data-active="0">O</span> <span class="vp-word" id="vp-word-8" data-active="0">FlowDesk</span> <span class="vp-word" id="vp-word-9" data-active="0">organiza</span> <span class="vp-word" id="vp-word-10" data-active="0">tudo.</span></span>
+<span id="vp-caption-cue-3" class="vp-caption" data-vp-caption-cue data-preset="editorial" data-timing-source="estimated" style="position:absolute;left:5%;right:5%;bottom:6%;z-index:100;opacity:0;text-align:center;pointer-events:none;font:600 28px/1.4 sans-serif;color:#fff;background:#101018f2;border-radius:12px;padding:12px 20px;"><span class="vp-word" id="vp-word-11" data-active="0">Tudo</span> <span class="vp-word" id="vp-word-12" data-active="0">sincronizado.</span></span>
+<span id="vp-caption-cue-4" class="vp-caption" data-vp-caption-cue data-preset="editorial" data-timing-source="acoustic" style="position:absolute;left:5%;right:5%;bottom:6%;z-index:100;opacity:0;text-align:center;pointer-events:none;font:600 28px/1.4 sans-serif;color:#fff;background:#101018f2;border-radius:12px;padding:12px 20px;"><span class="vp-word" id="vp-word-13" data-active="0">Experimenta</span> <span class="vp-word" id="vp-word-14" data-active="0">grátis</span> <span class="vp-word" id="vp-word-15" data-active="0">hoje.</span></span><!-- /__vp-captions --></div>
+
+<script>
+window.__timelines = window.__timelines || {};
+var tl = gsap.timeline({ paused: true });
+window.__timelines["main"] = tl;
+
+/* FRAME 1 — hero reveal + card cascade + mint check */
+tl.fromTo(".s1-halo", { scale: 0.86 }, { scale: 1, duration: 1.1, ease: "power2.out" }, 0);
+tl.fromTo("#scene-1-text-1", { y: 24 }, { y: 0, duration: 0.6, ease: "power2.out" }, 0.15);
+tl.fromTo(".s1-card", { y: 36, scale: 0.94 }, { y: 0, scale: 1, duration: 0.42, stagger: 0.1, ease: "back.out(1.4)" }, 0.9);
+tl.fromTo(".s1-check", { scale: 0 }, { scale: 1, duration: 0.35, ease: "back.out(2)" }, 2.1);
+
+/* FRAME 2 — fragments drift apart, labels stagger */
+tl.fromTo("#scene-2-text-1", { y: 24 }, { y: 0, duration: 0.6, ease: "power2.out" }, 3.1);
+tl.fromTo(".s2-frag1", { x: 0, y: 0, rotation: 0 }, { x: 60, y: -40, rotation: -3, duration: 2.2, ease: "sine.inOut" }, 3.3);
+tl.fromTo(".s2-frag2", { x: 0, y: 0, rotation: 0 }, { x: -50, y: 50, rotation: 2.5, duration: 2.2, ease: "sine.inOut" }, 3.3);
+tl.fromTo(".s2-frag3", { x: 0, y: 0, rotation: 0 }, { x: 44, y: 26, rotation: -2, duration: 2.2, ease: "sine.inOut" }, 3.3);
+tl.fromTo(".s2-label", { y: 16 }, { y: 0, duration: 0.4, stagger: 0.12, ease: "power2.out" }, 5.1);
+
+/* FRAME 3 — window locks in, chrome fills, halo blooms, headline rises */
+tl.fromTo(".s3-win", { x: 60, scale: 0.94 }, { x: 0, scale: 1, duration: 0.7, ease: "power3.out" }, 6.1);
+tl.fromTo(".s3-halo", { scale: 0.9 }, { scale: 1.06, duration: 1.6, ease: "sine.out" }, 6.4);
+tl.fromTo(".s3-row", { scaleX: 0, transformOrigin: "left center" }, { scaleX: 1, duration: 0.45, stagger: 0.08, ease: "power2.out" }, 7.3);
+tl.fromTo("#scene-3-text-1", { x: -24 }, { x: 0, duration: 0.55, ease: "power2.out" }, 8.2);
+
+/* FRAME 4 — zones cascade, chips pop, mint lead bar fills */
+tl.fromTo("#scene-4-text-1", { y: 24 }, { y: 0, duration: 0.55, ease: "power2.out" }, 9.1);
+tl.fromTo(".s4-zone", { y: 28, scale: 0.96 }, { y: 0, scale: 1, duration: 0.42, stagger: 0.12, ease: "power3.out" }, 9.2);
+tl.fromTo(".s4-chip", { scale: 0.7 }, { scale: 1, duration: 0.35, stagger: 0.1, ease: "back.out(1.8)" }, 10.3);
+tl.fromTo(".s4-bar", { scaleX: 0, transformOrigin: "left center" }, { scaleX: 1, duration: 0.6, ease: "power2.out" }, 11.2);
+
+/* FRAME 5 — lockup assembles, 14 counts in, CTA pops, holds */
+tl.fromTo("#scene-5-text-1", { scale: 0.92, y: 20 }, { scale: 1, y: 0, duration: 0.6, ease: "power3.out" }, 12.1);
+tl.fromTo("#scene-5-text-2", { scale: 0.6 }, { scale: 1, duration: 0.5, ease: "back.out(2)" }, 12.9);
+tl.fromTo("#scene-5-text-3", { scale: 0 }, { scale: 1, duration: 0.5, ease: "back.out(1.7)" }, 13.7);
+tl.fromTo("#scene-5-text-4", { y: 12 }, { y: 0, duration: 0.4, ease: "power2.out" }, 14.1);
+</script>
+<!-- __vp-captions:v1 --><script>(function(){var tl=(window.__timelines||{})["main"];if(!tl)return;tl.set("#vp-caption-cue-0",{opacity:0},0).set("#vp-caption-cue-0",{opacity:1},0.27).set("#vp-caption-cue-0",{opacity:0},1.63);tl.set("#vp-word-0",{attr:{"data-active":"0"}},0).set("#vp-word-0",{attr:{"data-active":"1"}},0.27).set("#vp-word-0",{attr:{"data-active":"0"}},0.706);tl.set("#vp-word-1",{attr:{"data-active":"0"}},0).set("#vp-word-1",{attr:{"data-active":"1"}},0.706).set("#vp-word-1",{attr:{"data-active":"0"}},0.941);tl.set("#vp-word-2",{attr:{"data-active":"0"}},0).set("#vp-word-2",{attr:{"data-active":"1"}},0.941).set("#vp-word-2",{attr:{"data-active":"0"}},1.176);tl.set("#vp-word-3",{attr:{"data-active":"0"}},0).set("#vp-word-3",{attr:{"data-active":"1"}},1.176).set("#vp-word-3",{attr:{"data-active":"0"}},1.63);tl.set("#vp-caption-cue-1",{opacity:0},0).set("#vp-caption-cue-1",{opacity:1},3.2).set("#vp-caption-cue-1",{opacity:0},5.14);tl.set("#vp-word-4",{attr:{"data-active":"0"}},0).set("#vp-word-4",{attr:{"data-active":"1"}},3.2).set("#vp-word-4",{attr:{"data-active":"0"}},3.944);tl.set("#vp-word-5",{attr:{"data-active":"0"}},0).set("#vp-word-5",{attr:{"data-active":"1"}},3.944).set("#vp-word-5",{attr:{"data-active":"0"}},4.259);tl.set("#vp-word-6",{attr:{"data-active":"0"}},0).set("#vp-word-6",{attr:{"data-active":"1"}},4.259).set("#vp-word-6",{attr:{"data-active":"0"}},5.14);tl.set("#vp-caption-cue-2",{opacity:0},0).set("#vp-caption-cue-2",{opacity:1},6).set("#vp-caption-cue-2",{opacity:0},8.7);tl.set("#vp-word-7",{attr:{"data-active":"0"}},0).set("#vp-word-7",{attr:{"data-active":"1"}},6).set("#vp-word-7",{attr:{"data-active":"0"}},6.18);tl.set("#vp-word-8",{attr:{"data-active":"0"}},0).set("#vp-word-8",{attr:{"data-active":"1"}},6.18).set("#vp-word-8",{attr:{"data-active":"0"}},7.08);tl.set("#vp-word-9",{attr:{"data-active":"0"}},0).set("#vp-word-9",{attr:{"data-active":"1"}},7.08).set("#vp-word-9",{attr:{"data-active":"0"}},8);tl.set("#vp-word-10",{attr:{"data-active":"0"}},0).set("#vp-word-10",{attr:{"data-active":"1"}},8).set("#vp-word-10",{attr:{"data-active":"0"}},8.7);tl.set("#vp-caption-cue-3",{opacity:0},0).set("#vp-caption-cue-3",{opacity:1},9).set("#vp-caption-cue-3",{opacity:0},10.85);tl.set("#vp-word-11",{attr:{"data-active":"0"}},0).set("#vp-word-11",{attr:{"data-active":"1"}},9).set("#vp-word-11",{attr:{"data-active":"0"}},9.55);tl.set("#vp-word-12",{attr:{"data-active":"0"}},0).set("#vp-word-12",{attr:{"data-active":"1"}},9.55).set("#vp-word-12",{attr:{"data-active":"0"}},10.85);tl.set("#vp-caption-cue-4",{opacity:0},0).set("#vp-caption-cue-4",{opacity:1},12.17).set("#vp-caption-cue-4",{opacity:0},13.72);tl.set("#vp-word-13",{attr:{"data-active":"0"}},0).set("#vp-word-13",{attr:{"data-active":"1"}},12.17).set("#vp-word-13",{attr:{"data-active":"0"}},12.96);tl.set("#vp-word-14",{attr:{"data-active":"0"}},0).set("#vp-word-14",{attr:{"data-active":"1"}},12.96).set("#vp-word-14",{attr:{"data-active":"0"}},13.44);tl.set("#vp-word-15",{attr:{"data-active":"0"}},0).set("#vp-word-15",{attr:{"data-active":"1"}},13.44).set("#vp-word-15",{attr:{"data-active":"0"}},13.72);})();</script><!-- /__vp-captions --></body>
+</html>
