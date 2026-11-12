@@ -107,14 +107,27 @@ export async function fetchBuildCredentials(args) {
 export function createWorkerLlmClient(config, opts = {}) {
   const fetchImpl = opts.fetchImpl ?? fetch;
   const timeoutMs = opts.timeoutMs ?? BUILD_LLM_TIMEOUT_MS;
+  const sleep = opts.sleep ?? ((ms) => new Promise((r) => setTimeout(r, ms)));
+  // Emenda E (posse única do retry budget): no modo worker a cadeia de
+  // invocações do orchestrator NÃO existe — erros TRANSIENTES do provider
+  // (524/5xx/429/transporte/timeout) são absorvidos AQUI, com backoff, antes
+  // de falhar o job. Erros permanentes (4xx de auth/billing) falham já.
+  const maxAttempts = opts.maxAttempts ?? 3;
+  const retryDelayMs = opts.retryDelayMs ?? [5_000, 15_000];
   const cap = llmCapability(config.url);
   const effort = normalizeReasoningEffort(cap.kind, config.reasoningEffort || '');
   const base = config.url.replace(/\/+$/, '');
   const endpoint = config.wire === 'responses'
     ? (base.endsWith('/responses') ? base : `${base.replace(/\/chat\/completions$/, '')}/responses`)
     : (base.endsWith('/chat/completions') ? base : `${base}/chat/completions`);
-  return {
-    async call(messages) {
+  const isTransient = (err) => {
+    const msg = String(err?.message ?? err);
+    if (/BUILD_LLM_HTTP_(429|500|502|503|504|524)$/.test(msg)) return true;
+    if (msg === 'BUILD_LLM_TIMEOUT' || msg.startsWith('BUILD_LLM_TRANSPORT')) return true;
+    if (msg === 'BUILD_LLM_EMPTY_CONTENT') return true;
+    return false;
+  };
+  async function attempt(messages) {
       const body = config.wire === 'responses'
         ? {
             model: config.model,
@@ -174,6 +187,22 @@ export function createWorkerLlmClient(config, opts = {}) {
       }
       if (typeof content !== 'string' || !content.trim()) throw new Error('BUILD_LLM_EMPTY_CONTENT');
       return { content, tokens };
+  }
+  return {
+    async call(messages) {
+      let lastError;
+      for (let i = 0; i < maxAttempts; i++) {
+        try {
+          return await attempt(messages);
+        } catch (err) {
+          lastError = err;
+          if (!isTransient(err) || i === maxAttempts - 1) throw err;
+          const delay = retryDelayMs[Math.min(i, retryDelayMs.length - 1)];
+          console.warn(`[build-html] LLM transient (${String(err?.message ?? err).slice(0, 80)}), retry ${i + 1}/${maxAttempts - 1} em ${delay}ms`);
+          await sleep(delay);
+        }
+      }
+      throw lastError;
     },
   };
 }

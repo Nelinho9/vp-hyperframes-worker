@@ -175,12 +175,41 @@ describe('createWorkerLlmClient', () => {
 
   it('conteúdo vazio e erro de aplicação kie (code!=200) falham honesto', async () => {
     const empty = makeFetch({ llmContent: '   ' });
-    const client = createWorkerLlmClient(config, { fetchImpl: empty.impl });
+    const client = createWorkerLlmClient(config, { fetchImpl: empty.impl, sleep: async () => {} });
     await expect(client.call([{ role: 'user', content: 'u' }])).rejects.toThrow('BUILD_LLM_EMPTY_CONTENT');
 
     const providerErr = vi.fn(async () => jsonResponse({ code: 429, msg: 'rate limited' })) as unknown as typeof fetch;
-    const client2 = createWorkerLlmClient(config, { fetchImpl: providerErr });
+    const client2 = createWorkerLlmClient(config, { fetchImpl: providerErr, sleep: async () => {} });
     await expect(client2.call([{ role: 'user', content: 'u' }])).rejects.toThrow('BUILD_LLM_PROVIDER_429');
+  });
+
+  it('transientes 524/5xx são absorvidos com backoff (emenda E: retry budget no job)', async () => {
+    let n = 0;
+    const impl = vi.fn(async () => {
+      n += 1;
+      if (n <= 2) return new Response('origin timeout', { status: 524 });
+      return jsonResponse({ output: [{ type: 'message', content: [{ type: 'output_text', text: '<html>ok</html>' }] }], usage: { input_tokens: 10, output_tokens: 5 } });
+    }) as unknown as typeof fetch;
+    const delays: number[] = [];
+    const client = createWorkerLlmClient(config, { fetchImpl: impl, sleep: async (ms: number) => { delays.push(ms); } });
+    const result = await client.call([{ role: 'user', content: 'u' }]);
+    expect(result.content).toBe('<html>ok</html>');
+    expect(n).toBe(3);
+    expect(delays).toEqual([5_000, 15_000]);
+  });
+
+  it('transiente persistente esgota as tentativas e falha nomeado; 4xx permanente falha já', async () => {
+    let n = 0;
+    const impl = vi.fn(async () => { n += 1; return new Response('down', { status: 503 }); }) as unknown as typeof fetch;
+    const client = createWorkerLlmClient(config, { fetchImpl: impl, sleep: async () => {} });
+    await expect(client.call([{ role: 'user', content: 'u' }])).rejects.toThrow('BUILD_LLM_HTTP_503');
+    expect(n).toBe(3);
+
+    let perm = 0;
+    const impl401 = vi.fn(async () => { perm += 1; return new Response('unauthorized', { status: 401 }); }) as unknown as typeof fetch;
+    const client2 = createWorkerLlmClient(config, { fetchImpl: impl401, sleep: async () => {} });
+    await expect(client2.call([{ role: 'user', content: 'u' }])).rejects.toThrow('BUILD_LLM_HTTP_401');
+    expect(perm).toBe(1);
   });
 
   it('orçamento de timeout por omissão = 360s (paridade com o builder edge)', () => {

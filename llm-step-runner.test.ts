@@ -347,4 +347,35 @@ describe('createStepAdapters — sem débito (B4)', () => {
     const { db } = createStepAdapters(supabase);
     expect((db as Record<string, unknown>).deductCredits).toBeUndefined();
   });
+
+  it('updateManifest é NO-OP: o manifesto só é escrito pelo orchestrator (prova 2026-11-12)', async () => {
+    // Incidente real: o runStep vendado marcava o step done + creditava
+    // by_step diretamente na BD enquanto o job ainda corria — o watchdog
+    // encadeava o step seguinte e duplicava a contabilidade.
+    const { supabase, manifestUpdates, getProject } = makeSupabase();
+    const before = JSON.stringify((getProject() as { manifest: unknown }).manifest);
+    const { db } = createStepAdapters(supabase);
+    await db.updateManifest(PROJECT_ID, { steps: { design: { status: 'done' } }, credits: { spent: 99, by_step: { design: 99 } } });
+    expect(manifestUpdates).toHaveLength(0);
+    expect(JSON.stringify((getProject() as { manifest: unknown }).manifest)).toBe(before);
+  });
+
+  it('writeTextIfAbsent/writeBinaryIfAbsent: claim atómica (espelho C2/R03 da edge de áudio)', async () => {
+    const existing = new Set(['projects/p/audio/music/h/job.json', 'projects/p/audio/music/h/bytes.mp3']);
+    const upload = vi.fn(async (path: string, _body: unknown, opts?: { upsert?: boolean }) => {
+      if (opts?.upsert === false && existing.has(path)) return { error: { statusCode: '409', message: 'The resource already exists' } };
+      existing.add(path);
+      return { error: null };
+    });
+    const supabase = { storage: { from: () => ({ upload }) } } as never;
+    const { storage } = createStepAdapters(supabase);
+    // perdedor da claim → false (não erro); criador → true
+    expect(await storage.writeTextIfAbsent('projects/p/audio/music/h/job.json', '{}')).toBe(false);
+    expect(await storage.writeTextIfAbsent('projects/p/audio/music/novo/job.json', '{}')).toBe(true);
+    expect(await storage.writeBinaryIfAbsent('projects/p/audio/music/h/bytes.mp3', new Uint8Array([1]), 'audio/mpeg')).toBe(false);
+    expect(await storage.writeBinaryIfAbsent('projects/p/audio/music/novo/bytes.mp3', new Uint8Array([1]), 'audio/mpeg')).toBe(true);
+    // erro de rede continua a lançar (nunca vira false silencioso)
+    upload.mockResolvedValueOnce({ error: { statusCode: '500', message: 'boom' } } as never);
+    await expect(storage.writeTextIfAbsent('projects/p/x.json', '{}')).rejects.toThrow('storage claim failed');
+  });
 });

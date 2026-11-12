@@ -128,6 +128,24 @@ export function createStepAdapters(supabase) {
       const bytes = new Uint8Array(await data.arrayBuffer());
       return { bytes, mimeType: data.type || 'audio/mpeg' };
     },
+    // C2/R03 (espelho da edge video-v4-audio): claim atómica por path —
+    // upsert:false só cria quando ausente; `false` = "já existe" (perdedor
+    // da claim), não erro de rede. O gate de música (materializeProjectMusic)
+    // exige writeTextIfAbsent; sem ele o step falhava MUSIC_CONFIG_MISSING.
+    async writeTextIfAbsent(path, content) {
+      const { error } = await supabase.storage.from(ARTIFACTS_BUCKET).upload(path, new Blob([content]), { upsert: false });
+      if (!error) return true;
+      const status = error?.statusCode;
+      if (status === '409' || status === 409 || /already exists|Duplicate/i.test(String(error.message))) return false;
+      throw new Error(`storage claim failed: ${error.message}`);
+    },
+    async writeBinaryIfAbsent(path, bytes, contentType) {
+      const { error } = await supabase.storage.from(ARTIFACTS_BUCKET).upload(path, bytes, { contentType, upsert: false });
+      if (!error) return true;
+      const status = error?.statusCode;
+      if (status === '409' || status === 409 || /already exists|Duplicate/i.test(String(error.message))) return false;
+      throw new Error(`storage binary claim failed: ${error.message}`);
+    },
   };
   const db = {
     async getProject(id) {
@@ -135,9 +153,16 @@ export function createStepAdapters(supabase) {
       if (error) throw new Error(`project read failed: ${error.message}`);
       return data;
     },
-    async updateManifest(id, manifest) {
-      const { error } = await supabase.from('video_projects').update({ manifest, updated_at: new Date().toISOString() }).eq('id', id);
-      if (error) throw new Error(`manifest update failed: ${error.message}`);
+    async updateManifest(_id, _manifest) {
+      // NO-OP deliberado (prova de paridade 2026-11-12): o motor vendado
+      // runStep escreve o manifesto (running/done + contabilidade de créditos)
+      // porque nas edges esse é o contrato do step. No modo llm-step o ÚNICO
+      // writer do manifesto é o orchestrator (markRunning no dispatch, CAS
+      // settle no callback). A escrita direta do worker (a) marcava o step
+      // done ANTES do TTS/fit/música terminarem — o watchdog encadeava o
+      // step seguinte e zumbificava o job ainda vivo — e (b) duplicava a
+      // contabilidade credits.by_step. O resultado público viaja no callback
+      // (`step_result`); nada aqui pode tocar no manifesto.
     },
     // Sem deductCredits — o orchestrator é a única fonte de débito (B4).
   };
