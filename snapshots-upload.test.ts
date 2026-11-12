@@ -10,7 +10,7 @@ import { describe, expect, it, vi } from "vitest";
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
-import { persistRenderSnapshots, snapshotStoragePath, MAX_RENDER_SNAPSHOTS } from "./snapshots-upload.js";
+import { persistRenderSnapshots, persistEvidenceSnapshots, snapshotStoragePath, evidenceSnapshotStoragePath, evidenceManifestStoragePath, MAX_RENDER_SNAPSHOTS } from "./snapshots-upload.js";
 
 const UUID = "11111111-2222-4333-8444-555555555555";
 
@@ -125,5 +125,77 @@ describe("persistRenderSnapshots — V5-P6A", () => {
     expect(logs.some((l) => l.includes("no snapshot pngs"))).toBe(true);
     expect(failures).toEqual(["no snapshot pngs found"]);
     rmSync(jobDir, { recursive: true, force: true });
+  });
+});
+
+// ─── F04-T08 evidence set (prova de paridade 2026-11-12) ───────────────────
+// Incidente real: persistEvidenceSnapshots existia mas NUNCA era chamado pelo
+// server.js — o quality gate só encontrava snapshots legacy e respondia
+// QUALITY_LEGACY_UNVERIFIED (score nunca fabricado). Estes testes cobrem o
+// contrato de publicação E a wiring no caminho de conclusão do render.
+
+describe("persistEvidenceSnapshots — F04-T08", () => {
+  const JOB_ID = "66666666-7777-4888-8999-aaaaaaaaaaaa";
+  const log = () => {};
+
+  it("publica snapshots namespaced + manifest como commit-marker APÓS os objetos", async () => {
+    const jobDir = makeJobDir(["frame_at_1.png", "frame_at_2.png"]);
+    const { supabase, uploads } = makeFakeSupabase();
+    const manifest = { job_id: JOB_ID, project_id: UUID, revision: 3, status: "complete", snapshots: [] };
+    const result = await persistEvidenceSnapshots(supabase as never, {
+      projectId: UUID, jobId: JOB_ID, revision: 3, jobDir, manifest, log,
+    });
+    expect(result.published).toBe(2);
+    expect(result.manifestPath).toBe(evidenceManifestStoragePath(UUID, JOB_ID, 3));
+    const paths = uploads.map((u) => u.path);
+    expect(paths.slice(0, 2)).toEqual([
+      evidenceSnapshotStoragePath(UUID, JOB_ID, 3, "frame_at_1.png"),
+      evidenceSnapshotStoragePath(UUID, JOB_ID, 3, "frame_at_2.png"),
+    ]);
+    // commit-marker: o manifest é SEMPRE o último upload (atomicidade lógica)
+    expect(paths[paths.length - 1]).toBe(evidenceManifestStoragePath(UUID, JOB_ID, 3));
+    expect(uploads[uploads.length - 1].contentType).toBe("application/json");
+    rmSync(jobDir, { recursive: true, force: true });
+  });
+
+  it("falha num objeto não impede o manifest (parcial declarado, nunca fatal)", async () => {
+    const jobDir = makeJobDir(["frame_at_1.png", "frame_at_2.png"]);
+    const { supabase, uploads } = makeFakeSupabase(0); // primeiro upload falha
+    const failures: string[] = [];
+    const result = await persistEvidenceSnapshots(supabase as never, {
+      projectId: UUID, jobId: JOB_ID, revision: 1, jobDir,
+      manifest: { status: "partial" }, log, onFailure: (m: string) => failures.push(m),
+    });
+    expect(result.published).toBe(1);
+    expect(result.manifestPath).toBe(evidenceManifestStoragePath(UUID, JOB_ID, 1));
+    expect(failures.length).toBe(1);
+    expect(uploads.map((u) => u.path)).toContain(evidenceManifestStoragePath(UUID, JOB_ID, 1));
+    rmSync(jobDir, { recursive: true, force: true });
+  });
+
+  it("sem supabase / project id não-UUID → skip honesto", async () => {
+    const jobDir = makeJobDir(["frame_at_1.png"]);
+    const r1 = await persistEvidenceSnapshots(null as never, { projectId: UUID, jobId: JOB_ID, revision: 1, jobDir, log });
+    expect(r1).toEqual({ published: 0, manifestPath: null });
+    const { supabase, uploads } = makeFakeSupabase();
+    const r2 = await persistEvidenceSnapshots(supabase as never, { projectId: "not-a-uuid", jobId: JOB_ID, revision: 1, jobDir, log });
+    expect(r2).toEqual({ published: 0, manifestPath: null });
+    expect(uploads).toHaveLength(0);
+    rmSync(jobDir, { recursive: true, force: true });
+  });
+
+  it("WIRING: o caminho de conclusão do render no server.js chama persistEvidenceSnapshots", async () => {
+    // Regressão do incidente real (função órfã): guarda estática de que o
+    // server importa E invoca a publicação de evidence após construir o
+    // manifest local. Sem isto o quality gate nunca recebe evidence.
+    const { readFileSync } = await import("fs");
+    const src = readFileSync(new URL("./server.js", import.meta.url), "utf8");
+    expect(src).toMatch(/import\s+\{[^}]*persistEvidenceSnapshots[^}]*\}\s+from\s+"\.\/snapshots-upload\.js"/);
+    expect(src).toContain("await persistEvidenceSnapshots(supabase, {");
+    // a chamada vive no bloco que constrói o evidence manifest local
+    const buildIdx = src.indexOf("job.evidence_manifest = manifest;");
+    const callIdx = src.indexOf("await persistEvidenceSnapshots(supabase, {");
+    expect(buildIdx).toBeGreaterThan(-1);
+    expect(callIdx).toBeGreaterThan(buildIdx);
   });
 });

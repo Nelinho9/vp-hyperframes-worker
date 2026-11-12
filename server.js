@@ -50,7 +50,7 @@ import { captureThumbnails, computeArtifactHash, parseScenePostEntranceTimes, bu
 import { deriveElements, persistElementsArtifact } from "./elements-registry.js";
 import { randomUUID } from "node:crypto";
 import { createCompositionEditor, compositionPreviewOptions, registerCompositionRoutes } from "./composition-editor.js";
-import { persistRenderSnapshots } from "./snapshots-upload.js";
+import { persistRenderSnapshots, persistEvidenceSnapshots } from "./snapshots-upload.js";
 import { resolveWorkerRenderOptions, persistEffectiveOptions } from "./render-options.js";
 import { buildExportArgv as buildF04ExportArgv, buildLintArgv as buildF04LintArgv, buildCheckArgv as buildF04CheckArgv } from "./render-argv.js";
 import { validateFfprobeOutput as validateF04Bytes, isPngSignature, isMp4Signature } from "./render-verify.js";
@@ -2226,6 +2226,30 @@ export async function runRender(jobId, jobDir) {
       }
       job.evidence_manifest = manifest;
       job.evidence_status = manifest.status;
+      // F04-T08 wiring (prova de paridade 2026-11-12): o evidence set tem de
+      // chegar à Storage — o quality gate só pontua a partir do
+      // evidence-manifest da revisão (projects/{id}/evidence/…); sem este
+      // upload o gate caía em QUALITY_LEGACY_UNVERIFIED (score nunca
+      // fabricado). Objetos primeiro, manifest como commit-marker (função
+      // já atómica); falha nunca é fatal para o render.
+      if (supabase) {
+        try {
+          const ev = await persistEvidenceSnapshots(supabase, {
+            projectId: job.project_id,
+            jobId: job.id,
+            revision: job.composition_revision ?? job.revision,
+            jobDir,
+            manifest,
+            log: console.log,
+            onFailure: (message) => recordUploadFailure(uploadErrors, "evidence", message),
+          });
+          uploaded.evidence = ev.published > 0;
+          job.evidence_manifest_path = ev.manifestPath;
+        } catch (evErr) {
+          recordUploadFailure(uploadErrors, "evidence", evErr);
+          uploaded.evidence = false;
+        }
+      }
     }
     job.uploaded = uploaded;
     job.upload_errors = uploadErrors;
