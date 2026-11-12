@@ -214,7 +214,9 @@ for (let i = 0; i < BRIEFS.length; i++) {
           const dl = await fetch(`${SB}/storage/v1/object/video-artifacts/${path}`, { headers: svcHeaders });
           if (dl.ok) {
             const text = await dl.text();
-            writeFileSync(join(OUT, `proof-${i + 1}-${path.split('/').pop()}`), text);
+            // Evidência por project_id (não por índice da ronda): re-execuções
+            // acumulam provas sem sobrescrever artefactos de projetos anteriores.
+            writeFileSync(join(OUT, `${projectId}-${path.split('/').pop()}`), text);
             if (path.endsWith('audio_meta.json')) {
               try {
                 const meta = JSON.parse(text);
@@ -249,12 +251,46 @@ for (let i = 0; i < BRIEFS.length; i++) {
 }
 
 const passed = results.filter((r) => r.verdict === 'PASS').length;
+
+// ── Ledger cumulativo (emenda F: ≥3 vídeos completos com paridade) ──────────
+// Re-execuções acumulam PASS por project_id (o provider 524 é intermitente;
+// cada ronda contribui com os vídeos que completaram). Artefactos por projeto
+// já estão em OUT/{projectId}-*. O verdict final exige ≥3 PASS distintos.
+const LEDGER = join(OUT, 'parity-ledger.json');
+let ledger = { proofs: {} };
+try { ledger = JSON.parse(readFileSync(LEDGER, 'utf8')); } catch { /* primeira ronda */ }
+if (!ledger.proofs || typeof ledger.proofs !== 'object') ledger.proofs = {};
+for (const r of results) {
+  if (r.verdict !== 'PASS' || !r.project_id) continue;
+  ledger.proofs[r.project_id] = {
+    project_id: r.project_id,
+    name: r.name,
+    aspect_ratio: r.manifest?.brief ? (r.name.match(/\(([^)]+)\)/)?.[1] ?? null) : null,
+    credits_spent: r.credits_spent,
+    finished_at: r.finished_at,
+    quality_score: r.artifacts?.['quality_report.json']?.score ?? null,
+    audio_files_ok: r.artifacts?.['audio_meta.json']?.files_ok ?? null,
+    audio_files_total: r.artifacts?.['audio_meta.json']?.files_total ?? null,
+    mp4_present: r.artifacts?.['output.mp4']?.present === true,
+    build_input_present: r.artifacts?.['build-input.html']?.present === true,
+    worker_steps: r.worker_steps,
+  };
+}
+const cumulativePassed = Object.keys(ledger.proofs).length;
+ledger.updated_at = new Date().toISOString();
+ledger.flags = { V4_BUILD_ON_WORKER: 'true', V4_LLM_STEPS_ON_WORKER: 'design,storyboard,audio,visual,quality' };
+ledger.user = USER;
+ledger.cumulative_passed = cumulativePassed;
+ledger.verdict = cumulativePassed >= 3 ? 'PARITY_PROVEN' : 'PARITY_INCOMPLETE';
+writeFileSync(LEDGER, JSON.stringify(ledger, null, 2));
+
 const summary = {
   finished_at: new Date().toISOString(),
   flags: { V4_BUILD_ON_WORKER: 'true', V4_LLM_STEPS_ON_WORKER: 'design,storyboard,audio,visual,quality' },
   user: USER, videos: results.length, passed,
+  cumulative_passed: cumulativePassed,
   credits_total: results.reduce((a, r) => a + (r.credits_spent || 0), 0),
-  verdict: passed >= 3 ? 'PARITY_PROVEN' : 'PARITY_INCOMPLETE',
+  verdict: cumulativePassed >= 3 ? 'PARITY_PROVEN' : 'PARITY_INCOMPLETE',
 };
 writeFileSync(join(OUT, 'parity-summary.json'), JSON.stringify(summary, null, 2));
 console.log('\nSUMMARY', JSON.stringify(summary));

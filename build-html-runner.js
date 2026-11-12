@@ -35,13 +35,16 @@ export const BUILD_LLM_TIMEOUT_MS = 360_000;
 export const BUILD_CREDENTIALS_TIMEOUT_MS = 15_000;
 /**
  * Retry budget do build (emenda E, prova de paridade 2026-11-12): o prompt de
- * composição HTML é o mais pesado e o origin do provider devolve 524 com
- * frequência sob carga. O worker não tem o wall-cap das edges, por isso o
- * build tem mais tentativas com backoff crescente (5s/15s/30s/60s) antes de
- * falhar o job. Steps LLM leves mantêm o default do cliente (3 tentativas).
+ * composição HTML é o mais pesado (~12–14k tokens de saída, ~100–120s) e o
+ * origin do provider devolve 524 quando a geração excede o seu timeout — sob
+ * carga isto é intermitente (a prova 1 passou na 5.ª tentativa; a prova 2
+ * esgotou 5). O worker não tem o wall-cap das edges, por isso o build tem um
+ * budget alargado de 8 tentativas com backoff crescente até 120s para atravessar
+ * janelas de overload do origin. Steps LLM leves mantêm o default do cliente
+ * (3 tentativas). Erros permanentes (4xx auth/billing) falham sempre já.
  */
-export const BUILD_LLM_MAX_ATTEMPTS = 5;
-export const BUILD_LLM_RETRY_DELAY_MS = [5_000, 15_000, 30_000, 60_000];
+export const BUILD_LLM_MAX_ATTEMPTS = 8;
+export const BUILD_LLM_RETRY_DELAY_MS = [5_000, 15_000, 30_000, 60_000, 120_000, 120_000, 120_000];
 /** TTL das assinaturas de leitura VO — espelha o builder edge (7 dias). */
 export const BUILD_SIGN_READ_TTL_SEC = 604_800;
 

@@ -218,17 +218,17 @@ describe('createWorkerLlmClient', () => {
     expect(BUILD_LLM_TIMEOUT_MS).toBe(360_000);
   });
 
-  it('build tem retry budget alargado (5 tentativas, backoff 5/15/30/60s) — 524 sob carga', async () => {
-    // Incidente real (prova 2026-11-12): o origin do provider devolveu 524 em
-    // TODAS as 3 tentativas default e o build morreu. O build (prompt mais
-    // pesado, sem wall-cap de edge) passa a ter 5 tentativas com backoff
-    // crescente; aqui 4×524 → sucesso na 5ª.
-    expect(BUILD_LLM_MAX_ATTEMPTS).toBe(5);
-    expect(BUILD_LLM_RETRY_DELAY_MS).toEqual([5_000, 15_000, 30_000, 60_000]);
+  it('build tem retry budget alargado (8 tentativas, backoff até 120s) — 524 sob carga', async () => {
+    // Incidente real (prova 2026-11-12): o origin do provider devolve 524 de
+    // forma intermitente sob carga (prova 1 passou na 5.ª tentativa; prova 2
+    // esgotou 5). O build (prompt mais pesado, sem wall-cap de edge) passa a
+    // ter 8 tentativas com backoff crescente até 120s; aqui 7×524 → sucesso na 8ª.
+    expect(BUILD_LLM_MAX_ATTEMPTS).toBe(8);
+    expect(BUILD_LLM_RETRY_DELAY_MS).toEqual([5_000, 15_000, 30_000, 60_000, 120_000, 120_000, 120_000]);
     let n = 0;
     const impl = vi.fn(async () => {
       n += 1;
-      if (n <= 4) return new Response('origin timeout', { status: 524 });
+      if (n <= 7) return new Response('origin timeout', { status: 524 });
       return jsonResponse({ output: [{ type: 'message', content: [{ type: 'output_text', text: '<html>ok</html>' }] }], usage: { input_tokens: 10, output_tokens: 5 } });
     }) as unknown as typeof fetch;
     const delays: number[] = [];
@@ -238,8 +238,8 @@ describe('createWorkerLlmClient', () => {
     });
     const result = await client.call([{ role: 'user', content: 'u' }]);
     expect(result.content).toBe('<html>ok</html>');
-    expect(n).toBe(5);
-    expect(delays).toEqual([5_000, 15_000, 30_000, 60_000]);
+    expect(n).toBe(8);
+    expect(delays).toEqual([5_000, 15_000, 30_000, 60_000, 120_000, 120_000, 120_000]);
   });
 });
 
