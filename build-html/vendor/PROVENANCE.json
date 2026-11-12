@@ -1,23 +1,40 @@
 {
   "contract": "build-html-vendor.v1",
   "source_repo": "visttapro (supabase/functions)",
-  "source_commit": "54ae718ff511a62a273aea6e541fd48ba53353dc",
-  "synced_at": "2026-11-12T13:58:48.682Z",
+  "source_commit": "d62cc58d2c2cbefe01a99cb639d8fc25b5bcb272",
+  "synced_at": "2026-11-12T16:11:38.932Z",
   "node_requirement": ">=22.18 (native TypeScript type stripping)",
+  "rewrites": [
+    {
+      "from": "https://esm.sh/zod@3.25.76",
+      "to": "zod"
+    }
+  ],
   "files": {
+    "_shared/boundedTransport.ts": "9b4ef3ccb3322ea3a3a199e537d154c988eac4766f0e8318a5e402d7f0734d74",
+    "_shared/briefAuthoritative.ts": "e7501ef661b69bfb14433c166aeba4b9e36cc99089378709903b09678eac6a02",
+    "_shared/contracts/renderJob.ts": "dc54fc0c084610e2543348b7bc0ecdfd78d6f702eab56841d2c743887bc86906",
+    "_shared/intakeContext.ts": "fbbee9884bcb49bad55e42e9e70333f8d17703f76625caa50d0f6dac6e49e53d",
     "_shared/llmProvider.ts": "006586db4b666bf51f3dbdf0c3399d6ef2427ea27854d2f0ce2116a1bcf93dbd",
+    "_shared/respanTracing.ts": "04a977cdbd3d9e65a0a8423417ca8e30c0837b658031cb7fa9a312a4fa713ab9",
+    "_shared/sha256.ts": "77328cd9be7d89a8ab5f482df2534f1b3fa817c3c047da309f754fe5946db346",
     "_shared/skills/hyperframesAnimation.ts": "360954c7342506621e635e01ecb56213ccdf4aa30f8be275109ed130622409cd",
     "_shared/skills/hyperframesCore.ts": "bea1844fd556ad9001e82f519b7359afcb9cb587d0607b32faaff5758b2c1bee",
     "_shared/skills/hyperframesCreative.ts": "df7119aef8cb720b38382f8dc95ad1840f493055606a500cdded4a9ba99ba429",
     "_shared/skills/mediaUse.ts": "2732277a32ffec3b5859a1d7de1031186f7de31e908858d8db3ad954360d241f",
     "_shared/skills/mod.ts": "c1d2ba0548475450e396fcc29e63b2f8088c6e6a73ff66d9bdf62ec62805ac81",
+    "_shared/videoLlmTransport.ts": "a8bbceb2b00da03bbd62731fdd85a6cb824f44b1b634f276e8342a1c0e00cbe8",
     "video-v4-audio/audioMeasure.ts": "5d91056f0ebfc34356db8bae1486c01f891b82075db0c1714bb72ef2f895ee4d",
+    "video-v4-steps/_steps.ts": "45d6a4eb8cf8c4f8c6bcc87f3008e7abc828679d14f6a313fa62a473d959ff1e",
     "video-v4-steps/audioInjection.ts": "c08f837e6ec1c360d6230416a0825bf500591e278f4f8312dbc5f5c7996801d5",
     "video-v4-steps/audioMaterialize.ts": "43e498605d2bc43ba09415d1fd20906a6f04f19b59fa46ec61296ba2ade85985",
     "video-v4-steps/buildStep.ts": "88434e0c134d37b9c2106ca1649acdcc602082b13c2e46983b5e12c5eeff17ea",
     "video-v4-steps/captionInjection.ts": "43086ce272c0ef7e2c3d4fe190a701ac33df1e4541588ad2425ee93614758fe5",
     "video-v4-steps/captionStyle.ts": "7b7aa1243c9301abae20e3723944157c8e615f7ed599a338dcfa62d4e50aecdd",
+    "video-v4-steps/designStep.ts": "7888a019340018fce8fae32e3a7b644c789f09aff41220dc59fa5679d152f08d",
     "video-v4-steps/edgeLint.ts": "75649ae79389e550c5eb55a87699d99b2a9bbe1d31fce959f604077c0d64c9c6",
-    "video-v4-steps/mediaUrls.ts": "f2ff98199fcc980c7aab276c6c5a53d659cb996453fd9c0ee53fcb5910716e22"
+    "video-v4-steps/mediaUrls.ts": "f2ff98199fcc980c7aab276c6c5a53d659cb996453fd9c0ee53fcb5910716e22",
+    "video-v4-steps/storyboardStep.ts": "96063426f2b0d54320e9945dae871e7e01a6c258fa88a469d9e9992c862454f0",
+    "video-v4-steps/visualStep.ts": "b090459f09c367f4757025c09b05164c3ad30525e76b5114e6d2b2e3f9b67d4a"
   }
 }

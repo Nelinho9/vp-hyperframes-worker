@@ -75,6 +75,10 @@ RUN node -e "const fs=require('fs');const seen=new Set(['server.js']);const queu
 # com o type stripping nativo do Node — falha cedo no build, não no boot.
 RUN node --input-type=module -e "import('./build-html-runner.js').then(() => console.log('build-html graph OK')).catch((e) => { console.error('FATAL — build-html graph:', e.message); process.exit(1); })"
 
+# F2 (plano v2): o runner llm-step (motor runStep vendado + zod local) também
+# tem de carregar na imagem — mesmo guard de build.
+RUN node --input-type=module -e "import('./llm-step-runner.js').then(() => console.log('llm-step graph OK')).catch((e) => { console.error('FATAL — llm-step graph:', e.message); process.exit(1); })"
+
 RUN mkdir -p $WORK_DIR
 
 EXPOSE 8787

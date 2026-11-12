@@ -26,7 +26,33 @@ const REPO_ROOT = resolve(HERE, '..');
 const VENDOR_ROOT = join(REPO_ROOT, 'build-html', 'vendor');
 
 /** Entrypoints do grafo; o resto é descoberto por transitividade dos imports. */
-export const ENTRY_MODULES = ['video-v4-steps/buildStep.ts', '_shared/llmProvider.ts'];
+export const ENTRY_MODULES = [
+  'video-v4-steps/buildStep.ts',
+  '_shared/llmProvider.ts',
+  // F2 (plano v2): motor partilhado dos steps LLM + configs (llm-step runner).
+  'video-v4-steps/_steps.ts',
+  'video-v4-steps/designStep.ts',
+  'video-v4-steps/storyboardStep.ts',
+  'video-v4-steps/visualStep.ts',
+];
+
+/**
+ * F2: o Node não resolve imports https (esm.sh). A ÚNICA reescrita é o zod
+ * pinned → pacote local `zod` na MESMA versão (3.25.76, package.json do
+ * worker). Determinística e registada no PROVENANCE; os bytes originais
+ * continuam auditáveis pelo sha256 da fonte.
+ */
+export const VENDOR_REWRITES = [
+  { from: 'https://esm.sh/zod@3.25.76', to: 'zod' },
+];
+
+function applyRewrites(text) {
+  let out = text;
+  for (const { from, to } of VENDOR_REWRITES) {
+    out = out.split(`'${from}'`).join(`'${to}'`).split(`"${from}"`).join(`"${to}"`);
+  }
+  return out;
+}
 
 /**
  * Fecho transitivo dos imports relativos `.ts` — o grafo é descoberto, não
@@ -73,7 +99,9 @@ export function syncBuildModules(functionsDir) {
     const bytes = readFileSync(src);
     const dst = join(VENDOR_ROOT, rel);
     mkdirSync(dirname(dst), { recursive: true });
-    writeFileSync(dst, bytes);
+    // sha256 da FONTE original; o ficheiro vendado pode levar a reescrita
+    // determinística do zod (VENDOR_REWRITES) para resolver sob Node.
+    writeFileSync(dst, applyRewrites(bytes.toString('utf8')));
     files[rel] = sha256(bytes);
   }
   const provenance = {
@@ -82,6 +110,7 @@ export function syncBuildModules(functionsDir) {
     source_commit: sourceCommit(functionsDir),
     synced_at: new Date().toISOString(),
     node_requirement: '>=22.18 (native TypeScript type stripping)',
+    rewrites: VENDOR_REWRITES,
     files,
   };
   writeFileSync(join(VENDOR_ROOT, 'PROVENANCE.json'), JSON.stringify(provenance, null, 2) + '\n');

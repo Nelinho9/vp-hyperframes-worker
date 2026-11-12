@@ -63,6 +63,7 @@ import {
   supervisorEnabled,
 } from "./pipeline-runner.js";
 import { runBuildHtmlJob } from "./build-html-runner.js";
+import { runLlmStepJob } from "./llm-step-runner.js";
 import { pruneTerminalJobs, retentionTtlMs, directoryBytes } from "./job-retention.js";
 
 const app = express();
@@ -356,7 +357,7 @@ rehydrateJobs();
 // F2/F3 (emenda B): pools separados — geração (I/O-bound, LLM_JOB_CONCURRENCY)
 // nunca fica atrás de renders Chromium (JOB_CONCURRENCY, limitado por RAM).
 const jobQueue = createJobQueue({ root: WORK_DIR, jobs,
-  processJob: (payload) => (payload?.mode === "build-html" ? stageBuildHtmlJob(payload) : stageJob(payload)),
+  processJob: (payload) => (payload?.mode === "build-html" ? stageBuildHtmlJob(payload) : payload?.mode === "llm-step" ? stageLlmStepJob(payload) : stageJob(payload)),
   deliverCallback: retryTerminalCallback,
   concurrency: process.env.JOB_CONCURRENCY, capacity: process.env.JOB_QUEUE_CAPACITY,
   pools: {
@@ -710,6 +711,61 @@ async function stageBuildHtmlJob(body) {
   // A entrega do callback (com retry) fica a cargo da fila durável
   // (deliverCallback=retryTerminalCallback), que também redige o secret de
   // transporte após entrega bem-sucedida (emenda C).
+  atomicWriteJob(job);
+}
+
+/**
+ * F2 (plano Video-Engine v2): job de step LLM (design/storyboard/visual) no
+ * worker — mesmo motor runStep vendado das edges, fila `llm` (I/O-bound).
+ * Credenciais JIT (emenda C); o resultado público vai no callback como
+ * `step_result` e o orchestrator aplica a telemetria + encadeia o próximo
+ * step. Nunca lança: estado terminal + callback são sempre produzidos.
+ */
+async function stageLlmStepJob(body) {
+  const job = jobs.get(body.job_id);
+  if (!job) throw new Error("LLM_STEP_JOB_NOT_FOUND");
+  const startTime = Date.now();
+  let result;
+  try {
+    result = await runLlmStepJob({
+      body,
+      supabase,
+      workerSecret: WORKER_SECRET,
+      fetchImpl: fetch,
+      log: console.log,
+    });
+  } catch (err) {
+    result = { ok: false, error: formatExecError(err) };
+  }
+  job.total_ms = Date.now() - startTime;
+  job.completed_at = new Date().toISOString();
+  if (result.ok) {
+    job.status = "done";
+    job.step_result = result.step_result;
+    job.callback_payload = {
+      job_id: job.id, project_id: job.project_id, step: job.step,
+      request_id: job.request_id, revision: job.revision, input_hash: job.input_hash,
+      callback_nonce: job.callback?.nonce,
+      status: "done",
+      step_result: result.step_result,
+      tokens: result.step_result?.tokens,
+      total_ms: job.total_ms,
+    };
+    console.log(`[llm-step] job ${job.id} done (project ${job.project_id}, step=${job.step}, ${job.total_ms}ms)`);
+  } else {
+    job.status = "failed";
+    job.error_code = "LLM_STEP_FAILED";
+    job.error = result.error;
+    job.callback_payload = {
+      job_id: job.id, project_id: job.project_id, step: job.step,
+      request_id: job.request_id, revision: job.revision, input_hash: job.input_hash,
+      callback_nonce: job.callback?.nonce,
+      status: "failed",
+      error: result.error,
+      total_ms: job.total_ms,
+    };
+    console.error(`[llm-step] job ${job.id} failed (project ${job.project_id}, step=${job.step}): ${String(result.error).slice(-500)}`);
+  }
   atomicWriteJob(job);
 }
 

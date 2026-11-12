@@ -29,10 +29,13 @@ export function parseRenderJob(value, workerSecret) {
   for (const key of ['job_id', 'project_id']) if (!UUID_RE.test(body[key] || '')) fail('INVALID_UUID');
   // UUID identity is case insensitive, including on a Windows persistence volume.
   body.job_id = body.job_id.toLowerCase(); body.project_id = body.project_id.toLowerCase();
-  if (!['preview', 'build', 'render', 'finalize'].includes(body.step) || !['preview', 'render', 'build-html'].includes(body.mode)) fail('INVALID_STEP_MODE');
+  if (!['preview', 'build', 'render', 'finalize', 'design', 'storyboard', 'visual'].includes(body.step) || !['preview', 'render', 'build-html', 'llm-step'].includes(body.mode)) fail('INVALID_STEP_MODE');
   // F1 (plano v2): build-html é um job de GERAÇÃO (LLM no worker) — só existe
   // como step 'build'. O HTML é produzido, não transportado.
   if (body.mode === 'build-html' && body.step !== 'build') fail('INVALID_STEP_MODE');
+  // F2 (plano v2): llm-step só existe para os steps com runner portado
+  // (allowlist espelho do orchestrator; audio/quality ficam nas edges).
+  if (body.mode === 'llm-step' && !['design', 'storyboard', 'visual'].includes(body.step)) fail('INVALID_STEP_MODE');
   if (body.contract_version !== undefined && body.contract_version !== 1) fail('UNSUPPORTED_CONTRACT');
   if (body.contract_version === 1) {
     if (!UUID_RE.test(body.request_id || '') || !Number.isSafeInteger(body.revision) || body.revision < 1 || !/^[a-f0-9]{64}$/.test(body.input_hash || '')) fail('INVALID_REVISION');
@@ -43,7 +46,7 @@ export function parseRenderJob(value, workerSecret) {
   }
   const html = body.index_html ?? body.inputs?.index_html;
   if (html !== undefined && (typeof html !== 'string' || Buffer.byteLength(html) > 8 * 1024 * 1024)) fail('INVALID_HTML');
-  if (!html && body.step !== 'finalize' && body.mode !== 'build-html') fail('HTML_REQUIRED');
+  if (!html && body.step !== 'finalize' && body.mode !== 'build-html' && body.mode !== 'llm-step') fail('HTML_REQUIRED');
   // F1 (plano v2, emenda C): o job build-html transporta APENAS o endpoint JIT
   // de credenciais (https) + brief/aspect — nunca keys. O worker pede a config
   // LLM ao orchestrator no momento de executar; nada de secrets no payload
@@ -54,6 +57,18 @@ export function parseRenderJob(value, workerSecret) {
     if (typeof credentialsUrl !== 'string' || !https(credentialsUrl)) fail('INVALID_CREDENTIALS_URL');
     if (body.inputs?.brief !== undefined && (typeof body.inputs.brief !== 'string' || body.inputs.brief.length > 20000)) fail('INVALID_BUILD_INPUTS');
     if (body.inputs?.aspect_ratio !== undefined && (typeof body.inputs.aspect_ratio !== 'string' || body.inputs.aspect_ratio.length > 32)) fail('INVALID_BUILD_INPUTS');
+  }
+  // F2 (plano v2, emenda C): o job llm-step transporta APENAS o endpoint JIT
+  // de credenciais (https) + o nome do step — nunca keys nem HTML. Allowlist
+  // estrita dos inputs: qualquer campo extra é rejeitado (sem smuggle).
+  if (body.mode === 'llm-step') {
+    if (html !== undefined) fail('INVALID_LLM_STEP_INPUTS');
+    const credentialsUrl = body.inputs?.credentials_url;
+    if (typeof credentialsUrl !== 'string' || !https(credentialsUrl)) fail('INVALID_CREDENTIALS_URL');
+    if (body.inputs?.step !== body.step) fail('INVALID_LLM_STEP_INPUTS');
+    for (const key of Object.keys(body.inputs ?? {})) {
+      if (!['credentials_url', 'step'].includes(key)) fail('INVALID_LLM_STEP_INPUTS');
+    }
   }
   if (html) {
     for (const match of html.matchAll(/\b(?:src|href)\s*=\s*["']([^"']+)["']/gi)) {
@@ -151,5 +166,16 @@ export function publicJob(job) {
     ...(storageRef(job.output.mp4_url) ? { mp4_url: job.output.mp4_url } : {}),
     ...(Number.isFinite(job.output.mp4_size_bytes) ? { mp4_size_bytes: job.output.mp4_size_bytes } : {}),
   };
+  // F2 (plano v2): resultado público do llm-step — allowlist estrita
+  // (artifacts/tokens/duração; sem credenciais nem conteúdo LLM cru).
+  if (job.step_result && typeof job.step_result === 'object') {
+    const sr = job.step_result;
+    const num = (v) => typeof v === 'number' && Number.isFinite(v);
+    out.step_result = {
+      ...(Array.isArray(sr.artifacts) ? { artifacts: sr.artifacts.filter((a) => storageRef(a)).slice(0, 32) } : {}),
+      ...(sr.tokens && num(sr.tokens.input) && num(sr.tokens.output) ? { tokens: { input: sr.tokens.input, output: sr.tokens.output } } : {}),
+      ...(num(sr.duration_seconds) ? { duration_seconds: sr.duration_seconds } : {}),
+    };
+  }
   return out;
 }

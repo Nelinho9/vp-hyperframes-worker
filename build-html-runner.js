@@ -84,6 +84,9 @@ export async function fetchBuildCredentials(args) {
     apiKey: llm.api_key,
     wire: llm.wire === 'responses' ? 'responses' : 'chat',
     reasoningEffort: typeof llm.reasoning_effort === 'string' ? llm.reasoning_effort : '',
+    // F2 (plano v2): config por step para o runner llm-step (opcional —
+    // respostas antigas do endpoint continuam válidas para o build-html).
+    steps: data?.steps && typeof data.steps === 'object' ? data.steps : null,
   };
 }
 
