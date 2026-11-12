@@ -53,3 +53,10 @@ snapshots/
 .DS_Store
 Thumbs.db
 Desktop.ini
+
+# Machine-local convenience wrappers (hardcoded local paths) and one-off temp scripts
+run-tests.cmd
+run-secret-scan.cmd
+run-app-tests.cmd
+run-parity-proofs.cmd
+scripts/tmp-*.mjs
