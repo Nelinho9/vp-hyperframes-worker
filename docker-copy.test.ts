@@ -102,7 +102,21 @@ describe('Dockerfile cobre o grafo de imports do worker', () => {
 
   it('a imagem tem guard de build para imports não resolvidos', () => {
     const dockerfile = read('Dockerfile');
-    expect(dockerfile).toMatch(/RUN node -e [^\n]*FATAL/);
+    expect(dockerfile).toMatch(/RUN node [^\n]*docker-import-guard/);
+  });
+
+  it('o guard de build resolve imports relativo ao ficheiro que importa (incidente 12-11-2026)', async () => {
+    // Regressão do deploy forrkp0ise6esf46xz1qxyrq: o guard inline antigo
+    // resolvia specs a partir da RAIZ da imagem (flat), reportando como
+    // "em falta" imports relativos legítimos do grafo vendado (ex.:
+    // buildStep.ts -> ./edgeLint.ts). O guard tem de usar a MESMA resolução
+    // do localImportGraph acima (relativo ao importador).
+    const { execFileSync } = await import('node:child_process');
+    const out = execFileSync(process.execPath, ['scripts/docker-import-guard.mjs'], {
+      cwd: root,
+      encoding: 'utf8',
+    });
+    expect(out).toContain('IMPORT_GUARD_OK');
   });
 
   it('fixtures são copiadas para a imagem', () => {

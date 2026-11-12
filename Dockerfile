@@ -69,7 +69,11 @@ COPY bgm ./bgm
 # Guard de build: falha cedo (com mensagem clara) se algum import local do
 # grafo server.js não existir na imagem — antes disto, o crash só aparecia no
 # boot (ERR_MODULE_NOT_FOUND) após o build, em crash-loop.
-RUN node -e "const fs=require('fs');const seen=new Set(['server.js']);const queue=['server.js'];const missing=[];while(queue.length){const f=queue.shift();const src=fs.readFileSync(f,'utf8');for(const m of src.matchAll(/(?:from|import)\s*\(?\s*['\"](\.\/[^'\"]+)['\"]/g)){const dep=m[1].replace(/^\.\//,'');if(seen.has(dep))continue;seen.add(dep);if(fs.existsSync(dep)){queue.push(dep)}else{missing.push(f+' -> '+dep)}}}if(missing.length){console.error('FATAL — módulos locais em falta na imagem:',missing);process.exit(1)}"
+# Incidente 12-11-2026 (deploy forrkp0ise6esf46xz1qxyrq): o guard inline
+# resolvia specs a partir da RAIZ (flat) e dava falsos positivos no grafo
+# vendado; o script resolve relativo ao importador (como docker-copy.test.ts).
+COPY scripts/docker-import-guard.mjs ./scripts/docker-import-guard.mjs
+RUN node scripts/docker-import-guard.mjs
 
 # F1 (plano v2): o grafo vendado do build-html (.ts) tem de carregar na imagem
 # com o type stripping nativo do Node — falha cedo no build, não no boot.
