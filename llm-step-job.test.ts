@@ -44,16 +44,16 @@ function llmStepPayload(step = 'design') {
 }
 
 describe('parseRenderJob — modo llm-step', () => {
-  it('aceita design/storyboard/visual sem HTML, com credentials_url https', () => {
-    for (const step of ['design', 'storyboard', 'visual']) {
+  it('aceita design/storyboard/audio/visual sem HTML, com credentials_url https', () => {
+    for (const step of ['design', 'storyboard', 'audio', 'visual']) {
       const { body } = parseRenderJob(llmStepPayload(step), 'worker-secret');
       expect(body.mode).toBe('llm-step');
       expect(body.step).toBe(step);
     }
   });
 
-  it('recusa steps não portados (audio/quality/build) no modo llm-step', () => {
-    for (const step of ['audio', 'quality', 'build']) {
+  it('recusa steps não portados (quality/build) no modo llm-step', () => {
+    for (const step of ['quality', 'build']) {
       expect(() => parseRenderJob(llmStepPayload(step), 'worker-secret')).toThrow('INVALID_STEP_MODE');
     }
   });

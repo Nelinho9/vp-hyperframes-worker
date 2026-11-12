@@ -157,22 +157,22 @@ describe('runLlmStepJob — happy path (motor runStep vendado)', () => {
     expect(llmCalls[0].max_tokens).toBe(4096);
   });
 
-  it('storyboard e visual têm configs espelho das edges', () => {
-    expect(LLM_STEP_SUPPORTED).toEqual(['design', 'storyboard', 'visual']);
+  it('storyboard e visual têm configs espelho das edges; audio usa o pipeline próprio', () => {
+    expect(LLM_STEP_SUPPORTED).toEqual(['design', 'storyboard', 'audio', 'visual']);
     const sb = stepConfigFor('storyboard');
     expect(sb?.inputPaths).toEqual(['capture/extracted/tokens.json', 'frame.md']);
     const vs = stepConfigFor('visual');
     expect(vs?.inputPaths).toEqual(['capture/extracted/tokens.json', 'STORYBOARD.md', 'frame.md', 'audio_meta.json']);
-    expect(stepConfigFor('audio')).toBeNull();
+    expect(stepConfigFor('audio')).toBeNull(); // runAudioPipeline, não runStep
     expect(stepConfigFor('quality')).toBeNull();
   });
 });
 
 describe('runLlmStepJob — guardas e falhas honestas', () => {
-  it('audio/quality (não portados) → LLM_STEP_UNSUPPORTED, sem rede', async () => {
+  it('quality/build (não portados) → LLM_STEP_UNSUPPORTED, sem rede', async () => {
     const { supabase } = makeSupabase();
     const { fetchImpl } = makeFetch();
-    for (const step of ['audio', 'quality', 'build']) {
+    for (const step of ['quality', 'build']) {
       const result = await runLlmStepJob({ body: jobBody(step), supabase, workerSecret: 'ws', fetchImpl, log: () => {} });
       expect(result.ok).toBe(false);
       expect((result as { error: string }).error).toBe(`LLM_STEP_UNSUPPORTED:${step}`);
@@ -218,6 +218,70 @@ describe('runLlmStepJob — guardas e falhas honestas', () => {
     expect(result.ok).toBe(false);
     expect((result as { error: string }).error).toContain('BRIEF_SUBSTANCE_MISSING');
     expect(llmCalls.length).toBe(0);
+  });
+});
+
+describe('runLlmStepJob — áudio (pipeline vendado, env JIT)', () => {
+  const AUDIO_ENV_BLOCK = {
+    kie_api_key: 'kie-key-123',
+    music_model: 'suno/v4',
+    music_suno_model: 'v4',
+    tts_lang_default: 'pt',
+    tts_budget_ms: 90_000,
+    asr_mode: 'auto',
+    asr_provider: 'kie',
+    asr_model: '',
+    asr_budget_ms: 200_000,
+    replicate_api_token: '',
+  };
+  // Seam DI: o wiring (env JIT → pipeline → step_result) é testado com o
+  // pipeline injetado; o pipeline real tem cobertura na suite de áudio.
+  const pipelineOk = () => vi.fn(async () => ({
+    ok: true,
+    artifacts: ['audio_meta.json', 'projects/p/audio/vo-1.wav'],
+    tokens: { input: 11, output: 22 },
+    duration_seconds: 20,
+    timing_source: 'acoustic',
+    caption_style: 'hormozi',
+  }));
+
+  it('mapeia o env JIT para o pipeline e transporta a telemetria no step_result', async () => {
+    const { supabase } = makeSupabase();
+    const { fetchImpl } = makeFetch({ creds: { ...credentialsResponse(), audio: AUDIO_ENV_BLOCK } });
+    const audioPipelineImpl = pipelineOk();
+    const result = await runLlmStepJob({ body: jobBody('audio'), supabase, workerSecret: 'ws', fetchImpl, audioPipelineImpl, log: () => {} });
+    expect(result.ok).toBe(true);
+    expect(audioPipelineImpl).toHaveBeenCalledTimes(1);
+    const [deps, projectId, env] = audioPipelineImpl.mock.calls[0];
+    expect(projectId).toBe(PROJECT_ID);
+    expect(env).toMatchObject({
+      kieApiKey: 'kie-key-123', musicModel: 'suno/v4', ttsLangDefault: 'pt',
+      ttsBudgetMs: 90_000, asrMode: 'auto', asrProvider: 'kie', asrBudgetMs: 200_000,
+    });
+    expect(typeof deps.storage.readBinary).toBe('function');
+    expect(typeof deps.storage.writeBinary).toBe('function');
+    const sr = (result as { step_result: Record<string, unknown> }).step_result;
+    expect(sr.artifacts).toContain('audio_meta.json');
+    expect(sr.timing_source).toBe('acoustic');
+    expect(sr.caption_style).toBe('hormozi');
+    expect(sr.duration_seconds).toBe(20);
+  });
+
+  it('sem bloco audio nas credenciais → LLM_STEP_AUDIO_ENV_MISSING (nunca env inventado)', async () => {
+    const { supabase } = makeSupabase();
+    const { fetchImpl } = makeFetch();
+    const result = await runLlmStepJob({ body: jobBody('audio'), supabase, workerSecret: 'ws', fetchImpl, log: () => {} });
+    expect(result.ok).toBe(false);
+    expect((result as { error: string }).error).toBe('LLM_STEP_AUDIO_ENV_MISSING');
+  });
+
+  it('falha do pipeline → LLM_STEP_FAILED com o código fiel', async () => {
+    const audioPipelineImpl = vi.fn(async () => ({ ok: false, error: 'TTS_ALL_SEGMENTS_FAILED', detail: '0/3' }));
+    const { supabase } = makeSupabase();
+    const { fetchImpl } = makeFetch({ creds: { ...credentialsResponse(), audio: AUDIO_ENV_BLOCK } });
+    const result = await runLlmStepJob({ body: jobBody('audio'), supabase, workerSecret: 'ws', fetchImpl, audioPipelineImpl, log: () => {} });
+    expect(result.ok).toBe(false);
+    expect((result as { error: string }).error).toContain('TTS_ALL_SEGMENTS_FAILED');
   });
 });
 

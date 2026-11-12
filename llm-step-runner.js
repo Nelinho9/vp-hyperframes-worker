@@ -40,12 +40,13 @@ import {
   buildVisualUserMessage,
   extractVisualArtifacts,
 } from './build-html/vendor/video-v4-steps/visualStep.ts';
+import { runAudioPipeline } from './build-html/vendor/video-v4-audio/audioPipeline.ts';
 import { fetchBuildCredentials } from './build-html-runner.js';
 
 const ARTIFACTS_BUCKET = 'video-artifacts';
 
 /** Allowlist de runners portados (espelho do orchestrator). */
-export const LLM_STEP_SUPPORTED = ['design', 'storyboard', 'visual'];
+export const LLM_STEP_SUPPORTED = ['design', 'storyboard', 'audio', 'visual'];
 
 /**
  * StepConfigs — espelho EXATO das edges (video-v4-designer/storyboarder/
@@ -112,6 +113,18 @@ export function createStepAdapters(supabase) {
       const { data } = await supabase.storage.from(ARTIFACTS_BUCKET).list(dir);
       return (data ?? []).map((f) => `${dir}/${f.name}`);
     },
+    // F2 (áudio): binários de voz TTS + leitura para o alinhamento ASR —
+    // espelho do createStorage da edge video-v4-audio.
+    async writeBinary(path, bytes, contentType) {
+      const { error } = await supabase.storage.from(ARTIFACTS_BUCKET).upload(path, bytes, { contentType, upsert: true });
+      if (error) throw new Error(`storage binary write failed: ${error.message}`);
+    },
+    async readBinary(path) {
+      const { data, error } = await supabase.storage.from(ARTIFACTS_BUCKET).download(path);
+      if (error || !data) return null;
+      const bytes = new Uint8Array(await data.arrayBuffer());
+      return { bytes, mimeType: data.type || 'audio/mpeg' };
+    },
   };
   const db = {
     async getProject(id) {
@@ -138,6 +151,9 @@ export async function runLlmStepJob(args) {
   const { body, supabase, workerSecret } = args;
   const log = args.log ?? (() => {});
   const fetchImpl = args.fetchImpl ?? fetch;
+  // Seam de teste (DI, padrão do codebase): o pipeline de áudio pode ser
+  // injetado; em produção é o módulo vendado tal-e-qual.
+  const audioPipelineImpl = args.audioPipelineImpl ?? runAudioPipeline;
   const projectId = body?.project_id;
   const step = body?.inputs?.step ?? body?.step;
   if (!projectId) return { ok: false, error: 'LLM_STEP_PROJECT_ID_MISSING' };
@@ -181,6 +197,47 @@ export async function runLlmStepJob(args) {
   const startedAt = Date.now();
   let result;
   try {
+    if (step === 'audio') {
+      // F2 (plano v2): pipeline COMPLETO de áudio (LLM → TTS → fit → ASR →
+      // BGM) — o mesmo módulo puro que a edge video-v4-audio executa. O env
+      // vem JIT do endpoint de credenciais (emenda C), nunca do payload.
+      const a = credentials.audio;
+      if (!a || typeof a !== 'object') {
+        return { ok: false, error: 'LLM_STEP_AUDIO_ENV_MISSING' };
+      }
+      const audioEnv = {
+        kieApiKey: typeof a.kie_api_key === 'string' ? a.kie_api_key : '',
+        musicModel: typeof a.music_model === 'string' ? a.music_model : '',
+        musicSunoModel: typeof a.music_suno_model === 'string' ? a.music_suno_model : '',
+        ttsLangDefault: typeof a.tts_lang_default === 'string' && a.tts_lang_default ? a.tts_lang_default : 'pt',
+        ttsBudgetMs: typeof a.tts_budget_ms === 'number' && a.tts_budget_ms > 0 ? a.tts_budget_ms : undefined,
+        asrMode: typeof a.asr_mode === 'string' && a.asr_mode ? a.asr_mode : 'auto',
+        asrProvider: typeof a.asr_provider === 'string' && a.asr_provider ? a.asr_provider : 'kie',
+        asrModel: typeof a.asr_model === 'string' ? a.asr_model : '',
+        asrBudgetMs: typeof a.asr_budget_ms === 'number' && a.asr_budget_ms >= 0 ? a.asr_budget_ms : 200_000,
+        replicateApiToken: typeof a.replicate_api_token === 'string' ? a.replicate_api_token : '',
+      };
+      const payload = await audioPipelineImpl({ db, storage, llm }, projectId, audioEnv);
+      const durationSeconds = Math.round((Date.now() - startedAt) / 100) / 10;
+      if (payload.ok === false) {
+        log(`[llm-step] job step=audio project=${projectId} failed: ${payload.error}`);
+        return { ok: false, error: `LLM_STEP_FAILED:${payload.error}${payload.detail ? `: ${payload.detail}` : ''}`.slice(0, 450) };
+      }
+      log(`[llm-step] job step=audio project=${projectId} done (${durationSeconds}s, artifacts=${payload.artifacts.length})`);
+      return {
+        ok: true,
+        step_result: {
+          artifacts: payload.artifacts,
+          tokens: payload.tokens,
+          duration_seconds: typeof payload.duration_seconds === 'number' ? payload.duration_seconds : durationSeconds,
+          ...(payload.timing_source ? { timing_source: payload.timing_source } : {}),
+          ...(payload.caption_style ? { caption_style: payload.caption_style } : {}),
+          ...(payload.needs_attention === true ? { needs_attention: true } : {}),
+          ...(Array.isArray(payload.voice_fit_failures) && payload.voice_fit_failures.length > 0
+            ? { voice_fit_failures: payload.voice_fit_failures } : {}),
+        },
+      };
+    }
     result = await runStep({ db, storage, llm }, projectId, config);
   } catch (err) {
     return { ok: false, error: `LLM_STEP_FAILED: ${String(err?.message ?? err)}`.slice(0, 300) };

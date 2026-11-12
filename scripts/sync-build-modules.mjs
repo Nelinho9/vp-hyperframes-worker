@@ -34,6 +34,9 @@ export const ENTRY_MODULES = [
   'video-v4-steps/designStep.ts',
   'video-v4-steps/storyboardStep.ts',
   'video-v4-steps/visualStep.ts',
+  // F2 (plano v2): pipeline completo do step de áudio (TTS/BGM/ASR) — o MESMO
+  // módulo que a edge video-v4-audio executa (extração behavior-preserving).
+  'video-v4-audio/audioPipeline.ts',
 ];
 
 /**

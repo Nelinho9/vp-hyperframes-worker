@@ -87,6 +87,8 @@ export async function fetchBuildCredentials(args) {
     // F2 (plano v2): config por step para o runner llm-step (opcional —
     // respostas antigas do endpoint continuam válidas para o build-html).
     steps: data?.steps && typeof data.steps === 'object' ? data.steps : null,
+    // F2 (plano v2): env do pipeline de áudio (TTS/BGM/ASR), só em memória.
+    audio: data?.audio && typeof data.audio === 'object' ? data.audio : null,
   };
 }
 
