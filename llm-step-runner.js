@@ -292,6 +292,16 @@ export async function runLlmStepJob(args) {
       const qualityStorage = {
         ...storage,
         readRegistry: (pid, revision) => readQualityCompositionRegistry(publicationStore, pid, revision),
+        // F2 (prova de paridade 2026-11-12): espelho EXATO do createStorage.list
+        // da edge video-v4-quality — o prefixo é um DIRETÓRIO; strip apenas das
+        // barras finais. O list herdado de createStepAdapters (regex que remove
+        // o último segmento) produzia paths `//` e quebrava a discovery de
+        // evidence em dois níveis (EVIDENCE_MISSING com manifests publicados).
+        async list(prefix) {
+          const dir = prefix.replace(/\/+$/, '');
+          const { data } = await supabase.storage.from(ARTIFACTS_BUCKET).list(dir, { limit: 100 });
+          return (data ?? []).map((f) => `${dir}/${f.name}`);
+        },
         async readText(path) {
           const { data, error } = await supabase.storage.from(ARTIFACTS_BUCKET).download(path);
           if (error || !data) return null;

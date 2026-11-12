@@ -2232,7 +2232,12 @@ export async function runRender(jobId, jobDir) {
       // upload o gate caía em QUALITY_LEGACY_UNVERIFIED (score nunca
       // fabricado). Objetos primeiro, manifest como commit-marker (função
       // já atómica); falha nunca é fatal para o render.
-      if (supabase) {
+      // APENAS o finalize publica evidence na Storage: o gate é pós-finalize e
+      // pickEvidenceManifest (sem expectedRevision) exige EXATAMENTE um
+      // manifest complete. O build render (build.mp4, intermediário) publicava
+      // um 2.º manifest na mesma revisão → EVIDENCE_AMBIGUOUS. O manifest local
+      // do build continua para observabilidade/callback; só o upload é gated.
+      if (supabase && job.step === "finalize") {
         try {
           const ev = await persistEvidenceSnapshots(supabase, {
             projectId: job.project_id,
