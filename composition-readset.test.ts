@@ -52,6 +52,22 @@ describe('E01-B read-set: authored patch target values', () => {
     expect(read.map(v => v.value)).toEqual(['World', '24', '200']);
   });
 
+  it('resolves video font ids to CSS font-family + link and round-trips font id in readPatchTargetValues', () => {
+    const docHtml = `<html><head></head><body><div data-composition-id="root" data-width="1080" data-height="1920" data-duration="4"><div id="title">Hi</div></div></body></html>`;
+    const patched = applyPatchesLinkedom(docHtml, [
+      { selector: '#title', property: 'font', value: 'playfair-display' },
+      { selector: '#title', property: 'borderWidth', value: '3' },
+    ]);
+    expect(patched.html).toContain('vp-video-fonts');
+    expect(patched.html).toContain("'Playfair Display', serif");
+    expect(patched.html).toMatch(/border-style:\s*solid/);
+    const read = readPatchTargetValues(patched.html, [
+      { selector: '#title', property: 'font' },
+      { selector: '#title', property: 'borderWidth' },
+    ]);
+    expect(read.map(v => v.value)).toEqual(['playfair-display', '3']);
+  });
+
   it('missing elements and node ops read as null (precondition conflict / not undoable)', () => {
     const values = readPatchTargetValues(HTML, [
       { selector: '#gone', property: 'text' },

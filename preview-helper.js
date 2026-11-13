@@ -315,6 +315,70 @@ export const PREVIEW_HELPER_SCRIPT = `(function () {
   // runtime nunca entram no saco authored).
   var SELECTION_ENVELOPE_VERSION = 1;
 
+  function normalizeCssColor(raw) {
+    if (typeof raw !== 'string') return null;
+    var s = raw.trim();
+    if (/^#[0-9a-f]{6}$/i.test(s)) return s.toLowerCase();
+    var m3 = /^#([0-9a-f])([0-9a-f])([0-9a-f])$/i.exec(s);
+    if (m3) return ('#' + m3[1] + m3[1] + m3[2] + m3[2] + m3[3] + m3[3]).toLowerCase();
+    var mRgb = /^rgba?\\(\\s*(\\d+)\\s*,\\s*(\\d+)\\s*,\\s*(\\d+)/i.exec(s);
+    if (mRgb) {
+      var hexByte = function (n) {
+        var x = Math.max(0, Math.min(255, parseInt(n, 10) || 0)).toString(16);
+        return x.length < 2 ? '0' + x : x;
+      };
+      return '#' + hexByte(mRgb[1]) + hexByte(mRgb[2]) + hexByte(mRgb[3]);
+    }
+    return null;
+  }
+
+  var VIDEO_FONT_CSS = {
+    montserrat: "'Montserrat', sans-serif",
+    inter: "'Inter', sans-serif",
+    'plus-jakarta-sans': "'Plus Jakarta Sans', sans-serif",
+    poppins: "'Poppins', sans-serif",
+    'bebas-neue': "'Bebas Neue', sans-serif",
+    'playfair-display': "'Playfair Display', serif"
+  };
+  var VIDEO_FONT_BY_NAME = {
+    montserrat: 'montserrat',
+    inter: 'inter',
+    'plus jakarta sans': 'plus-jakarta-sans',
+    'plus-jakarta-sans': 'plus-jakarta-sans',
+    poppins: 'poppins',
+    'bebas neue': 'bebas-neue',
+    'bebas-neue': 'bebas-neue',
+    'playfair display': 'playfair-display',
+    'playfair-display': 'playfair-display'
+  };
+  var GOOGLE_FONTS_HREF = 'https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700;800&family=Inter:wght@400;500;600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Poppins:wght@400;500;600;700&family=Bebas+Neue&family=Playfair+Display:wght@400;500;600;700;800&display=swap';
+
+  function matchFontId(raw) {
+    if (typeof raw !== 'string' || !raw.trim()) return null;
+    var first = raw.split(',')[0].replace(/['"]/g, '').trim().toLowerCase();
+    return VIDEO_FONT_BY_NAME[first] || (VIDEO_FONT_CSS[first] ? first : null);
+  }
+
+  function resolveFontCssValue(val) {
+    if (typeof val !== 'string') return val;
+    var key = val.trim().toLowerCase();
+    return VIDEO_FONT_CSS[key] || val;
+  }
+
+  function ensureVideoFontsLink(fontId) {
+    try {
+      if (!VIDEO_FONT_CSS[String(fontId || '').toLowerCase()]) return;
+      if (document.getElementById('vp-video-fonts')) return;
+      var head = document.head || (typeof document.getElementsByTagName === 'function' ? document.getElementsByTagName('head')[0] : null);
+      if (!head) return;
+      var link = document.createElement('link');
+      link.id = 'vp-video-fonts';
+      link.rel = 'stylesheet';
+      link.href = GOOGLE_FONTS_HREF;
+      head.appendChild(link);
+    } catch (eFont) { /* best-effort */ }
+  }
+
   function readAuthoredAttrs(el) {
     var out = { props: {}, anim: {}, audio: null, keyframes: null, src: null, timing: null, capabilities: {} };
     try {
@@ -343,6 +407,64 @@ export const PREVIEW_HELPER_SCRIPT = `(function () {
       // Texto authored (textContent — nunca innerHTML de conteúdo do utilizador).
       if (type === 'text') {
         out.text = el.textContent == null ? '' : el.textContent;
+      }
+      // CSS / computed properties authored — hydrate Inspector reliably on selection.
+      if (type !== 'audio') {
+        var cStyle = typeof getComputedStyle === 'function' ? getComputedStyle(el) : null;
+        var readDecl = function (prop) {
+          var v = el.style && typeof el.style.getPropertyValue === 'function' ? el.style.getPropertyValue(prop) : '';
+          return v ? String(v).trim() : '';
+        };
+        var stripUnit = function (v, unit) {
+          if (!v) return '';
+          var st = String(v).trim();
+          if (unit && st.length > unit.length && st.slice(-unit.length).toLowerCase() === unit) {
+            return st.slice(0, -unit.length).trim();
+          }
+          return st;
+        };
+        var opVal = readDecl('opacity') || (cStyle && cStyle.opacity ? String(cStyle.opacity) : '');
+        if (opVal !== '') out.props.opacity = opVal;
+        if (type === 'image' || type === 'video') {
+          var fitVal = readDecl('object-fit') || (cStyle && cStyle.objectFit ? String(cStyle.objectFit) : '');
+          if (fitVal) out.props.fit = fitVal;
+        }
+        var rotRaw = readDecl('--el-rot');
+        if (rotRaw !== '') out.props.rotation = stripUnit(rotRaw, 'deg');
+        var lsRaw = readDecl('letter-spacing') || (cStyle && cStyle.letterSpacing && cStyle.letterSpacing !== 'normal' ? cStyle.letterSpacing : '');
+        if (lsRaw !== '' && lsRaw !== 'normal') out.props.letterSpacing = stripUnit(lsRaw, 'px');
+        var lhInline = readDecl('line-height');
+        if (lhInline !== '' && lhInline !== 'normal') {
+          out.props.lineHeight = lhInline;
+        } else if (cStyle && cStyle.lineHeight && cStyle.lineHeight !== 'normal') {
+          var lhPx = parseFloat(cStyle.lineHeight);
+          var fsPx = parseFloat(cStyle.fontSize);
+          if (isFinite(lhPx) && isFinite(fsPx) && fsPx > 0) {
+            out.props.lineHeight = String(Math.round((lhPx / fsPx) * 100) / 100);
+          }
+        }
+        var radRaw = readDecl('border-radius') || (cStyle && cStyle.borderRadius ? cStyle.borderRadius : '');
+        if (radRaw !== '') out.props.radius = stripUnit(radRaw, 'px');
+        var bwRaw = readDecl('border-width') || (cStyle && cStyle.borderTopWidth ? cStyle.borderTopWidth : '');
+        if (bwRaw !== '') out.props.borderWidth = stripUnit(bwRaw, 'px');
+        var bcVal = normalizeCssColor(readDecl('border-color') || (cStyle && cStyle.borderTopColor ? cStyle.borderTopColor : ''));
+        if (bcVal) out.props.borderColor = bcVal;
+        if (type === 'text') {
+          var famId = matchFontId(readDecl('font-family') || (cStyle && cStyle.fontFamily ? cStyle.fontFamily : ''));
+          if (famId) out.props.font = famId;
+          var fsRaw = readDecl('font-size') || (cStyle && cStyle.fontSize ? cStyle.fontSize : '');
+          if (fsRaw !== '') out.props.size = stripUnit(fsRaw, 'px');
+          var fwRaw = readDecl('font-weight') || (cStyle && cStyle.fontWeight ? String(cStyle.fontWeight) : '');
+          if (fwRaw !== '') out.props.weight = fwRaw;
+          var colVal = normalizeCssColor(readDecl('color') || (cStyle && cStyle.color ? cStyle.color : ''));
+          if (colVal) out.props.color = colVal;
+          var alignRaw = readDecl('text-align') || (cStyle && cStyle.textAlign ? cStyle.textAlign : '');
+          if (alignRaw === 'start') alignRaw = 'left';
+          else if (alignRaw === 'end') alignRaw = 'right';
+          if (alignRaw === 'left' || alignRaw === 'center' || alignRaw === 'right' || alignRaw === 'justify') {
+            out.props.align = alignRaw;
+          }
+        }
       }
       // Attrs authored de animação (data-anim-*).
       var animIn = el.getAttribute('data-anim-in');
@@ -842,8 +964,14 @@ export const PREVIEW_HELPER_SCRIPT = `(function () {
             if (value === '' && entry.output === 'data-kf') el.removeAttribute(entry.output);
             else el.setAttribute(entry.output, value);
           } else if (entry && entry.kind === 'decl') {
-            var out = (entry.unit && NUMERIC_VALUE_RE.test(value)) ? value + entry.unit : value;
+            var rawOut = p.property === 'font' ? resolveFontCssValue(value) : value;
+            if (p.property === 'font') ensureVideoFontsLink(value);
+            var out = (entry.unit && NUMERIC_VALUE_RE.test(rawOut)) ? rawOut + entry.unit : rawOut;
             el.style.setProperty(entry.output, out);
+            if (p.property === 'borderWidth') {
+              var bwNum = parseFloat(value);
+              el.style.setProperty('border-style', isFinite(bwNum) && bwNum > 0 ? 'solid' : 'none');
+            }
           } else {
             // Desconhecida: verbatim (comportamento legado).
             var cssProp = p.property;

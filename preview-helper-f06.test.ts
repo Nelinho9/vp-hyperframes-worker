@@ -49,4 +49,12 @@ describe("PREVIEW_HELPER_SCRIPT x F06 (propriedades/persistencia)", () => {
     expect(PREVIEW_HELPER_SCRIPT).not.toContain("el.innerHTML = originalText");
     expect(PREVIEW_HELPER_SCRIPT).not.toContain(".innerHTML = value");
   });
+
+  it("hidrata propriedades CSS/computadas e resolve fontes de vídeo + border-style", () => {
+    expect(PREVIEW_HELPER_SCRIPT).toContain("matchFontId(");
+    expect(PREVIEW_HELPER_SCRIPT).toContain("resolveFontCssValue(");
+    expect(PREVIEW_HELPER_SCRIPT).toContain("ensureVideoFontsLink(");
+    expect(PREVIEW_HELPER_SCRIPT).toContain("out.props.font = famId");
+    expect(PREVIEW_HELPER_SCRIPT).toContain("el.style.setProperty('border-style'");
+  });
 });

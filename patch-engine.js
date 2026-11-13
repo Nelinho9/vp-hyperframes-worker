@@ -53,6 +53,53 @@ import {
 /** Numeric CSS value (px/deg candidates) — integers, decimals and negatives. */
 const NUMERIC_VALUE_RE = /^-?\d+(\.\d+)?$/;
 
+/** Video studio font id -> CSS font-family stack & Google Fonts stylesheet. */
+const VIDEO_FONT_CSS = {
+  montserrat: "'Montserrat', sans-serif",
+  inter: "'Inter', sans-serif",
+  "plus-jakarta-sans": "'Plus Jakarta Sans', sans-serif",
+  poppins: "'Poppins', sans-serif",
+  "bebas-neue": "'Bebas Neue', sans-serif",
+  "playfair-display": "'Playfair Display', serif",
+};
+const VIDEO_FONT_BY_NAME = {
+  montserrat: "montserrat",
+  inter: "inter",
+  "plus jakarta sans": "plus-jakarta-sans",
+  "plus-jakarta-sans": "plus-jakarta-sans",
+  poppins: "poppins",
+  "bebas neue": "bebas-neue",
+  "bebas-neue": "bebas-neue",
+  "playfair display": "playfair-display",
+  "playfair-display": "playfair-display",
+};
+const VIDEO_GOOGLE_FONTS_HREF =
+  "https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700;800&family=Inter:wght@400;500;600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Poppins:wght@400;500;600;700&family=Bebas+Neue&family=Playfair+Display:wght@400;500;600;700;800&display=swap";
+
+function resolveFontCssValue(raw) {
+  const key = String(raw ?? "").trim().toLowerCase();
+  return VIDEO_FONT_CSS[key] || String(raw ?? "");
+}
+
+function fontIdFromCssFamily(raw) {
+  if (typeof raw !== "string" || !raw.trim()) return "";
+  const first = raw.split(",")[0].replace(/['"]/g, "").trim().toLowerCase();
+  return VIDEO_FONT_BY_NAME[first] || stripAuthoredUnit(raw);
+}
+
+function ensureVideoFontsLink(document, fontValue) {
+  const key = String(fontValue ?? "").trim().toLowerCase();
+  if (!VIDEO_FONT_CSS[key]) return;
+  if (document.getElementById("vp-video-fonts")) return;
+  const head = document.head || document.querySelector?.("head");
+  if (!head) return;
+  const link = document.createElement("link");
+  link.setAttribute("id", "vp-video-fonts");
+  link.setAttribute("rel", "stylesheet");
+  link.setAttribute("href", VIDEO_GOOGLE_FONTS_HREF);
+  head.appendChild(link);
+}
+
 /** Props de animação (V5-P1D): o lote que as toca regenera o bloco materializado. */
 const ANIM_PROP_RE = /^anim(In|Out|DurMs|DelayMs)$/;
 
@@ -346,8 +393,15 @@ export function applyPatchesLinkedom(html, patches) {
       touchedAnim = true;
     } else if (PROP_MAP[property]?.kind === "decl") {
       const entry = PROP_MAP[property];
-      const out = entry.unit && NUMERIC_VALUE_RE.test(value) ? `${value}${entry.unit}` : value;
-      el.setAttribute("style", mergeStyle(el.getAttribute("style"), entry.output, out));
+      const rawOut = property === "font" ? resolveFontCssValue(value) : value;
+      if (property === "font") ensureVideoFontsLink(document, value);
+      const out = entry.unit && NUMERIC_VALUE_RE.test(rawOut) ? `${rawOut}${entry.unit}` : rawOut;
+      let nextStyle = mergeStyle(el.getAttribute("style"), entry.output, out);
+      if (property === "borderWidth") {
+        const bw = parseFloat(value);
+        nextStyle = mergeStyle(nextStyle, "border-style", Number.isFinite(bw) && bw > 0 ? "solid" : "none");
+      }
+      el.setAttribute("style", nextStyle);
     } else {
       // Unknown property: pass through verbatim (legacy behaviour).
       el.setAttribute("style", mergeStyle(el.getAttribute("style"), property, value));
@@ -457,7 +511,10 @@ export function readPatchTargetValues(html, patches) {
               }
             } else value = "";
           } else if (entry?.kind === "attr") value = el.getAttribute(entry.output) ?? "";
-          else if (entry?.kind === "decl") value = stripAuthoredUnit(parseInlineDecl(style, entry.output) ?? "");
+          else if (entry?.kind === "decl") {
+            const rawDecl = parseInlineDecl(style, entry.output) ?? "";
+            value = property === "font" ? fontIdFromCssFamily(rawDecl) : stripAuthoredUnit(rawDecl);
+          }
           else value = stripAuthoredUnit(parseInlineDecl(style, property) ?? "");
         }
       }
