@@ -438,7 +438,8 @@ const COMPOSITION_CSP = [
   "font-src 'self' data:",
   "style-src 'self' 'unsafe-inline'",
   "script-src 'self' 'unsafe-inline' data: blob:",
-  "connect-src 'none'",
+  // HyperFrames Web Audio transport loads local/staged audio via fetch().
+  "connect-src 'self' data: blob:",
   "frame-src 'none'",
   "object-src 'none'",
   "base-uri 'none'",

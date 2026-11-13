@@ -1717,7 +1717,12 @@ app.get("/preview/:id", previewCors, async (req, res) => {
     html = baseTag + html;
   }
 
-  res.type("html").send(injectPreviewHelper(normalizeManualGeometry(html)));
+  const upgradedHtml = html.replace(
+    /<meta\b[^>]*http-equiv\s*=\s*["']?Content-Security-Policy["']?[^>]*>/gi,
+    (tag) => tag.replace(/\bconnect-src\s+'none'/gi, "connect-src 'self' data: blob:"),
+  );
+
+  res.type("html").send(injectPreviewHelper(normalizeManualGeometry(upgradedHtml)));
 });
 
 // Serve static assets from job dirs.

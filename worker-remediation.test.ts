@@ -165,7 +165,7 @@ describe('AUD-B03 — real attribute parsing and full resource inventory', () =>
   it('injects a deny-by-default CSP into the composition', () => {
     const hardened = hardenCompositionNetwork('<html><head><title>x</title></head><body></body></html>');
     expect(hardened).toContain('Content-Security-Policy');
-    expect(hardened).toContain("connect-src 'none'");
+    expect(hardened).toContain("connect-src 'self' data: blob:");
     expect(hardened).toContain("default-src 'none'");
     expect(hardened).toContain("img-src 'self' data: blob:");
   });

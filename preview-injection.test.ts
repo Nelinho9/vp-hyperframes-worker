@@ -1178,4 +1178,25 @@ describe('GET /preview/:id — enforcement do token HMAC (V4-3g.5, R5)', () => {
     const res = await fetch(`${booted.base}/preview/${PROJECT}`);
     expect([200, 202]).toContain(res.status);
   });
+
+  it('atualiza CSP legacy connect-src none para permitir fetch local de áudio no preview', async () => {
+    booted = await bootWorker(undefined);
+    const legacyHtml = `<!doctype html><html><head><meta http-equiv="Content-Security-Policy" content="default-src 'none'; media-src 'self' data: blob:; connect-src 'none'"></head><body><div data-composition-id="main"></div></body></html>`;
+    const stageRes = await fetch(`${booted.base}/job`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        job_id: '16776155-721c-e1eb-8cbb-1081a3343af6',
+        project_id: PROJECT,
+        mode: 'preview',
+        index_html: legacyHtml,
+      }),
+    });
+    expect([200, 202]).toContain(stageRes.status);
+    const res = await fetch(`${booted.base}/preview/${PROJECT}`);
+    expect(res.status).toBe(200);
+    const served = await res.text();
+    expect(served).toContain("connect-src 'self' data: blob:");
+    expect(served).not.toContain("connect-src 'none'");
+  });
 });
