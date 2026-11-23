@@ -11,7 +11,7 @@
  * deixava passar (3.25 > 3 + 0.25 é falso); hoje falha.
  */
 import { describe, expect, it } from "vitest";
-import { validateTemporalAudioPlan, secondsToFrameFloorHalfUp, measurementSourceTrusted, EFFECTIVE_FPS_DEFAULT } from "./render-temporal.js";
+import { validateTemporalAudioPlan, secondsToFrameFloorHalfUp, measurementSourceTrusted, parseRootWindows, EFFECTIVE_FPS_DEFAULT } from "./render-temporal.js";
 
 const WINDOWS = [{ id: "scene-1", start: 0, duration: 3 }];
 const slot = (over) => ({ frameNumber: 1, measuredSec: 3, windowStart: 0, windowEnd: 3, ...over });
@@ -123,5 +123,46 @@ describe('E02 review: exact decoded sample certificates', () => {
     { decodeComplete: false }, { measuredSec: 1 },
   ])('invalid or partial certificate fails: %j', (extra) => {
     expect(check(extra)).toMatchObject({ ok: false, failures: [{ code: 'F04_VO_UNMEASURED' }] });
+  });
+});
+
+describe('declared scene transition overlaps (V5-P2C parity)', () => {
+  it('parseRootWindows extracts transitionOutMs and transitionInMs from .clip tags', () => {
+    const html = `
+      <div data-composition-id="main" data-duration="15">
+        <div id="scene-1" class="clip" data-start="0" data-duration="4"></div>
+        <div data-transition-out="zoomBlur@400" id="scene-2" class="clip" data-start="4" data-duration="3.9000000000000004"></div>
+        <div data-transition-in="zoomBlur@400" id="scene-3" class="clip" data-start="7.5" data-duration="4"></div>
+        <div id="scene-4" class="clip" data-start="11.5" data-duration="3.5"></div>
+      </div>
+    `;
+    const windows = parseRootWindows(html);
+    expect(windows).toEqual([
+      { id: 'scene-1', start: 0, duration: 4 },
+      { id: 'scene-2', start: 4, duration: 3.9000000000000004, transitionOutMs: 400 },
+      { id: 'scene-3', start: 7.5, duration: 4, transitionInMs: 400 },
+      { id: 'scene-4', start: 11.5, duration: 3.5 },
+    ]);
+    expect(validateTemporalAudioPlan({ rootDuration: 15, windows })).toMatchObject({ ok: true, totalSec: 15 });
+  });
+
+  it('rejects overlap exceeding declared transition or without declared transition', () => {
+    const excessive = validateTemporalAudioPlan({
+      rootDuration: 11.5,
+      windows: [
+        { id: 'scene-2', start: 4, duration: 4.2, transitionOutMs: 400 },
+        { id: 'scene-3', start: 7.5, duration: 4, transitionInMs: 400 },
+      ],
+    });
+    expect(excessive).toMatchObject({ ok: false, failures: [{ code: 'F04_WINDOW_OVERLAP', observed: 'scene-3:7.5' }] });
+
+    const undeclared = validateTemporalAudioPlan({
+      rootDuration: 11.5,
+      windows: [
+        { id: 'scene-2', start: 4, duration: 3.9 },
+        { id: 'scene-3', start: 7.5, duration: 4 },
+      ],
+    });
+    expect(undeclared).toMatchObject({ ok: false, failures: [{ code: 'F04_WINDOW_OVERLAP', observed: 'scene-3:7.5' }] });
   });
 });

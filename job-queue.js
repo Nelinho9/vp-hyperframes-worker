@@ -64,7 +64,7 @@ export function createJobQueue({ root, jobs, processJob, deliverCallback, concur
       if (!persist(job)) return; // Never execute without a durable running transition.
       await processJob(job.payload);
     }
-    catch { job = jobs.get(id); job.status = 'failed'; job.error_code = 'WORKER_PROCESS_FAILED'; job.error = 'Worker processing failed'; }
+    catch { job = jobs.get(id); job.status = 'failed'; job.error_code ||= 'WORKER_PROCESS_FAILED'; job.error ||= 'Worker processing failed'; }
     finally {
       job = jobs.get(id); job.completed_at ||= new Date().toISOString();
       const saved = persist(job);

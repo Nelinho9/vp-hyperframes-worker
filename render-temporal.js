@@ -7,6 +7,8 @@
  * Duração por max(start+duration)/root, não soma indiscriminada.
  */
 
+import { parseTransitionAttr } from "./transition-presets.js";
+
 export const EFFECTIVE_FPS_DEFAULT = 30;
 
 /**
@@ -46,10 +48,21 @@ export function validateTemporalAudioPlan(args) {
   }
   let total = 0;
   let prevEnd = 0;
+  let prevWindow = null;
   windows.forEach((w, i) => {
     if (!(w.duration > 0)) failures.push({ code: "F04_WINDOW_INVALID", expected: "duration > 0", observed: `${w.id}:${w.duration}`, diagnosis: `Janela ${i + 1} inválida.` });
-    if (w.start < prevEnd - 0.001) failures.push({ code: "F04_WINDOW_OVERLAP", expected: `start >= ${prevEnd}`, observed: `${w.id}:${w.start}`, diagnosis: "Respeitar overlap de transições aprovado e media offsets." });
+    const allowedOverlapMs = Math.max(prevWindow?.transitionOutMs ?? 0, w.transitionInMs ?? 0);
+    const allowedOverlapSec = allowedOverlapMs > 0 ? allowedOverlapMs / 1000 : 0;
+    if (w.start < prevEnd - allowedOverlapSec - 0.001) {
+      failures.push({
+        code: "F04_WINDOW_OVERLAP",
+        expected: `start >= ${allowedOverlapSec > 0 ? prevEnd - allowedOverlapSec : prevEnd}`,
+        observed: `${w.id}:${w.start}`,
+        diagnosis: "Respeitar overlap de transições aprovado e media offsets.",
+      });
+    }
     prevEnd = Math.max(prevEnd, w.start + w.duration);
+    prevWindow = w;
     total = Math.max(total, w.start + w.duration);
   });
   total = Math.round(total * 100) / 100;
@@ -144,7 +157,17 @@ export function parseRootWindows(html) {
     const start = sM ? parseFloat(sM[1]) : NaN;
     const duration = dM ? parseFloat(dM[1]) : NaN;
     if (!Number.isFinite(start) || !Number.isFinite(duration)) continue;
-    windows.push({ id, start, duration });
+    const tOutM = /\bdata-transition-out\s*=\s*["']([^"']+)["']/i.exec(tag);
+    const tInM = /\bdata-transition-in\s*=\s*["']([^"']+)["']/i.exec(tag);
+    const out = tOutM ? parseTransitionAttr(tOutM[1]) : null;
+    const incoming = tInM ? parseTransitionAttr(tInM[1]) : null;
+    windows.push({
+      id,
+      start,
+      duration,
+      ...(out ? { transitionOutMs: out.durationMs } : {}),
+      ...(incoming ? { transitionInMs: incoming.durationMs } : {}),
+    });
   }
   windows.sort((a, b) => a.start - b.start);
   return windows;

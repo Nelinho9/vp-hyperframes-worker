@@ -9,7 +9,7 @@
  * desfecho devolvido para `job.callback_status` (visível no /job/:id/status).
  */
 import { describe, expect, it, vi } from 'vitest';
-import { postCallback } from './server.js';
+import { postCallback, retryTerminalCallback } from './server.js';
 
 const URL = 'https://edge.example/video-v4-orchestrator/callback';
 const SECRET = 'cb-secret';
@@ -91,5 +91,32 @@ describe('V5_32 C2 — postCallback (res.ok + retry + estado visível)', () => {
 
     expect(result).toMatchObject({ ok: true, status: 200, attempts: 1 });
     expect(sleep).not.toHaveBeenCalled();
+  });
+
+  it('retryTerminalCallback preserves staging error and media_validation on fallback failure payload', async () => {
+    const fetchMock = vi.fn(async () => new Response('{}', { status: 200 }));
+    const { mkdtempSync } = await import('node:fs');
+    const { tmpdir } = await import('node:os');
+    const { join } = await import('node:path');
+    const jobDir = mkdtempSync(join(tmpdir(), 'cb-retry-'));
+    const job = {
+      id: 'job-1',
+      project_id: 'proj-1',
+      request_id: 'req-1',
+      step: 'finalize',
+      revision: 47,
+      input_hash: 'h',
+      status: 'failed',
+      job_dir: jobDir,
+      error_code: 'WORKER_PROCESS_FAILED',
+      error: 'MEDIA_VALIDATION_FAILED: download_failed: HTTP 400',
+      media_validation: { urls_found: 1, urls_failed: [{ url: 'https://storage.test/vo-1.wav', reason: 'download_failed', detail: 'HTTP 400' }] },
+      callback: { url: URL, secret: SECRET, nonce: 'n-1' },
+    };
+    await retryTerminalCallback(job, { fetchImpl: fetchMock, sleep: vi.fn(), log: logger() });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const sentBody = JSON.parse(String((fetchMock.mock.calls[0][1] as RequestInit).body));
+    expect(sentBody.error).toBe('MEDIA_VALIDATION_FAILED: download_failed: HTTP 400');
+    expect(sentBody.media_validation).toEqual(job.media_validation);
   });
 });

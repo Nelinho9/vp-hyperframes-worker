@@ -424,9 +424,23 @@ retentionTimer.unref?.();
 
 async function retryTerminalCallback(job, options = {}) {
   if (!job.callback?.url || job.callback_status?.ok) return;
-  job.callback_payload ||= { job_id: job.id, project_id: job.project_id, request_id: job.request_id, step: job.step,
-    revision: job.revision, input_hash: job.input_hash, callback_nonce: job.callback.nonce,
-    status: job.status, ...(job.status === 'failed' ? { error: job.error_code || 'WORKER_JOB_FAILED' } : {}) };
+  job.callback_payload ||= {
+    job_id: job.id,
+    project_id: job.project_id,
+    request_id: job.request_id,
+    step: job.step,
+    revision: job.revision,
+    input_hash: job.input_hash,
+    callback_nonce: job.callback.nonce,
+    status: job.status,
+    ...(job.status === 'failed'
+      ? {
+          error: job.error || job.error_code || 'WORKER_JOB_FAILED',
+          ...(job.media_validation ? { media_validation: job.media_validation } : {}),
+          ...(job.lint_findings ? { lint_findings: job.lint_findings } : {}),
+        }
+      : {}),
+  };
   atomicWriteJob(job);
   job.callback_status = await postCallback(job.callback.url, job.callback.secret, job.callback_payload, options);
   // F1 (plano v2, emenda C): após entrega bem-sucedida o secret de transporte
@@ -1219,7 +1233,7 @@ async function stageJob(body, { publishPreview = true, resolvePublished = true }
   // legacy explícita em vez de falhar — producer novo envia root/windows e cai no ramo estrito.
   if (typeof index_html === "string" && body.mode !== "preview") {
     const rootDuration = parseRootDuration(index_html);
-    const rootWindows = parseRootWindows(index_html).map((w) => ({ id: w.id, start: w.start, duration: w.duration }));
+    const rootWindows = parseRootWindows(index_html);
     if (rootWindows.length === 0) {
       console.warn(`[worker] F04 temporal: sem root windows (legacy, provenance=${compositionProvenance}); segue sem gate estrito`);
     } else {
