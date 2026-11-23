@@ -13,7 +13,7 @@
 FROM node:22-bookworm-slim AS deps
 WORKDIR /app
 COPY package.json package-lock.json* ./
-RUN npm install --omit=dev && npm cache clean --force
+RUN ONNXRUNTIME_NODE_INSTALL_CUDA=skip npm install --omit=dev && npm cache clean --force
 
 # ── Stage 2: runtime ────────────────────────────────────────────────────────
 FROM node:22-bookworm-slim AS runtime
@@ -35,7 +35,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # HyperFrames CLI pinned (V4-0 spike version — determinism contract).
-RUN npm install -g hyperframes@0.7.109 && npm cache clean --force
+RUN ONNXRUNTIME_NODE_INSTALL_CUDA=skip npm install -g hyperframes@0.7.109 && npm cache clean --force
 
 # The pinned CLI can start a detached global npm auto-install even on a
 # non-TTY build. Disable it before browser ensure and during worker runtime.

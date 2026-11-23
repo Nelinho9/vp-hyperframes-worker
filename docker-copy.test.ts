@@ -123,4 +123,16 @@ describe('Dockerfile cobre o grafo de imports do worker', () => {
     const directives = runtimeCopyDirectives();
     expect(directives.some((d) => d.raw.includes('fixtures'))).toBe(true);
   });
+
+  it('salta download CUDA de onnxruntime-node em todos os npm install', () => {
+    const dockerfile = read('Dockerfile');
+    const npmInstallLines = dockerfile
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter((line) => /^RUN\b/.test(line) && /\bnpm install\b/.test(line));
+    expect(npmInstallLines.length).toBeGreaterThanOrEqual(2);
+    for (const line of npmInstallLines) {
+      expect(line).toContain('ONNXRUNTIME_NODE_INSTALL_CUDA=skip');
+    }
+  });
 });
