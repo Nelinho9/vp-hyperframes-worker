@@ -745,6 +745,8 @@ export function normalizeClipWindows(html, fps = 30) {
 
   const adjusted = [];
   let cursorFrames = 0;
+  let prevOvFrames = 0;
+  let prevTrack = null;
   for (const { el, core, ovFrames } of infos) {
     const startSec = cursorFrames / fps;
     cursorFrames += core;
@@ -758,11 +760,25 @@ export function normalizeClipWindows(html, fps = 30) {
       duration: el.getAttribute("data-duration") ?? "",
     };
     const to = { start: String(startSec), duration: String(durSec) };
-    if (from.start !== to.start || from.duration !== to.duration) {
+    let changed = from.start !== to.start || from.duration !== to.duration;
+    if (changed) {
       el.setAttribute("data-start", to.start);
       el.setAttribute("data-duration", to.duration);
+    }
+    const rawTrack = el.getAttribute("data-track-index");
+    let effectiveTrack = rawTrack;
+    if (rawTrack !== null && prevOvFrames > 0 && prevTrack !== null && rawTrack === prevTrack) {
+      effectiveTrack = prevTrack === "0" ? "1" : "0";
+      el.setAttribute("data-track-index", effectiveTrack);
+      from.track = rawTrack;
+      to.track = effectiveTrack;
+      changed = true;
+    }
+    if (changed) {
       adjusted.push({ id: el.id || el.getAttribute("data-hf-id") || null, from, to });
     }
+    prevOvFrames = ovFrames;
+    prevTrack = effectiveTrack;
   }
 
   return { html: document.toString(), adjusted, warning: null };
@@ -893,11 +909,21 @@ export function applyTimelineRestructure(html, scenes, fps = 30, transitions = [
 
   let cursorFrames = 0;
   let applied = 0;
+  let prevExtendFrames = 0;
+  let currentTrack = 0;
   for (let i = 0; i < entries.length; i += 1) {
     const { el, frames } = entries[i];
     const startSec = cursorFrames / fps;
     cursorFrames += frames;
     const nextSec = cursorFrames / fps;
+
+    // A/B roll across transition overlaps so CLI `overlapping_clips_same_track`
+    // never rejects valid transition overlaps on the same track.
+    const track = i === 0 ? 0 : (prevExtendFrames > 0 ? (currentTrack === 0 ? 1 : 0) : 0);
+    if (el.hasAttribute("data-track-index")) {
+      el.setAttribute("data-track-index", String(track));
+    }
+    currentTrack = track;
 
     // Overlap of the boundary AFTER this clip (declared by its incoming
     // neighbor), clamped to the frames actually available on both sides.
@@ -921,6 +947,7 @@ export function applyTimelineRestructure(html, scenes, fps = 30, transitions = [
     el.setAttribute("data-start", String(startSec));
     el.setAttribute("data-duration", String(exactWindowDuration(startSec, endSec)));
     applied += 1;
+    prevExtendFrames = extendFrames;
   }
   // The overlap lives INSIDE the total: root duration unchanged.
   const totalSec = cursorFrames / fps;

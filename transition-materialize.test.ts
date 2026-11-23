@@ -21,10 +21,15 @@ import { fixtureFetch as fetch, fixtureId } from "./test-http-fixture";
  */
 
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { spawnSync } from 'node:child_process';
 import http from 'node:http';
 import vm from 'node:vm';
 import { parseHTML } from 'linkedom';
 import { app } from './server.js';
+import { extractLintFindings } from './composition-sanitizer.js';
 import { normalizeClipWindows, exactWindowDuration } from './patch-engine.js';
 import { lintClipWindows } from './window-lint.js';
 import {
@@ -596,4 +601,100 @@ describe('POST /restructure/:id — V5-P2C materialização de transições', ()
     const d = exactWindowDuration(0, 102 / 30);
     expect(0 + d).toBeLessThanOrEqual(102 / 30);
   });
+
+  it('alterna data-track-index em overlaps consecutivos e repõe track 0 ao remover', async () => {
+    await stage('01f53064-d6d5-491d-b0a3-8788bf4e66c1');
+    const withTransitions = await post(
+      '/restructure/01f53064-d6d5-491d-b0a3-8788bf4e66c1',
+      {
+        scenes: SCENES,
+        transitions: [
+          { id: 'scene-2', kind: 'fade', durationMs: 400 },
+          { id: 'scene-3', kind: 'dissolve', durationMs: 500 },
+        ],
+        fps: 30,
+      },
+      { 'X-Worker-Secret': SECRET },
+    );
+    expect([200, 202]).toContain(withTransitions.status);
+    const htmlWithT = ((await withTransitions.json()) as { html: string }).html;
+    const docWithT = parseHTML(htmlWithT).document;
+    expect(docWithT.getElementById('scene-1')?.getAttribute('data-track-index')).toBe('0');
+    expect(docWithT.getElementById('scene-2')?.getAttribute('data-track-index')).toBe('1');
+    expect(docWithT.getElementById('scene-3')?.getAttribute('data-track-index')).toBe('0');
+
+    const removed = await post(
+      '/restructure/01f53064-d6d5-491d-b0a3-8788bf4e66c1',
+      { scenes: SCENES, transitions: [], fps: 30 },
+      { 'X-Worker-Secret': SECRET },
+    );
+    expect([200, 202]).toContain(removed.status);
+    const htmlClean = ((await removed.json()) as { html: string }).html;
+    const docClean = parseHTML(htmlClean).document;
+    expect(docClean.getElementById('scene-1')?.getAttribute('data-track-index')).toBe('0');
+    expect(docClean.getElementById('scene-2')?.getAttribute('data-track-index')).toBe('0');
+    expect(docClean.getElementById('scene-3')?.getAttribute('data-track-index')).toBe('0');
+  });
+
+  it('normalizeClipWindows cura composição legacy com mesmo data-track-index no overlap', () => {
+    const legacyHtml = `<!doctype html>
+<html><head><title>legacy</title></head>
+<body>
+<div class="composition" data-composition-id="main" data-start="0" data-duration="9" data-width="1080" data-height="1920">
+  <div id="scene-1" class="clip" data-start="0" data-duration="3.4" data-track-index="0" data-transition-out="fade@400"></div>
+  <div id="scene-2" class="clip" data-start="3" data-duration="3" data-track-index="0" data-transition-in="fade@400"></div>
+  <div id="scene-3" class="clip" data-start="6" data-duration="3" data-track-index="0"></div>
+</div>
+</body>
+</html>`;
+    const first = normalizeClipWindows(legacyHtml, 30);
+    expect(first.warning).toBeNull();
+    expect(first.adjusted.some((a) => a.id === 'scene-2' && a.to.track === '1')).toBe(true);
+    const doc = parseHTML(first.html).document;
+    expect(doc.getElementById('scene-1')?.getAttribute('data-track-index')).toBe('0');
+    expect(doc.getElementById('scene-2')?.getAttribute('data-track-index')).toBe('1');
+    expect(doc.getElementById('scene-3')?.getAttribute('data-track-index')).toBe('0');
+
+    const second = normalizeClipWindows(first.html, 30);
+    expect(second.adjusted).toEqual([]);
+    expect(second.html).toBe(first.html);
+  });
+
+  it('hyperframes lint --json passa sem overlapping_clips_same_track em HTML reestruturado e curado', async () => {
+    await stage('c50d9c8e-a132-44fd-b122-5715c13bb134');
+    const res = await post(
+      '/restructure/c50d9c8e-a132-44fd-b122-5715c13bb134',
+      {
+        scenes: SCENES,
+        transitions: [
+          { id: 'scene-2', kind: 'fade', durationMs: 400 },
+          { id: 'scene-3', kind: 'dissolve', durationMs: 500 },
+        ],
+        fps: 30,
+      },
+      { 'X-Worker-Secret': SECRET },
+    );
+    const restructured = ((await res.json()) as { html: string }).html;
+    const legacyHealed = normalizeClipWindows(
+      `<!doctype html><html><head><title>t</title></head><body><div class="composition" data-composition-id="main" data-start="0" data-duration="9" data-width="1080" data-height="1920"><div id="scene-1" class="clip" data-start="0" data-duration="3.4" data-track-index="0" data-transition-out="fade@400"></div><div id="scene-2" class="clip" data-start="3" data-duration="3.5" data-track-index="0" data-transition-in="fade@400" data-transition-out="dissolve@500"></div><div id="scene-3" class="clip" data-start="6" data-duration="3" data-track-index="0" data-transition-in="dissolve@500"></div></div></body></html>`,
+      30,
+    ).html;
+
+    const cliPath = join(process.cwd(), 'node_modules', 'hyperframes', 'dist', 'cli.js');
+    for (const html of [restructured, legacyHealed]) {
+      const dir = mkdtempSync(join(tmpdir(), 'hf-lint-overlap-'));
+      try {
+        writeFileSync(join(dir, 'index.html'), html);
+        const run = spawnSync(process.execPath, [cliPath, 'lint', '--json', dir], {
+          encoding: 'utf8',
+          timeout: 20_000,
+        });
+        const findings = extractLintFindings({ stdout: run.stdout, stderr: run.stderr }) ?? [];
+        const overlapErrors = findings.filter((f) => f.code === 'overlapping_clips_same_track');
+        expect(overlapErrors).toEqual([]);
+      } finally {
+        rmSync(dir, { recursive: true, force: true });
+      }
+    }
+  }, 30_000);
 });

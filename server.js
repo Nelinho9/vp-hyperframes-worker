@@ -44,7 +44,7 @@ import {
   sanitizeCompositionForOffline,
   VENDORED_GSAP_ASSET_PATH,
 } from "./runtime-vendor.js";
-import { prestageExternalMedia } from "./media-preloader.js";
+import { prestageExternalMedia, maskMediaUrl } from "./media-preloader.js";
 import { compositionStoragePath, persistCompositionArtifact } from "./composition-persist.js";
 import { captureThumbnails, computeArtifactHash, parseScenePostEntranceTimes, buildRenderSnapshotArgs, renderSnapshotsLegacyFrames } from "./thumbnails.js";
 import { deriveElements, persistElementsArtifact } from "./elements-registry.js";
@@ -1416,6 +1416,114 @@ function resolveJobById(id) {
   return jobs.get(id) ?? null;
 }
 
+const STORAGE_SIGNED_PATH_RE = /^\/storage\/v1\/object\/sign\/(video-artifacts|video-assets|video-screenshots)\/(.+)$/;
+
+/**
+ * Re-sign expired own-project Supabase Storage URLs embedded inside immutable
+ * published HTML when restoring a preview job after worker restart/redeploy.
+ * Keeps `head.content_hash` intact on the authority record; only the local
+ * staged preview bytes receive fresh signed tokens.
+ */
+export async function refreshPreviewStorageUrls(html, projectId, deps = { supabase, storageUrl: SUPABASE_URL }) {
+  if (typeof html !== "string" || !html || !deps?.supabase || !deps?.storageUrl || !ORCHESTRATOR_PROJECT_ID_RE.test(projectId)) {
+    return html;
+  }
+  let storageOrigin = "";
+  try {
+    storageOrigin = new URL(deps.storageUrl).origin;
+  } catch {
+    return html;
+  }
+
+  const urls = Array.from(new Set(html.match(/https?:\/\/[^\s"'<>)]+/gi) || []));
+  if (urls.length === 0) return html;
+
+  let captureResolved = false;
+  let ownedCaptureId = null;
+  async function resolveOwnedCaptureId() {
+    if (captureResolved) return ownedCaptureId;
+    captureResolved = true;
+    try {
+      if (typeof deps.supabase?.from !== "function") return null;
+      const { data: project, error: projErr } = await deps.supabase
+        .from("video_projects")
+        .select("user_id,metadata")
+        .eq("id", projectId)
+        .is("deleted_at", null)
+        .maybeSingle();
+      if (projErr || !project) return null;
+      const meta = project.metadata && typeof project.metadata === "object" ? project.metadata : {};
+      const captureBase = () => deps.supabase
+        .from("video_captures")
+        .select("id")
+        .eq("user_id", project.user_id)
+        .eq("status", "captured");
+      if (typeof meta.capture_id === "string" && meta.capture_id) {
+        const { data: cap } = await captureBase().eq("id", meta.capture_id).maybeSingle();
+        if (cap?.id) {
+          ownedCaptureId = cap.id;
+          return ownedCaptureId;
+        }
+      }
+      const { data: direct } = await captureBase()
+        .eq("project_id", projectId)
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (direct?.id) ownedCaptureId = direct.id;
+    } catch {
+      ownedCaptureId = null;
+    }
+    return ownedCaptureId;
+  }
+
+  let out = html;
+  for (const rawUrl of urls) {
+    let parsed;
+    try {
+      parsed = new URL(rawUrl);
+    } catch {
+      continue;
+    }
+    if (parsed.origin !== storageOrigin) continue;
+    const match = STORAGE_SIGNED_PATH_RE.exec(parsed.pathname);
+    if (!match) continue;
+    const bucket = match[1];
+    let objectPath;
+    try {
+      objectPath = decodeURIComponent(match[2]);
+    } catch {
+      continue;
+    }
+    if (
+      !objectPath ||
+      /[\\?#%]/.test(objectPath) ||
+      objectPath.split("/").some((seg) => !seg || seg === "." || seg === "..")
+    ) {
+      continue;
+    }
+    if (bucket === "video-artifacts") {
+      if (!objectPath.startsWith(`projects/${projectId}/`)) continue;
+    } else {
+      const capId = await resolveOwnedCaptureId();
+      if (!capId || !objectPath.startsWith(`captures/${capId}/`)) continue;
+    }
+    const bucketClient = deps.supabase.storage?.from?.(bucket);
+    if (typeof bucketClient?.createSignedUrl !== "function") continue;
+    try {
+      const { data, error } = await bucketClient.createSignedUrl(objectPath, 3600);
+      if (!error && data?.signedUrl) {
+        out = out.split(rawUrl).join(data.signedUrl);
+      } else if (error) {
+        console.warn(`[worker] refreshPreviewStorageUrls ${projectId} failed for ${maskMediaUrl(rawUrl)}: ${error.message ?? error}`);
+      }
+    } catch (err) {
+      console.warn(`[worker] refreshPreviewStorageUrls ${projectId} failed for ${maskMediaUrl(rawUrl)}: ${err?.message ?? err}`);
+    }
+  }
+  return out;
+}
+
 // E01 endpoints prepare canonical candidates without touching a live preview.
 // Old mutation routes below remain N-1 compatibility only and are blocked for
 // projects with a published head; all new consumers use prepare + DB publisher.
@@ -1445,10 +1553,11 @@ export const compositionEditor = createCompositionEditor({
   },
   async stage(projectId, html, head) {
     const options = compositionPreviewOptions(html, head);
+    const stagedHtml = await refreshPreviewStorageUrls(html, projectId);
     return stageJob({
       job_id: randomUUID(), project_id: projectId, step: 'preview', mode: 'preview',
       revision: head.revision, composition_revision: head.revision,
-      composition_hash: options.composition_hash, index_html: html,
+      composition_hash: options.composition_hash, index_html: stagedHtml,
       options, outputs: {}, artifact_paths: {},
     }, { publishPreview: false, resolvePublished: false });
   },
@@ -1661,6 +1770,7 @@ app.get("/preview/:id", previewCors, async (req, res) => {
   try {
     if (ORCHESTRATOR_PROJECT_ID_RE.test(req.params.id)) await compositionEditor.ensurePreview(req.params.id);
   } catch (error) {
+    console.error(`[worker] ensurePreview ${req.params.id} failed:`, error?.message ?? error);
     return res.status(error.status ?? 503).json({ error: error.code ?? 'COMPOSITION_PREVIEW_SYNC_FAILED', preview_sync_pending: true });
   }
 
@@ -1821,6 +1931,7 @@ app.get("/preview/:id/thumbnails", previewCors, async (req, res) => {
   try {
     if (ORCHESTRATOR_PROJECT_ID_RE.test(req.params.id)) await compositionEditor.ensurePreview(req.params.id);
   } catch (error) {
+    console.error(`[worker] ensurePreview ${req.params.id} failed:`, error?.message ?? error);
     return res.status(error.status ?? 503).json({ error: error.code ?? 'COMPOSITION_PREVIEW_SYNC_FAILED', preview_sync_pending: true });
   }
   let job = null;

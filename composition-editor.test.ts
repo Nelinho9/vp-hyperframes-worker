@@ -272,4 +272,40 @@ describe('E01 server routes and real local preview files', () => {
     const preview = await fetch(`${base}/preview/${PROJECT}`);
     expect(await preview.text()).not.toContain('Unpublished');
   });
+  it('refreshPreviewStorageUrls re-signs own-project URLs, blocks foreign/traversal, and handles missing or failing signers', async () => {
+    const { refreshPreviewStorageUrls } = await import('./server.js');
+    const storageUrl = 'https://supabase.example.test';
+    const ownOld = `${storageUrl}/storage/v1/object/sign/video-artifacts/projects/${PROJECT}/audio/vo-1.wav?token=expired`;
+    const ownFresh = `${storageUrl}/storage/v1/object/sign/video-artifacts/projects/${PROJECT}/audio/vo-1.wav?token=fresh`;
+    const foreignProject = `${storageUrl}/storage/v1/object/sign/video-artifacts/projects/99999999-9999-4999-8999-999999999999/audio/vo-1.wav?token=other`;
+    const traversal = `${storageUrl}/storage/v1/object/sign/video-artifacts/projects/${PROJECT}/../secret.wav?token=bad`;
+    const foreignOrigin = `https://evil.example.test/storage/v1/object/sign/video-artifacts/projects/${PROJECT}/audio/vo-1.wav?token=evil`;
+    const html = `<div data-composition-id="main"><audio id="a1" src="${ownOld}"></audio><audio id="a2" src="${foreignProject}"></audio><audio id="a3" src="${traversal}"></audio><audio id="a4" src="${foreignOrigin}"></audio></div>`;
+
+    const createSignedUrl = vi.fn(async (path: string) => {
+      if (path === `projects/${PROJECT}/audio/vo-1.wav`) return { data: { signedUrl: ownFresh }, error: null };
+      return { data: null, error: new Error('unexpected path') };
+    });
+    const out = await refreshPreviewStorageUrls(html, PROJECT, {
+      storageUrl,
+      supabase: { storage: { from: () => ({ createSignedUrl }) } },
+    });
+    expect(createSignedUrl).toHaveBeenCalledTimes(1);
+    expect(out).toContain(ownFresh);
+    expect(out).toContain(foreignProject);
+    expect(out).toContain(traversal);
+    expect(out).toContain(foreignOrigin);
+
+    const noSigner = await refreshPreviewStorageUrls(html, PROJECT, {
+      storageUrl,
+      supabase: { storage: { from: () => ({}) } },
+    });
+    expect(noSigner).toBe(html);
+
+    const failingSigner = await refreshPreviewStorageUrls(html, PROJECT, {
+      storageUrl,
+      supabase: { storage: { from: () => ({ createSignedUrl: async () => ({ data: null, error: new Error('sign failed') }) }) } },
+    });
+    expect(failingSigner).toBe(html);
+  });
 });
