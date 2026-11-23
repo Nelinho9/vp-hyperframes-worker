@@ -183,6 +183,7 @@ export async function runLlmStepJob(args) {
   // injetado; em produção é o módulo vendado tal-e-qual.
   const audioPipelineImpl = args.audioPipelineImpl ?? runAudioPipeline;
   const qualityPipelineImpl = args.qualityPipelineImpl ?? runQualityPipeline;
+  const captureQualityEvidenceImpl = args.captureQualityEvidenceImpl ?? null;
   const projectId = body?.project_id;
   const step = body?.inputs?.step ?? body?.step;
   if (!projectId) return { ok: false, error: 'LLM_STEP_PROJECT_ID_MISSING' };
@@ -318,6 +319,20 @@ export async function runLlmStepJob(args) {
       const expectedRevision = typeof body?.inputs?.expected_revision === 'number' && Number.isFinite(body.inputs.expected_revision)
         ? Math.floor(body.inputs.expected_revision)
         : null;
+      if (body?.inputs?.capture_evidence === true && typeof captureQualityEvidenceImpl === 'function') {
+        try {
+          await captureQualityEvidenceImpl({
+            projectId,
+            expectedRevision,
+            jobId: body?.job_id ?? null,
+          });
+        } catch (capErr) {
+          const capCode = capErr?.code || 'QUALITY_EVIDENCE_CAPTURE_FAILED';
+          const capMsg = String(capErr?.message ?? capErr).slice(0, 260);
+          log(`[llm-step] job step=quality project=${projectId} capture_evidence failed: ${capCode}: ${capMsg}`);
+          return { ok: false, error: `LLM_STEP_FAILED:${capCode}: ${capMsg}`.slice(0, 450) };
+        }
+      }
       const payload = await qualityPipelineImpl(qualityStorage, projectId, { expectedRevision, requestJobId: body?.job_id ?? null }, qualityEnv);
       const durationSeconds = Math.round((Date.now() - startedAt) / 100) / 10;
       if (payload.ok === false) {

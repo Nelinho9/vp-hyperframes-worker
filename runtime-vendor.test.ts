@@ -10,6 +10,7 @@ import {
   loadVendoredRuntimeBundles,
   localFontFaceStyle,
   markGsapDataUri,
+  patchPreviewRuntimeAudio,
   prepareOfflineFonts,
   sanitizeCompositionForOffline,
 } from "./runtime-vendor.js";
@@ -347,5 +348,103 @@ describe("offline font resolution (V4-3f.10)", () => {
     expect(result.style).toContain("format('woff2')");
     expect(result.style).toContain("font-family:'Missing Family'");
     expect(result.style).toContain("local('Missing Family')");
+  });
+});
+
+describe("preview AudioContext lazy init patch", () => {
+  it("defers AudioContext creation in the vendored runtime bundle and is idempotent", () => {
+    const bundles = loadVendoredRuntimeBundles();
+    expect(bundles.hyperframesPath).toBeTruthy();
+    const raw = readFileSync(bundles.hyperframesPath!, "utf8");
+    expect(raw).toContain("this._ctx=new AudioContext");
+
+    const patched = bundles.hyperframes;
+    expect(patched).not.toBe(raw);
+    expect(patched).toContain("_ensureContext()");
+    expect(patched).not.toContain("async init(){try{return this._ctx=new AudioContext");
+    expect(patchPreviewRuntimeAudio(patched)).toBe(patched);
+  });
+
+  it("initializes without creating AudioContext, lazily creates on playback, and signals suspended autoplay", async () => {
+    const bundles = loadVendoredRuntimeBundles();
+    const raw = readFileSync(bundles.hyperframesPath!, "utf8");
+    const patched = patchPreviewRuntimeAudio(raw);
+
+    const marker = 'ge(this,"_activeSources",[])';
+    const markerIdx = patched.indexOf(marker);
+    expect(markerIdx).toBeGreaterThan(0);
+    const classStart = patched.lastIndexOf("class{", markerIdx);
+    const classEnd = patched.indexOf(";var wd=", markerIdx);
+    expect(classStart).toBeGreaterThan(0);
+    expect(classEnd).toBeGreaterThan(classStart);
+    const classSrc = patched.slice(classStart, classEnd);
+
+    const posted: unknown[] = [];
+    let ctxCreations = 0;
+    let resumeCalls = 0;
+    let state: "suspended" | "running" = "suspended";
+    const gainNode = { gain: { value: 1 }, connect: () => {} };
+    class FakeAudioContext {
+      state = state;
+      currentTime = 0;
+      destination = {};
+      constructor() {
+        ctxCreations += 1;
+      }
+      createGain() {
+        return gainNode;
+      }
+      async resume() {
+        resumeCalls += 1;
+        this.state = state;
+      }
+    }
+
+    const ge = (obj: Record<string, unknown>, key: string, val: unknown) => {
+      obj[key] = val;
+    };
+    const factory = new Function(
+      "ge",
+      "AudioContext",
+      "webkitAudioContext",
+      "window",
+      "M",
+      "Cd",
+      "Ad",
+      "Pb",
+      "Ib",
+      "Db",
+      `return (${classSrc});`,
+    );
+    const fakeParent = { postMessage: (msg: unknown) => posted.push(msg) };
+    const Transport = factory(
+      ge,
+      FakeAudioContext,
+      FakeAudioContext,
+      { parent: fakeParent },
+      () => {},
+      (r: number) => r,
+      () => null,
+      () => {},
+      () => true,
+      () => {},
+    );
+
+    const transport = new Transport();
+    const ok = await transport.init();
+    expect(ok).toBe(true);
+    expect(ctxCreations).toBe(0);
+
+    const scheduled = await transport.schedulePlayback({}, {}, 0, 0, 0, 1, transport.currentGeneration());
+    expect(ctxCreations).toBe(1);
+    expect(resumeCalls).toBe(1);
+    expect(scheduled).toBeNull();
+    expect(posted).toEqual([{ source: "hf-preview", type: "media-autoplay-blocked" }]);
+
+    state = "running";
+    transport.setVolume(0.5);
+    transport.setMuted(false);
+    expect(resumeCalls).toBe(2);
+    expect(gainNode.gain.value).toBe(0.5);
   });
 });

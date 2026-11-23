@@ -64,6 +64,7 @@ import {
 } from "./pipeline-runner.js";
 import { runBuildHtmlJob } from "./build-html-runner.js";
 import { runLlmStepJob } from "./llm-step-runner.js";
+import { captureQualityEvidence } from "./quality-evidence.js";
 import { pruneTerminalJobs, retentionTtlMs, directoryBytes } from "./job-retention.js";
 
 const app = express();
@@ -788,6 +789,19 @@ async function stageLlmStepJob(body) {
       supabase,
       workerSecret: WORKER_SECRET,
       fetchImpl: fetch,
+      captureQualityEvidenceImpl: ({ projectId, expectedRevision, jobId }) =>
+        captureQualityEvidence({
+          projectId,
+          expectedRevision,
+          jobId,
+          supabase,
+          compositionEditor,
+          resolveJobById,
+          workDir: WORK_DIR,
+          spawnCommand,
+          jobEnv: { ...process.env, CHROME_PATH },
+          log: console.log,
+        }),
       log: console.log,
     });
   } catch (err) {
@@ -1989,6 +2003,40 @@ app.get("/preview/:id/thumbs/:file", previewCors, (req, res) => {
     .set("Cache-Control", "public, max-age=86400")
     .type("image/png")
     .send(readFileSync(filePath));
+});
+
+// ── Opção A: captura leve de snapshots para reavaliação de qualidade ──
+app.post("/quality-evidence/:id", async (req, res) => {
+  const auth = authorizedWorkerService(req);
+  if (!auth.ok) return res.status(auth.status).json({ error: auth.error });
+  const projectId = req.params.id;
+  if (!ORCHESTRATOR_PROJECT_ID_RE.test(projectId)) {
+    return res.status(400).json({ error: "INVALID_PROJECT_ID" });
+  }
+  const expectedRevision =
+    typeof req.body?.expected_revision === "number" && Number.isFinite(req.body.expected_revision)
+      ? Math.floor(req.body.expected_revision)
+      : null;
+  const force = req.body?.force === true;
+  try {
+    const out = await captureQualityEvidence({
+      projectId,
+      expectedRevision,
+      force,
+      supabase,
+      compositionEditor,
+      resolveJobById,
+      workDir: WORK_DIR,
+      spawnCommand,
+      jobEnv: { ...process.env, CHROME_PATH },
+      log: console.log,
+    });
+    return res.json(out);
+  } catch (err) {
+    const status = typeof err?.status === "number" ? err.status : 500;
+    const code = typeof err?.code === "string" ? err.code : "QUALITY_EVIDENCE_CAPTURE_FAILED";
+    return res.status(status).json({ error: code, detail: String(err?.message ?? err).slice(0, 400) });
+  }
 });
 
 // ── Render pipeline ─────────────────────────────────────────────────

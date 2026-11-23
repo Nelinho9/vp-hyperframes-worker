@@ -10,10 +10,14 @@
 export const CLI_VERSION = "0.7.109";
 export const MANIFEST_VERSION = 1;
 
-/** "complete" só com outputs + sem missing; senão "partial" (nunca promove set antigo). */
+/** "complete" só com outputs (ou quality-snapshot com snapshots) + sem missing; senão "partial" (nunca promove set antigo). */
 export function evidenceStatus(manifest) {
-  if (!manifest || !Array.isArray(manifest.outputs) || manifest.outputs.length === 0) return "partial";
+  if (!manifest) return "partial";
   if (Array.isArray(manifest.coverage?.missing) && manifest.coverage.missing.length > 0) return "partial";
+  if (manifest.step === "quality-snapshot") {
+    return Array.isArray(manifest.snapshots) && manifest.snapshots.length > 0 ? "complete" : "partial";
+  }
+  if (!Array.isArray(manifest.outputs) || manifest.outputs.length === 0) return "partial";
   return "complete";
 }
 

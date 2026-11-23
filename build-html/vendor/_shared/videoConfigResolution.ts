@@ -285,15 +285,51 @@ export type DialogueAudioCues = {
  * devolve SÓ campos com sinal (ausência = auto, nunca off: desligar continua a
  * ser escolha explícita de UI e a precedência C3 fica intacta).
  */
+const BRIEF_CLAUSE_SPLIT_RE =
+  /[,;.\n/]+|\b(?:mas|but|however|contudo|por[eé]m)\b|\b(?:e|and)\s+(?=(?:com|with|usar|use|incluir|include|adicionar|add|ativar|enable)\b)/i;
+const BRIEF_NEGATION_RE =
+  /\b(?:sem|n[ãa]o|nem|nunca|jamais|zero|dispensar?|evitar?|desativ(?:ar|ado|ada)?|deslig(?:ar|ado|ada)?|remov(?:er|ido|ida)?|retir(?:ar|ado|ada)?|exclu(?:ir|ído|ida)?|tir(?:ar|a)?|nada\s+de|not|never|none|without|avoid|skip|exclude|remove|disable|disabled|don['’]?t)\b/i;
+const BRIEF_ENGLISH_NO_RE =
+  /\bno\s+(?:(?:background|extra|added|burned[- ]in|spoken|sound|audio|ai)\s+)?$/i;
+const BRIEF_ENGLISH_NO_CLAUSE_START_RE =
+  /^no\s+(?:(?:background|extra|added|burned[- ]in|spoken|sound|audio|ai)\s+)?(?:voz\b|narra|locu|voice|spoken|\bfala\b|m[úu]sica|music|trilha|soundtrack|\bbgm\b|legenda|caption|subtitle|\bsfx\b|efeitos?\s+sonoros?|sound\s+effects?)/i;
+const BRIEF_NEGATION_SUFFIX_RE =
+  /^[a-zçãáàâéêíóôõú-]*(?:\s*[:=]\s*(?:off|auto)\b|\s+(?:off|disabled?|desativad[oa]s?|desligad[oa]s?|unavailable|indispon[ií]vel|unsupported|not\s+supported|sem\s+suporte)\b)/i;
+
+function hasAffirmativeCue(clauses: string[], pattern: RegExp): boolean {
+  for (const rawClause of clauses) {
+    const clause = rawClause.trim();
+    if (!clause) continue;
+    const match = pattern.exec(clause);
+    if (!match) continue;
+    const before = clause.slice(0, match.index);
+    const after = clause.slice(match.index + match[0].length);
+    if (
+      BRIEF_NEGATION_RE.test(before) ||
+      BRIEF_ENGLISH_NO_RE.test(before) ||
+      BRIEF_ENGLISH_NO_CLAUSE_START_RE.test(clause) ||
+      BRIEF_NEGATION_SUFFIX_RE.test(after)
+    ) {
+      continue;
+    }
+    return true;
+  }
+  return false;
+}
+
 export function dialogueAudioFromBriefConstraints(constraints: unknown): DialogueAudioCues {
   const out: DialogueAudioCues = {};
   if (!Array.isArray(constraints)) return out;
-  const text = constraints.filter((c): c is string => typeof c === "string").join("\n").toLowerCase();
-  if (!text.trim()) return out;
-  if (/\bvoz\b|narra|locu|voice|narration|voiceover|voice-over|\bfala\b|spoken/.test(text)) out.narration = "on";
-  if (/m[úu]sica|music|trilha|soundtrack|\bbgm\b/.test(text)) out.music = "on";
-  if (/legenda|caption|subtitle/.test(text)) out.captions = "on";
-  if (/\bsfx\b|efeitos?\s+sonoros?|sound\s+effects?/.test(text)) out.sfx = "on";
+  const clauses = constraints
+    .filter((c): c is string => typeof c === "string")
+    .flatMap((c) => c.toLowerCase().split(BRIEF_CLAUSE_SPLIT_RE))
+    .map((c) => c.trim())
+    .filter(Boolean);
+  if (clauses.length === 0) return out;
+  if (hasAffirmativeCue(clauses, /\bvoz\b|narra|locu|voice|narration|voiceover|voice-over|\bfala\b|spoken/)) out.narration = "on";
+  if (hasAffirmativeCue(clauses, /m[úu]sica|music|trilha|soundtrack|\bbgm\b/)) out.music = "on";
+  if (hasAffirmativeCue(clauses, /legenda|caption|subtitle/)) out.captions = "on";
+  if (hasAffirmativeCue(clauses, /\bsfx\b|efeitos?\s+sonoros?|sound\s+effects?/)) out.sfx = "on";
   return out;
 }
 

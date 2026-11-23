@@ -27,6 +27,53 @@ function firstExisting(paths) {
   return null;
 }
 
+/**
+ * Defer WebAudio AudioContext creation in served previews until a user gesture
+ * (first decode/playback) and signal parent via `media-autoplay-blocked` if
+ * `AudioContext.resume()` remains suspended. Prevents Chrome's boot-time
+ * "The AudioContext was not allowed to start" warning in `__vp_runtime.js`.
+ * Safe and idempotent: returns input unchanged if pattern is absent.
+ */
+export function patchPreviewRuntimeAudio(bundle) {
+  if (typeof bundle !== "string" || !bundle) return bundle;
+  if (bundle.includes("_ensureContext()")) return bundle;
+
+  const INIT_TARGET =
+    'ge(this,"_playGeneration",0)}async init(){try{return this._ctx=new AudioContext,this._masterGain=this._ctx.createGain(),this._masterGain.connect(this._ctx.destination),!0}catch{return!1}}';
+  const INIT_REPLACEMENT =
+    'ge(this,"_playGeneration",0);ge(this,"_desiredMuted",!1);ge(this,"_desiredVolume",1)}async init(){return typeof AudioContext==="function"||typeof webkitAudioContext==="function"}_ensureContext(){if(this._ctx)return!0;try{let C=typeof AudioContext==="function"?AudioContext:webkitAudioContext;return this._ctx=new C,this._masterGain=this._ctx.createGain(),this._masterGain.gain.value=this._desiredMuted?0:this._desiredVolume,this._masterGain.connect(this._ctx.destination),!0}catch{return!1}}';
+
+  const DECODE_TARGET =
+    'async decodeAudioElement(t){let n=t.currentSrc||t.getAttribute("src");if(!n)return null;if(this._bufferCache.has(n))return this._bufferCache.get(n);if(this._failedSrcs.has(n)||!this._ctx)return null;';
+  const DECODE_REPLACEMENT =
+    'async decodeAudioElement(t){let n=t.currentSrc||t.getAttribute("src");if(!n)return null;if(this._bufferCache.has(n))return this._bufferCache.get(n);if(this._failedSrcs.has(n)||!this._ensureContext()||!this._ctx)return null;';
+
+  const SCHEDULE_TARGET =
+    'async schedulePlayback(t,n,r,i,o,a,l,s=1,u=Number.POSITIVE_INFINITY){if(!this._ctx||!this._masterGain||l!==this._playGeneration)return null;try{if(this._ctx.state==="suspended"&&await this._ctx.resume(),l!==this._playGeneration)return null;';
+  const SCHEDULE_REPLACEMENT =
+    'async schedulePlayback(t,n,r,i,o,a,l,s=1,u=Number.POSITIVE_INFINITY){if(!this._ensureContext()||!this._ctx||!this._masterGain||l!==this._playGeneration)return null;try{if(this._ctx.state==="suspended"&&(await this._ctx.resume().catch(()=>{}),this._ctx.state==="suspended")){try{window.parent&&window.parent!==window&&window.parent.postMessage({source:"hf-preview",type:"media-autoplay-blocked"},"*")}catch{}return null}if(l!==this._playGeneration)return null;';
+
+  const VOLUME_MUTED_TARGET =
+    'setVolume(t){this._masterGain&&(this._masterGain.gain.value=Math.max(0,Math.min(1,t)))}setElementVolume(t,n){let r=Math.max(0,Math.min(1,n));for(let i of this._activeSources)if(i.el===t)try{i.gainNode.gain.value=r}catch(o){M("webAudioTransport.setElementVolume",o)}}setMuted(t){this._masterGain&&(this._masterGain.gain.value=t?0:1)}';
+  const VOLUME_MUTED_REPLACEMENT =
+    'setVolume(t){let v=Math.max(0,Math.min(1,t));this._desiredVolume=v;this._masterGain&&(this._masterGain.gain.value=this._desiredMuted?0:v)}setElementVolume(t,n){let r=Math.max(0,Math.min(1,n));for(let i of this._activeSources)if(i.el===t)try{i.gainNode.gain.value=r}catch(o){M("webAudioTransport.setElementVolume",o)}}setMuted(t){this._desiredMuted=Boolean(t);this._masterGain&&(this._masterGain.gain.value=this._desiredMuted?0:this._desiredVolume);!this._desiredMuted&&this._ctx&&this._ctx.state==="suspended"&&this._ctx.resume().catch(()=>{})}';
+
+  if (
+    !bundle.includes(INIT_TARGET) ||
+    !bundle.includes(DECODE_TARGET) ||
+    !bundle.includes(SCHEDULE_TARGET) ||
+    !bundle.includes(VOLUME_MUTED_TARGET)
+  ) {
+    return bundle;
+  }
+
+  return bundle
+    .replace(INIT_TARGET, INIT_REPLACEMENT)
+    .replace(DECODE_TARGET, DECODE_REPLACEMENT)
+    .replace(SCHEDULE_TARGET, SCHEDULE_REPLACEMENT)
+    .replace(VOLUME_MUTED_TARGET, VOLUME_MUTED_REPLACEMENT);
+}
+
 /** Load browser bundles from installed worker dependencies or the global CLI. */
 export function loadVendoredRuntimeBundles() {
   const hyperframesPath = firstExisting([
@@ -42,8 +89,9 @@ export function loadVendoredRuntimeBundles() {
     "/usr/local/lib/node_modules/gsap/dist/gsap.min.js",
   ]);
 
+  const rawHyperframes = hyperframesPath ? readFileSync(hyperframesPath, "utf8") : "";
   return {
-    hyperframes: hyperframesPath ? readFileSync(hyperframesPath, "utf8") : "",
+    hyperframes: patchPreviewRuntimeAudio(rawHyperframes),
     gsap: gsapPath ? readFileSync(gsapPath, "utf8") : "",
     hyperframesPath,
     gsapPath,

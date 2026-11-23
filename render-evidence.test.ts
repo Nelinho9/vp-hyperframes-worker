@@ -47,6 +47,22 @@ describe("worker render-evidence (F04-T08)", () => {
     expect(evidenceStatus({ outputs: [{ name: "o" }], coverage: { missing: [] } })).toBe("complete");
   });
 
+  it("quality-snapshot é complete quando tem snapshots sem missing (sem exigir MP4)", () => {
+    expect(evidenceStatus({ step: "quality-snapshot", outputs: [], snapshots: [], coverage: { missing: [] } })).toBe("partial");
+    expect(evidenceStatus({
+      step: "quality-snapshot",
+      outputs: [],
+      snapshots: [{ file: "frame-1.png" }],
+      coverage: { missing: ["no-snapshots-captured"] },
+    })).toBe("partial");
+    expect(evidenceStatus({
+      step: "quality-snapshot",
+      outputs: [],
+      snapshots: [{ file: "frame-1.png" }],
+      coverage: { missing: [] },
+    })).toBe("complete");
+  });
+
   it("opção A F12-voz: media_prestage no manifest, sem tokens", () => {
     const outcomes = [{ url: "https://cdn.example.com/a.wav", tag: "audio", ok: true, ms: 12, kind: "wav", duration_s: 2.5 }];
     const m = buildEvidenceManifest({ jobId: "j", projectId: "p", step: "build", revision: 1, mediaPrestage: { outcomes } });

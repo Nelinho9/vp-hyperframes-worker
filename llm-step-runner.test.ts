@@ -339,6 +339,40 @@ describe('runLlmStepJob — quality (gate vendado, env VLM JIT)', () => {
     expect(result.ok).toBe(false);
     expect((result as { error: string }).error).toContain('QUALITY_SNAPSHOTS_MISSING');
   });
+
+  it('capture_evidence=true chama captureQualityEvidenceImpl antes de runQualityPipeline', async () => {
+    const { supabase } = makeSupabase();
+    const { fetchImpl } = makeFetch({ creds: { ...credentialsResponse(), quality: QUALITY_ENV_BLOCK } });
+    const order: string[] = [];
+    const captureQualityEvidenceImpl = vi.fn(async () => {
+      order.push('capture');
+      return { ok: true, revision: 4, reused: false, manifest_path: 'p/e.json', snapshots_count: 2 };
+    });
+    const qualityPipelineImpl = vi.fn(async () => {
+      order.push('quality');
+      return { ok: true, artifacts: ['quality_report.json'], score: 9.0, needs_attention: false };
+    });
+    const body = {
+      ...jobBody('quality'),
+      inputs: { credentials_url: CREDS_URL, step: 'quality', expected_revision: 4, capture_evidence: true },
+    };
+    const result = await runLlmStepJob({
+      body,
+      supabase,
+      workerSecret: 'ws',
+      fetchImpl,
+      captureQualityEvidenceImpl,
+      qualityPipelineImpl,
+      log: () => {},
+    });
+    expect(result.ok).toBe(true);
+    expect(order).toEqual(['capture', 'quality']);
+    expect(captureQualityEvidenceImpl).toHaveBeenCalledWith({
+      projectId: PROJECT_ID,
+      expectedRevision: 4,
+      jobId: body.job_id,
+    });
+  });
 });
 
 describe('createStepAdapters — sem débito (B4)', () => {

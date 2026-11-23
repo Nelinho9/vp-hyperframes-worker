@@ -226,8 +226,8 @@ export function pickEvidenceManifest(
 
   const expected = opts.expectedRevision ?? null;
   if (expected !== null && Number.isFinite(expected)) {
-    const match = ours.find((m) => m.revision === expected) ?? null;
-    if (match === null) {
+    const revMatches = ours.filter((m) => m.revision === expected);
+    if (revMatches.length === 0) {
       return {
         ok: false,
         code: 'EVIDENCE_MISMATCH',
@@ -235,10 +235,21 @@ export function pickEvidenceManifest(
         revisions: ours.map((m) => m.revision),
       };
     }
-    if (match.status !== 'complete') {
-      return { ok: false, code: 'EVIDENCE_PARTIAL', detail: `evidence r${match.revision} status=${match.status} (parcial declara missing sem promover set antigo)` };
+    const completeMatches = revMatches.filter((m) => m.status === 'complete');
+    if (completeMatches.length === 0) {
+      return { ok: false, code: 'EVIDENCE_PARTIAL', detail: `evidence r${revMatches[0].revision} status=${revMatches[0].status} (parcial declara missing sem promover set antigo)` };
     }
-    return { ok: true, manifest: match };
+    // Determinístico se houver mais que um complete para a mesma revisão:
+    // prefere evidence de render (outputs presentes), depois generated_at mais recente.
+    const picked = [...completeMatches].sort((a, b) => {
+      const aHasOut = (a.outputs?.length ?? 0) > 0 ? 1 : 0;
+      const bHasOut = (b.outputs?.length ?? 0) > 0 ? 1 : 0;
+      if (aHasOut !== bHasOut) return bHasOut - aHasOut;
+      const aAt = a.generated_at ?? '';
+      const bAt = b.generated_at ?? '';
+      return bAt.localeCompare(aAt);
+    })[0];
+    return { ok: true, manifest: picked };
   }
 
   const complete = ours.filter((m) => m.status === 'complete');

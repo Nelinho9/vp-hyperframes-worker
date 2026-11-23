@@ -1,8 +1,8 @@
 {
   "contract": "build-html-vendor.v1",
   "source_repo": "visttapro (supabase/functions)",
-  "source_commit": "e76a116e107a1e3ca46d76368976f87703567633",
-  "synced_at": "2026-11-12T17:31:03.161Z",
+  "source_commit": "07a936fce3d2a29b678e1a1139b66cd2f9f800d3",
+  "synced_at": "2026-11-23T23:14:36.658Z",
   "node_requirement": ">=22.18 (native TypeScript type stripping)",
   "rewrites": [
     {
@@ -29,7 +29,7 @@
     "_shared/skills/hyperframesCreative.ts": "df7119aef8cb720b38382f8dc95ad1840f493055606a500cdded4a9ba99ba429",
     "_shared/skills/mediaUse.ts": "2732277a32ffec3b5859a1d7de1031186f7de31e908858d8db3ad954360d241f",
     "_shared/skills/mod.ts": "c1d2ba0548475450e396fcc29e63b2f8088c6e6a73ff66d9bdf62ec62805ac81",
-    "_shared/videoConfigResolution.ts": "f14156abf54cabccedcebec522c993334d34f3773f8e94f51ef26ab38ed18324",
+    "_shared/videoConfigResolution.ts": "dc4d3a80ca6831f18ba725a6d3de42935cddb6cabfd8e03c26228dd4a6e525ef",
     "_shared/videoLlmTransport.ts": "a8bbceb2b00da03bbd62731fdd85a6cb824f44b1b634f276e8342a1c0e00cbe8",
     "video-v4-audio/acoustic.ts": "48f4e75f15449bb98d619757d6f90b3722963265e28c1500e61377ee31a2c229",
     "video-v4-audio/audioMeasure.ts": "5d91056f0ebfc34356db8bae1486c01f891b82075db0c1714bb72ef2f895ee4d",
@@ -42,7 +42,7 @@
     "video-v4-quality/compositionContext.ts": "81d715ed5c2f1c20e3321090d9f9cae4c7b0012cf75df056b214557ce61860aa",
     "video-v4-quality/deterministic.ts": "bd637e00291352272dbda3f297575445b12a3c56cccda0db1bad9a980ee37014",
     "video-v4-quality/logic.ts": "1bbc8b05cc80a390d984dd7491568a4518da525a1c69af2ec0e31cedef0281f9",
-    "video-v4-quality/provenance.ts": "52f37db7716896104ad5acb426a2c480ddf2cdaadb7b091b1ec2f28a8f3733e2",
+    "video-v4-quality/provenance.ts": "36c549bdb5e7e56bf7ba8a5e5dfc0f4f30e2dd3a3ce0261d14d5457b9c7bda78",
     "video-v4-quality/qualityPipeline.ts": "0fcf209aaaf5002b6fdce39d49c002a0fd252f699b76d7714f37d195d7dc3fd7",
     "video-v4-quality/sampler.ts": "1f306a95bd7fa3d4f636ab41d5efe943f32ab0384436a62a348adce7c2fab288",
     "video-v4-steps/_steps.ts": "45d6a4eb8cf8c4f8c6bcc87f3008e7abc828679d14f6a313fa62a473d959ff1e",
